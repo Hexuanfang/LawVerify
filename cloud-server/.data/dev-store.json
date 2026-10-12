@@ -1,0 +1,2405 @@
+{
+  "users": [
+    {
+      "id": "2d317580-425e-4a9e-96d5-798822b47728",
+      "email": "closure_1790488458620@example.com",
+      "passwordHash": "$2b$10$BCOXL0gLzVNb7xftWtPur.w9p6zkn6kO12mOASOsUg1SHqqDiCSIe",
+      "name": "闭环测试",
+      "status": "active"
+    },
+    {
+      "id": "033442d8-384e-43db-9e5c-ab3859cca64b",
+      "email": "ui_test_20260927_0645@example.com",
+      "passwordHash": "$2b$10$sF9GG5uQDy.Xp.D/Vv38xelPXOEb36jLoebmhcldttudqGwYS7bre",
+      "name": "按钮验证",
+      "status": "active"
+    },
+    {
+      "id": "d65cfe78-5aef-480a-a0b8-ebc898b67cf0",
+      "email": "buttonflow_20260927150913@example.com",
+      "passwordHash": "$2b$10$G/m6.TlgU4wSttHUJIJKoOI6OpKxv.luo/B/evMloFpxi1o7DF2zS",
+      "name": "????",
+      "status": "active"
+    },
+    {
+      "id": "a8295679-f3f5-44c9-a542-fd7a426d2001",
+      "email": "browser_ui_20260927_1513@example.com",
+      "passwordHash": "$2b$10$YFs9n3Fx7.sLaItgftVwOeOG8k/XwNULruy3cvIFrmYXvSHyw0Woq",
+      "name": "浏览器测试",
+      "status": "active"
+    },
+    {
+      "id": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "email": "buttonflow_20260927_0729@example.com",
+      "passwordHash": "$2b$10$u/OaUnmaPJUL9XJof..h3eoRgi14zm2hO/5axPvTCUiIJ/edNgVqm",
+      "name": "按钮验证",
+      "status": "active"
+    },
+    {
+      "id": "d1ffba5b-2c83-4cde-beb9-7099f591d3d3",
+      "email": "972167580@qq.com",
+      "passwordHash": "$2b$10$U8GJ7G4y2kmt7EDCwNbdsOfChETTChOmJ3IavIMN/HJIMtsp.UM0e",
+      "name": "煊芳",
+      "status": "active"
+    },
+    {
+      "id": "f0cd8e5b-c578-4fd3-bb88-08c9ffc730e2",
+      "email": "793135400@qq.com",
+      "passwordHash": "$2b$10$1z6D2QhML9MjQ1P/tmIV/eA/VR177z318.q/OR7Nf7zpOxoOkeXj.",
+      "name": "hxf",
+      "status": "active"
+    },
+    {
+      "id": "0ae1feee-adc0-4dc6-8193-9f77435cc720",
+      "email": "signup-test-884145277@example.com",
+      "passwordHash": "$2b$10$A9LK0lMlEm.O3IkfWevKH.YcnazIwsFN1gxB/pwh2fnbNyDsldK8S",
+      "name": "????",
+      "status": "active"
+    },
+    {
+      "id": "1e2aaff9-b95f-4157-803a-b8aecc64b056",
+      "email": "signup-test-130804@example.com",
+      "passwordHash": "$2b$10$l/VkPfx.mkW4XK8ujpnum.BqGisPTjDhaQ7euhV6uxM4RZ8PqqKiW",
+      "name": "????",
+      "status": "active"
+    },
+    {
+      "id": "df677e28-9a13-4c87-beb6-975330aed8e3",
+      "email": "bonus-check-130932@example.com",
+      "passwordHash": "$2b$10$CB.VjWrkbpX7QmR8pyDQheEUpE6TRbkt9T0wx/oo77YGo1RwJESC2",
+      "name": "BonusCheck",
+      "status": "active"
+    },
+    {
+      "id": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "email": "793135401@qq.com",
+      "passwordHash": "$2b$10$Fv.OzQtEfgrIbq3LAZHUQe9QKDH3UdpvLV/i1LGuR74rihBmLgGym",
+      "name": "何煊芳",
+      "status": "active"
+    },
+    {
+      "id": "76bf94c0-22b3-46fe-9e73-7917b8423ad6",
+      "email": "dy2009@vip.163.com",
+      "passwordHash": "$2b$10$bSvjCeq30MnbJR0eQAT.suDioO3zJxeG1oyjMOyu8BfFabFmPdU6.",
+      "name": "戴勇",
+      "status": "active"
+    },
+    {
+      "id": "142f2a18-77f4-48b0-8dbd-4117cc48f830",
+      "email": "504443835@qq.com",
+      "passwordHash": "$2b$10$IOorz/Qi1TYcs/PHWc/Wqusejv107dDNBoaI.yeqqHS.UU70cp6du",
+      "name": "沈霜",
+      "status": "active"
+    },
+    {
+      "id": "6e964968-77f9-4266-a8ae-05211d28dfec",
+      "email": "admin",
+      "passwordHash": "$2b$10$ukzLmhTA8ZMs4y0Pv4dKfuU6venXcnffBs5hj8zRIwiKPJIwtrhaW",
+      "name": "超级管理员",
+      "status": "active",
+      "currentSessionId": "a3c76ebd-6479-46b5-aa0e-ca4f19e3a018"
+    },
+    {
+      "id": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "email": "1536247432@qq.com",
+      "passwordHash": "$2b$10$vwCJ79XtceJO28Wk3.3qNu67W/awOqlvylP22swD28a4GaeThmScC",
+      "name": "周烘威",
+      "status": "active"
+    },
+    {
+      "id": "c870eb39-7925-4b07-826b-5c26b2a92d21",
+      "email": "feedback.20261006153733@test.local",
+      "passwordHash": "$2b$10$AMF3EzyAEcSqvztIv./RluIFcnHnq8ktr/aw2wwwKvYTAfw9wpjcu",
+      "name": "??????",
+      "currentSessionId": "80f0053c-f4d9-45c4-a235-41f2ae6497b0",
+      "status": "active"
+    }
+  ],
+  "organizations": [
+    {
+      "id": "d41bf957-950c-4339-b638-9cf9469f5371",
+      "name": "闭环测试律所",
+      "slug": "闭环测试律所",
+      "status": "active"
+    },
+    {
+      "id": "5cb2b4e4-a7c8-4018-88e4-5d744e659ba1",
+      "name": "LawVerify 测试律所",
+      "slug": "lawverify-测试律所",
+      "status": "active"
+    },
+    {
+      "id": "f623c476-6237-484e-b305-a87e40cbacbc",
+      "name": "??????",
+      "slug": "org-1790492953771",
+      "status": "active"
+    },
+    {
+      "id": "6059b75e-fa47-4807-aa98-10469d3d68e5",
+      "name": "浏览器按钮律所",
+      "slug": "浏览器按钮律所",
+      "status": "active"
+    },
+    {
+      "id": "a2299179-634b-40ec-adf1-417017dcee08",
+      "name": "按钮验证律所",
+      "slug": "按钮验证律所",
+      "status": "active"
+    },
+    {
+      "id": "6f845720-126b-494b-b7c3-a9a6269bd9ce",
+      "name": "致敬律所",
+      "slug": "致敬律所",
+      "status": "active"
+    },
+    {
+      "id": "45684f97-4040-4ac1-a138-9622da4f30be",
+      "name": "之舟",
+      "slug": "之舟",
+      "status": "active"
+    },
+    {
+      "id": "0fddfaf6-ef08-4e54-aa56-cacfdfb810b3",
+      "name": "????",
+      "slug": "org-1790658387586",
+      "status": "active"
+    },
+    {
+      "id": "9770e3d1-cbba-4cc0-ae34-a86e7a3a1844",
+      "name": "??????",
+      "slug": "org-1790658484671",
+      "status": "active"
+    },
+    {
+      "id": "443fbb67-4ee8-40ec-bc01-795582c5fdfb",
+      "name": "Bonus Verify Firm",
+      "slug": "bonus-verify-firm",
+      "status": "active"
+    },
+    {
+      "id": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "name": "天气",
+      "slug": "天气",
+      "status": "active"
+    },
+    {
+      "id": "8fb67eab-61f3-4bfc-ad41-b8bdad5e010f",
+      "name": "北京市曙鹏律师事务所",
+      "slug": "北京市曙鹏律师事务所",
+      "status": "active"
+    },
+    {
+      "id": "9783971a-1984-4cb7-bd59-1c563208dd8e",
+      "name": "北京小智律师事务所",
+      "slug": "北京小智律师事务所",
+      "status": "active"
+    },
+    {
+      "id": "b6f83776-6fed-4da3-86e3-f72df346486f",
+      "name": "LawVerify 运营中心",
+      "slug": "admin-org",
+      "status": "active"
+    },
+    {
+      "id": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "name": "北京智镜科技有限公司",
+      "slug": "北京智镜科技有限公司",
+      "status": "active"
+    },
+    {
+      "id": "26d3adcd-f203-427b-ab9d-16f5b8221a78",
+      "name": "??????20261006153733",
+      "slug": "20261006153733",
+      "status": "active"
+    }
+  ],
+  "memberships": [
+    {
+      "id": "3ad1ad94-87bf-47ca-a5c9-394819e7a3ca",
+      "organizationId": "d41bf957-950c-4339-b638-9cf9469f5371",
+      "userId": "2d317580-425e-4a9e-96d5-798822b47728",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-27T05:54:18.718Z"
+    },
+    {
+      "id": "f3a92c34-0d37-4ece-af14-f5226c49e117",
+      "organizationId": "5cb2b4e4-a7c8-4018-88e4-5d744e659ba1",
+      "userId": "033442d8-384e-43db-9e5c-ab3859cca64b",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-27T06:54:26.264Z"
+    },
+    {
+      "id": "b55f8b34-2c9b-4319-9019-0faa1b9363ec",
+      "organizationId": "f623c476-6237-484e-b305-a87e40cbacbc",
+      "userId": "d65cfe78-5aef-480a-a0b8-ebc898b67cf0",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-27T07:09:13.771Z"
+    },
+    {
+      "id": "5a8c58a8-0a0a-4fa2-b538-29c3e041feec",
+      "organizationId": "6059b75e-fa47-4807-aa98-10469d3d68e5",
+      "userId": "a8295679-f3f5-44c9-a542-fd7a426d2001",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-27T07:14:14.719Z"
+    },
+    {
+      "id": "424ed824-68fa-4753-97b0-4a8c9c518b6b",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-27T07:31:23.058Z"
+    },
+    {
+      "id": "fbd71591-7714-4bf6-9bf5-eb4fdf8c184a",
+      "organizationId": "6f845720-126b-494b-b7c3-a9a6269bd9ce",
+      "userId": "d1ffba5b-2c83-4cde-beb9-7099f591d3d3",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-27T12:11:12.074Z"
+    },
+    {
+      "id": "4f68e8b0-8f80-445e-a566-fa6cbc3c2045",
+      "organizationId": "45684f97-4040-4ac1-a138-9622da4f30be",
+      "userId": "f0cd8e5b-c578-4fd3-bb88-08c9ffc730e2",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-28T09:32:45.992Z"
+    },
+    {
+      "id": "1a8ed6f4-5140-49e6-a72b-b01ec83fe4a3",
+      "organizationId": "0fddfaf6-ef08-4e54-aa56-cacfdfb810b3",
+      "userId": "0ae1feee-adc0-4dc6-8193-9f77435cc720",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-29T05:06:27.586Z"
+    },
+    {
+      "id": "f08b2ece-0aa9-4154-ac1e-b44abac9a03f",
+      "organizationId": "9770e3d1-cbba-4cc0-ae34-a86e7a3a1844",
+      "userId": "1e2aaff9-b95f-4157-803a-b8aecc64b056",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-29T05:08:04.671Z"
+    },
+    {
+      "id": "ca700cbf-f845-42de-9892-d6af9b6bcd5b",
+      "organizationId": "443fbb67-4ee8-40ec-bc01-795582c5fdfb",
+      "userId": "df677e28-9a13-4c87-beb6-975330aed8e3",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-29T05:09:32.772Z"
+    },
+    {
+      "id": "ac222f86-62a5-4c37-bcf3-4f141f0bf005",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-29T08:08:47.477Z"
+    },
+    {
+      "id": "7696439e-cc60-42b1-825b-d02f23e223bd",
+      "organizationId": "8fb67eab-61f3-4bfc-ad41-b8bdad5e010f",
+      "userId": "76bf94c0-22b3-46fe-9e73-7917b8423ad6",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-29T09:22:55.722Z"
+    },
+    {
+      "id": "0dcf5705-0658-4ef7-b45d-b92ab83b3ef9",
+      "organizationId": "9783971a-1984-4cb7-bd59-1c563208dd8e",
+      "userId": "142f2a18-77f4-48b0-8dbd-4117cc48f830",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-09-29T10:19:19.145Z"
+    },
+    {
+      "id": "223d792d-6f2f-47b0-b568-5c5d950851f9",
+      "organizationId": "b6f83776-6fed-4da3-86e3-f72df346486f",
+      "userId": "6e964968-77f9-4266-a8ae-05211d28dfec",
+      "role": "owner",
+      "title": "管理员",
+      "status": "active",
+      "createdAt": "2026-09-30T10:36:34.115Z"
+    },
+    {
+      "id": "ee833345-87b3-4a85-b83a-1cbab16af50d",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-10-04T04:50:03.669Z"
+    },
+    {
+      "id": "f9f02562-3605-428a-9ab5-9a126531765f",
+      "organizationId": "26d3adcd-f203-427b-ab9d-16f5b8221a78",
+      "userId": "c870eb39-7925-4b07-826b-5c26b2a92d21",
+      "role": "owner",
+      "title": "负责人",
+      "status": "active",
+      "createdAt": "2026-10-06T07:37:33.621Z"
+    }
+  ],
+  "pointAccounts": [
+    {
+      "organizationId": "d41bf957-950c-4339-b638-9cf9469f5371",
+      "userId": "2d317580-425e-4a9e-96d5-798822b47728",
+      "balancePoints": 100
+    },
+    {
+      "organizationId": "5cb2b4e4-a7c8-4018-88e4-5d744e659ba1",
+      "userId": "033442d8-384e-43db-9e5c-ab3859cca64b",
+      "balancePoints": 0
+    },
+    {
+      "organizationId": "f623c476-6237-484e-b305-a87e40cbacbc",
+      "userId": "d65cfe78-5aef-480a-a0b8-ebc898b67cf0",
+      "balancePoints": 100
+    },
+    {
+      "organizationId": "6059b75e-fa47-4807-aa98-10469d3d68e5",
+      "userId": "a8295679-f3f5-44c9-a542-fd7a426d2001",
+      "balancePoints": 0
+    },
+    {
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "balancePoints": 700
+    },
+    {
+      "organizationId": "6f845720-126b-494b-b7c3-a9a6269bd9ce",
+      "userId": "d1ffba5b-2c83-4cde-beb9-7099f591d3d3",
+      "balancePoints": 0
+    },
+    {
+      "organizationId": "45684f97-4040-4ac1-a138-9622da4f30be",
+      "userId": "f0cd8e5b-c578-4fd3-bb88-08c9ffc730e2",
+      "balancePoints": 0
+    },
+    {
+      "organizationId": "0fddfaf6-ef08-4e54-aa56-cacfdfb810b3",
+      "userId": "0ae1feee-adc0-4dc6-8193-9f77435cc720",
+      "balancePoints": 0
+    },
+    {
+      "organizationId": "9770e3d1-cbba-4cc0-ae34-a86e7a3a1844",
+      "userId": "1e2aaff9-b95f-4157-803a-b8aecc64b056",
+      "balancePoints": 0
+    },
+    {
+      "organizationId": "443fbb67-4ee8-40ec-bc01-795582c5fdfb",
+      "userId": "df677e28-9a13-4c87-beb6-975330aed8e3",
+      "balancePoints": 300
+    },
+    {
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "balancePoints": 2611
+    },
+    {
+      "organizationId": "8fb67eab-61f3-4bfc-ad41-b8bdad5e010f",
+      "userId": "76bf94c0-22b3-46fe-9e73-7917b8423ad6",
+      "balancePoints": 300
+    },
+    {
+      "organizationId": "9783971a-1984-4cb7-bd59-1c563208dd8e",
+      "userId": "142f2a18-77f4-48b0-8dbd-4117cc48f830",
+      "balancePoints": 300
+    },
+    {
+      "organizationId": "b6f83776-6fed-4da3-86e3-f72df346486f",
+      "userId": "6e964968-77f9-4266-a8ae-05211d28dfec",
+      "balancePoints": 999999
+    },
+    {
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "balancePoints": 1590
+    },
+    {
+      "organizationId": "26d3adcd-f203-427b-ab9d-16f5b8221a78",
+      "userId": "c870eb39-7925-4b07-826b-5c26b2a92d21",
+      "balancePoints": 300
+    }
+  ],
+  "pointLedgerEntries": [
+    {
+      "id": "point-4dae238e-faaf-4625-9a9e-da1addfcdbdf",
+      "organizationId": "26d3adcd-f203-427b-ab9d-16f5b8221a78",
+      "userId": "c870eb39-7925-4b07-826b-5c26b2a92d21",
+      "entryType": "adjust",
+      "operationKey": "signup-bonus:c870eb39-7925-4b07-826b-5c26b2a92d21",
+      "changePoints": 300,
+      "note": "新用户注册赠送 300 积分",
+      "metadata": {
+        "source": "signup_bonus"
+      },
+      "createdAt": "2026-10-06T07:37:33.621Z"
+    },
+    {
+      "id": "point-d78c5057-bcda-4997-b201-c32bf069a92f",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "orderId": "f7bfd0a3-14e6-4bde-ab0e-49cd28c0f065",
+      "entryType": "recharge",
+      "changePoints": 2500,
+      "note": "支付宝充值 2500 积分",
+      "metadata": {
+        "orderNo": "LV20261005224923629",
+        "channel": "alipay",
+        "amountFen": 19900,
+        "packageId": "pro-monthly"
+      },
+      "createdAt": "2026-10-05T14:49:25.956Z"
+    },
+    {
+      "id": "point-640af851-8f33-4af9-bae1-243f70bb8dbe",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "orderId": "9667f204-db13-4765-85cc-a35ecc61816c",
+      "entryType": "recharge",
+      "changePoints": 500,
+      "note": "支付宝充值 500 积分",
+      "metadata": {
+        "orderNo": "LV20261005224859510",
+        "channel": "alipay",
+        "amountFen": 4500,
+        "packageId": "points-500"
+      },
+      "createdAt": "2026-10-05T14:49:01.893Z"
+    },
+    {
+      "id": "point-3b13e299-15c0-42eb-a905-5f806b8fd488",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "orderId": "8fcc58a1-5430-47fd-97b2-96a2053d46ea",
+      "entryType": "recharge",
+      "changePoints": 500,
+      "note": "支付宝充值 500 积分",
+      "metadata": {
+        "orderNo": "LV20261005224854703",
+        "channel": "alipay",
+        "amountFen": 4500,
+        "packageId": "points-500"
+      },
+      "createdAt": "2026-10-05T14:48:56.807Z"
+    },
+    {
+      "id": "point-c1e1161d-b19e-46f8-867b-b9c2a15fa167",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "orderId": "45f656e0-a53c-44d9-ae63-ebdffe06ff71",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "支付宝充值 100 积分",
+      "metadata": {
+        "orderNo": "LV20261005224849122",
+        "channel": "alipay",
+        "amountFen": 1000,
+        "packageId": "points-100"
+      },
+      "createdAt": "2026-10-05T14:48:52.290Z"
+    },
+    {
+      "id": "point-ff8eb3dc-c4f2-4141-bcb8-1eca7d7784c8",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "orderId": "4ee15990-247d-43c4-a948-489dfc7f0c26",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "支付宝充值 100 积分",
+      "metadata": {
+        "orderNo": "LV20261005224842990",
+        "channel": "alipay",
+        "amountFen": 1000,
+        "packageId": "points-100"
+      },
+      "createdAt": "2026-10-05T14:48:45.945Z"
+    },
+    {
+      "id": "point-e2bc7c46-d512-4bb2-9139-ad9a28583b8e",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-egmbik3z:205b7ad7-aff8-40b0-b43b-32575f823999",
+      "changePoints": -2,
+      "note": "证据摘要：E05 微信图片 20260723145350 36 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-ukzrimej",
+        "resourceType": "evidence",
+        "resourceId": "evidence-egmbik3z"
+      },
+      "createdAt": "2026-10-05T12:39:20.245Z"
+    },
+    {
+      "id": "point-e250dba0-594c-46ee-b809-063497221217",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-we4nasrr:25f5aa37-0057-4040-9e32-7ccb44d3eb23",
+      "changePoints": -2,
+      "note": "证据摘要：E06 微信图片 20260723145837 37 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-ukzrimej",
+        "resourceType": "evidence",
+        "resourceId": "evidence-we4nasrr"
+      },
+      "createdAt": "2026-10-05T12:39:08.825Z"
+    },
+    {
+      "id": "point-a94351da-ec93-408c-b59b-c8fe8c378a3b",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "orderId": "c48cf968-b8e4-427e-a812-77ffff5198b8",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "微信支付充值 100 积分",
+      "metadata": {
+        "orderNo": "LV20261005200015496",
+        "channel": "wechat",
+        "amountFen": 1000,
+        "packageId": "points-100"
+      },
+      "createdAt": "2026-10-05T12:00:35.535Z"
+    },
+    {
+      "id": "point-2971b55f-0d4f-4f22-a6f2-3e5bb7cc0d1e",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-dc9j41k6:2ca5314e-ba8d-4242-bd43-4b89b644130f",
+      "changePoints": -2,
+      "note": "证据摘要：E16 被告证据 - 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-dc9j41k6"
+      },
+      "createdAt": "2026-10-05T02:19:24.209Z"
+    },
+    {
+      "id": "point-6828aef9-edd8-4f9c-a579-757db51e4677",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-a5ypn51e:7b5f7296-84fb-4317-abe4-217b85b962da",
+      "changePoints": -2,
+      "note": "证据摘要：E27 md - 诉讼参与人举证材料1",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-a5ypn51e"
+      },
+      "createdAt": "2026-10-04T18:15:39.269Z"
+    },
+    {
+      "id": "point-cfe35397-e0f1-42c8-8bc2-40dbbf0a2824",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-xy5cp0hy:d357cf52-c294-4297-8896-3f8b2a18e506",
+      "changePoints": -2,
+      "note": "证据摘要：E14 被告证据 - 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-xy5cp0hy"
+      },
+      "createdAt": "2026-10-04T18:09:35.051Z"
+    },
+    {
+      "id": "point-7b67674c-2bae-4f10-91a3-c941a8d07075",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-vx9sbntp:409d9d02-84e0-4623-8cdd-18be72593dfc",
+      "changePoints": -2,
+      "note": "证据摘要：E40 md - 质证意见-张长松对王书坡证据-2026-07-24",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-vx9sbntp"
+      },
+      "createdAt": "2026-10-04T17:55:46.527Z"
+    },
+    {
+      "id": "point-8ee6c123-00f5-49f2-b98c-6002ad5204bb",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-xy5cp0hy:51091319-d40f-473d-aaf7-f2fbb05d7525",
+      "changePoints": -2,
+      "note": "证据摘要：E14 被告证据 - 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-xy5cp0hy"
+      },
+      "createdAt": "2026-10-04T17:49:45.317Z"
+    },
+    {
+      "id": "point-10266b76-fb0c-49b5-8d66-46c8c914720e",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-4z3eqktx:da417b97-f5c4-44bd-a579-21c4e8c992ca",
+      "changePoints": -2,
+      "note": "证据摘要：E13 被告证据 - 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-4z3eqktx"
+      },
+      "createdAt": "2026-10-04T17:49:44.710Z"
+    },
+    {
+      "id": "point-2e7d0adb-cddd-4ac9-becc-ab2f69eeeb13",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-4z3eqktx:7c3105f1-54c3-424e-ad0b-984c57bdd6d8",
+      "changePoints": -2,
+      "note": "证据摘要：E13 被告证据 - 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-4z3eqktx"
+      },
+      "createdAt": "2026-10-04T17:47:53.262Z"
+    },
+    {
+      "id": "point-94e90d23-8fcd-4383-8bd5-a010ef0e58c6",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "refund",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-2uqvxdih:ec7c79f9-717b-4380-ad5f-c1e8916b53f4:refund",
+      "relatedEntryId": "point-5047aaf0-63ac-4aed-a221-9e3011e50189",
+      "changePoints": 2,
+      "note": "证据摘要：E12 被告法律文书 - 答辩状失败补回",
+      "metadata": {
+        "sourceEntryId": "point-5047aaf0-63ac-4aed-a221-9e3011e50189",
+        "sourceOperationKey": "evidence_summary:evidence-2uqvxdih:ec7c79f9-717b-4380-ad5f-c1e8916b53f4"
+      },
+      "createdAt": "2026-10-04T17:47:13.356Z"
+    },
+    {
+      "id": "point-5047aaf0-63ac-4aed-a221-9e3011e50189",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-2uqvxdih:ec7c79f9-717b-4380-ad5f-c1e8916b53f4",
+      "changePoints": -2,
+      "note": "证据摘要：E12 被告法律文书 - 答辩状",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-2uqvxdih"
+      },
+      "createdAt": "2026-10-04T17:47:06.331Z"
+    },
+    {
+      "id": "point-223e7d9e-9b3e-4e93-bd46-41b24efb5b50",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-1hnxi5nv:24361759-7468-454d-b0c2-21ddc214d9b2",
+      "changePoints": -2,
+      "note": "证据摘要：E14 被告证据 - 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-1hnxi5nv"
+      },
+      "createdAt": "2026-10-04T16:57:27.127Z"
+    },
+    {
+      "id": "point-095f5140-f1c7-43d6-b461-7e05417f3a5e",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-fv3xyrl8:ac9de7bf-f23c-4bfc-922d-f9a6ce303b6c",
+      "changePoints": -2,
+      "note": "证据摘要：E13 被告证据 - 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-fv3xyrl8"
+      },
+      "createdAt": "2026-10-04T16:57:15.686Z"
+    },
+    {
+      "id": "point-73d57a47-6a29-4242-bb52-d81462e8eccc",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ruzwbdnp:46eb969e-e225-4565-b522-7c08b5461c8d",
+      "changePoints": -2,
+      "note": "证据摘要：E02 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-ukzrimej",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ruzwbdnp"
+      },
+      "createdAt": "2026-10-04T05:01:32.682Z"
+    },
+    {
+      "id": "point-5a91630a-43be-4149-82b0-3d6414f8081f",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-bbzvdt6t:aba8d8e1-a30e-4894-b5d4-83e618345b0d",
+      "changePoints": -2,
+      "note": "证据摘要：E01 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-ukzrimej",
+        "resourceType": "evidence",
+        "resourceId": "evidence-bbzvdt6t"
+      },
+      "createdAt": "2026-10-04T05:01:26.909Z"
+    },
+    {
+      "id": "point-6fd4239a-d873-432e-88a0-f1919e7507b7",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-tpkr1mmu:fdb5af50-0694-4af2-be70-41d109efa09d",
+      "changePoints": -2,
+      "note": "证据摘要：E01 被告证据清单",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-ukzrimej",
+        "resourceType": "evidence",
+        "resourceId": "evidence-tpkr1mmu"
+      },
+      "createdAt": "2026-10-04T04:56:55.950Z"
+    },
+    {
+      "id": "point-94183009-4a40-4e4f-a205-4ea124fdd5e4",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "entryType": "adjust",
+      "operationKey": "signup-bonus:0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "changePoints": 300,
+      "note": "新用户注册赠送 300 积分",
+      "metadata": {
+        "source": "signup_bonus"
+      },
+      "createdAt": "2026-10-04T04:50:03.669Z"
+    },
+    {
+      "id": "point-49882b10-d65b-4ab0-831c-50461ae95853",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-eh39zuam:156e0b3d-756a-4f61-aa3f-8efd09d91f17",
+      "changePoints": -2,
+      "note": "证据摘要：E25 md - 起诉状及相关材料(1)",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-eh39zuam"
+      },
+      "createdAt": "2026-10-03T16:54:20.119Z"
+    },
+    {
+      "id": "point-5aed27e0-90e5-4efd-bffc-7082c351f504",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "pleading_full",
+      "operationKey": "pleading_full:certificate-yccgsaz4:05df5643-f4c5-4ca4-8a03-ab23b70ae8d5",
+      "changePoints": -15,
+      "note": "整文改写：庭审举证质证意见表(1)",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "certificate",
+        "resourceId": "certificate-yccgsaz4"
+      },
+      "createdAt": "2026-10-03T16:53:49.804Z"
+    },
+    {
+      "id": "point-ff316703-b291-4834-83d6-c1521355dd72",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "refund",
+      "actionType": "pleading_full",
+      "operationKey": "pleading_full:certificate-yccgsaz4:7c1d1d78-75a1-4842-b40f-03296c42e254:refund",
+      "relatedEntryId": "point-c9b17411-289d-4f04-88d7-7b5148477097",
+      "changePoints": 15,
+      "note": "整文改写：庭审举证质证意见表(1)失败补回",
+      "metadata": {
+        "sourceEntryId": "point-c9b17411-289d-4f04-88d7-7b5148477097",
+        "sourceOperationKey": "pleading_full:certificate-yccgsaz4:7c1d1d78-75a1-4842-b40f-03296c42e254"
+      },
+      "createdAt": "2026-10-03T16:37:56.478Z"
+    },
+    {
+      "id": "point-c9b17411-289d-4f04-88d7-7b5148477097",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "pleading_full",
+      "operationKey": "pleading_full:certificate-yccgsaz4:7c1d1d78-75a1-4842-b40f-03296c42e254",
+      "changePoints": -15,
+      "note": "整文改写：庭审举证质证意见表(1)",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "certificate",
+        "resourceId": "certificate-yccgsaz4"
+      },
+      "createdAt": "2026-10-03T16:37:53.546Z"
+    },
+    {
+      "id": "point-6c91d635-000f-4166-8eb5-9b428fa27d74",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ql5fozp8:aa36a125-5121-4907-85c5-7e30245fc249",
+      "changePoints": -2,
+      "note": "证据摘要：E41 md - 质证意见-张长松对王书坡证据-2026-08-03",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ql5fozp8"
+      },
+      "createdAt": "2026-10-03T16:36:35.293Z"
+    },
+    {
+      "id": "point-57ca2f3a-d0fc-4cba-bd73-fd68ae31fdeb",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-pkorlvpy:03f573b9-b467-45c3-9e33-04565e53b61d",
+      "changePoints": -2,
+      "note": "证据摘要：E37 md - 被告证据清单-张长松-2026-07-24",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-pkorlvpy"
+      },
+      "createdAt": "2026-10-03T16:33:49.556Z"
+    },
+    {
+      "id": "point-41f87a87-fdc8-4f69-89ed-164e808f5802",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-mizykcov:349f9eb8-2c87-4fee-92a9-e099e28b6df0",
+      "changePoints": -2,
+      "note": "证据摘要：E17 被告证据 - 微信图片 20260723145350 36 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-mizykcov"
+      },
+      "createdAt": "2026-10-03T13:34:20.318Z"
+    },
+    {
+      "id": "point-7c035e7a-bae4-4c33-b2df-b07dfffcefa9",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-d2m7evtm:dcf14273-cab8-4c8d-97be-5a5daa4ad472",
+      "changePoints": -2,
+      "note": "证据摘要：E27 md - 诉讼参与人举证材料1",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-d2m7evtm"
+      },
+      "createdAt": "2026-10-03T13:31:46.263Z"
+    },
+    {
+      "id": "point-0079f867-817c-4dd9-8d32-1530d56dbc63",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-eh62jpae:eb68e022-fc37-47b4-86c3-54747fd5a06c",
+      "changePoints": -2,
+      "note": "证据摘要：E16 被告证据 - 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-eh62jpae"
+      },
+      "createdAt": "2026-10-03T12:09:08.244Z"
+    },
+    {
+      "id": "point-700fe543-3ac7-47b5-bd68-9a8b3e8480df",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-m6bfoycl:c0b68d50-0351-4945-9b04-bc01ffdb8884",
+      "changePoints": -2,
+      "note": "证据摘要：E15 被告证据 - 微信图片 20260723145025 34 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-m6bfoycl"
+      },
+      "createdAt": "2026-10-03T12:01:02.410Z"
+    },
+    {
+      "id": "point-dd81bb24-4391-453e-a7db-47faa61c477b",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-sq8o9pa7:8c826144-5797-4890-9566-93a029c32bba",
+      "changePoints": -2,
+      "note": "证据摘要：E12 被告法律文书 - 答辩状",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-sq8o9pa7"
+      },
+      "createdAt": "2026-10-01T17:40:32.709Z"
+    },
+    {
+      "id": "point-37e2c240-db93-4de0-9452-77ed4eedda1d",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-bp9099f0:f7fceed6-7822-4485-82bc-47566ba27a72",
+      "changePoints": -2,
+      "note": "证据摘要：E32 md - 被告证据 - 微信图片 20260723145025 34 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-bp9099f0"
+      },
+      "createdAt": "2026-10-01T17:13:55.324Z"
+    },
+    {
+      "id": "point-f2fe65ab-43dc-43ed-bdf2-2a2dd3bf519e",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-mqca6eep:d361a585-fda4-464e-8cd8-5c09c277383f",
+      "changePoints": -2,
+      "note": "证据摘要：E41 md - 质证意见-张长松对王书坡证据-2026-08-03",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-mqca6eep"
+      },
+      "createdAt": "2026-10-01T17:10:12.386Z"
+    },
+    {
+      "id": "point-c1f13cd8-66fc-43f8-b5bb-34aac697c727",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-id7g50uh:0f3f4219-a2df-48fd-8b87-50cca91161c0",
+      "changePoints": -2,
+      "note": "证据摘要：E24 md - 民事诉讼风险提示书三河市人民法院",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-id7g50uh"
+      },
+      "createdAt": "2026-10-01T17:05:29.471Z"
+    },
+    {
+      "id": "point-d45bbbde-8e55-49ff-bcda-5537165afb3f",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-tqjpmlla:d4caef5c-37c6-4688-b917-764bb930e5f4",
+      "changePoints": -2,
+      "note": "证据摘要：E31 md - 被告证据 - 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-tqjpmlla"
+      },
+      "createdAt": "2026-09-30T13:44:32.963Z"
+    },
+    {
+      "id": "point-3ff8b0b0-a4d3-4aaa-a3e3-bd07669fa54c",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-unrvkqsh:d3a002e4-d062-4234-bb38-14f3be7ee4ec",
+      "changePoints": -2,
+      "note": "证据摘要：E27 md - 诉讼参与人举证材料1",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-unrvkqsh"
+      },
+      "createdAt": "2026-09-30T13:39:06.414Z"
+    },
+    {
+      "id": "point-bb90ff59-2b61-426b-9744-44029c2bbb8d",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-inlw8jdi:9ccac083-3cd4-41e2-95fb-c360942183dc",
+      "changePoints": -2,
+      "note": "证据摘要：E37 md - 被告证据清单-张长松-2026-07-24",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-inlw8jdi"
+      },
+      "createdAt": "2026-09-30T13:38:39.379Z"
+    },
+    {
+      "id": "point-a7434ca1-9cb0-441c-8d72-da5c772a304d",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ioderlv6:9819cc91-d634-4616-a11b-de40233397f2",
+      "changePoints": -2,
+      "note": "证据摘要：E18 被告证据 - 微信图片 20260723145837 37 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ioderlv6"
+      },
+      "createdAt": "2026-09-30T13:37:10.858Z"
+    },
+    {
+      "id": "point-01bb894b-6823-4bb1-a077-38ab157e042c",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-okpa88e2:9016a377-5841-40aa-9e52-d1c1af75c194",
+      "changePoints": -2,
+      "note": "证据摘要：E04 起诉状及相关材料(1)",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-okpa88e2"
+      },
+      "createdAt": "2026-09-30T12:17:38.400Z"
+    },
+    {
+      "id": "point-c4bffdae-0735-43ff-8ef7-8575df600dd5",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-xccelgtg:763f1a9e-459b-4099-ac27-ad78c939da45",
+      "changePoints": -2,
+      "note": "证据摘要：E15 被告证据 - 微信图片 20260723145025 34 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-xccelgtg"
+      },
+      "createdAt": "2026-09-30T12:16:26.541Z"
+    },
+    {
+      "id": "point-0245b198-4cd6-4526-b71b-738ed08b3d99",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-d0n4sm17:8d226284-fa37-4e00-9b0c-50365983af57",
+      "changePoints": -2,
+      "note": "证据摘要：E16 被告证据 - 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-d0n4sm17"
+      },
+      "createdAt": "2026-09-30T12:14:27.423Z"
+    },
+    {
+      "id": "point-c54c9228-5941-432d-bb36-44ecc2d74dbd",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-d0n4sm17:b5c97ce6-97f8-4e81-b748-9036eef52c88",
+      "changePoints": -2,
+      "note": "证据摘要：E16 被告证据 - 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-d0n4sm17"
+      },
+      "createdAt": "2026-09-30T12:09:53.450Z"
+    },
+    {
+      "id": "point-9d528096-c128-4aae-bdfa-e97fe3c28415",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-lk19yk1s:0ab5d0d4-4b11-4b98-80d2-ba1401b49884",
+      "changePoints": -2,
+      "note": "证据摘要：E14 被告证据 - 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-lk19yk1s"
+      },
+      "createdAt": "2026-09-30T12:09:26.217Z"
+    },
+    {
+      "id": "point-07c85b80-c296-4dae-a798-a2bc60c3ced0",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-5z44qbuq:8a2c0059-689b-47c5-b5f0-efee86aefc54",
+      "changePoints": -2,
+      "note": "证据摘要：E13 被告证据 - 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-5z44qbuq"
+      },
+      "createdAt": "2026-09-30T12:09:09.840Z"
+    },
+    {
+      "id": "point-fd3282c7-38ba-40c9-a694-1a6c4b584a49",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-aeyaj9z6:b7ee0b3d-54d3-4981-8d2d-27eba3797e87",
+      "changePoints": -2,
+      "note": "证据摘要：E32 md - 被告证据 - 微信图片 20260723145025 34 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-aeyaj9z6"
+      },
+      "createdAt": "2026-09-30T05:51:19.114Z"
+    },
+    {
+      "id": "point-a66bb258-411b-4c04-9116-fd36322313d2",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-i4rb34ag:d7513ba7-74e0-43d1-8d0f-d53efc16be73",
+      "changePoints": -2,
+      "note": "证据摘要：E34 md - 被告证据 - 微信图片 20260723145350 36 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-i4rb34ag"
+      },
+      "createdAt": "2026-09-30T04:44:14.165Z"
+    },
+    {
+      "id": "point-92c03905-9e71-48e9-adda-722e03c4dada",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-9mmyj137:415c2cf6-9205-4241-b06e-65925202a45a",
+      "changePoints": -2,
+      "note": "证据摘要：E22 md - 传票（张长松）",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-9mmyj137"
+      },
+      "createdAt": "2026-09-30T04:37:29.701Z"
+    },
+    {
+      "id": "point-a8eedd87-6012-4d4b-b7cb-10b02f62a195",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-i4rb34ag:7da3dc71-cf67-4372-a24e-6a98af51da5a",
+      "changePoints": -2,
+      "note": "证据摘要：E34 md - 被告证据 - 微信图片 20260723145350 36 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-i4rb34ag"
+      },
+      "createdAt": "2026-09-30T04:35:59.429Z"
+    },
+    {
+      "id": "point-2bfa9069-066c-4cb4-a16a-8b2a7ce44a1a",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-2llqjsp3:a9cb4c99-f40b-4e88-9dae-1af8d9632748",
+      "changePoints": -2,
+      "note": "证据摘要：E33 md - 被告证据 - 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-2llqjsp3"
+      },
+      "createdAt": "2026-09-30T04:35:56.927Z"
+    },
+    {
+      "id": "point-efce368e-ba72-465d-984e-4e2f4f001711",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-h3efjpal:6d565a1e-e137-409b-9e03-dd7861a0dbdd",
+      "changePoints": -2,
+      "note": "证据摘要：E27 md - 诉讼参与人举证材料1",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-h3efjpal"
+      },
+      "createdAt": "2026-09-29T16:25:22.533Z"
+    },
+    {
+      "id": "point-4a83ba54-b17a-4199-acf5-4307d9de8f4e",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-2hvngo8j:ff939ef2-78de-43e3-9278-c57271ad04e8",
+      "changePoints": -2,
+      "note": "证据摘要：E37 md - 被告证据清单-张长松-2026-07-24",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-2hvngo8j"
+      },
+      "createdAt": "2026-09-29T15:59:50.712Z"
+    },
+    {
+      "id": "point-8da4b593-ecbb-4b39-9411-f3348345b664",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ml7nh36c:2dbb68ca-c0d7-4a4e-969e-2cee798addf1",
+      "changePoints": -2,
+      "note": "证据摘要：E33 md - 被告证据 - 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ml7nh36c"
+      },
+      "createdAt": "2026-09-29T15:57:01.199Z"
+    },
+    {
+      "id": "point-13dc0cde-f1e0-4b2d-ab81-a18ac9eb82b0",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-szxbqv48:700e6e32-b533-4da4-a4c8-aee05fd4e5e8",
+      "changePoints": -2,
+      "note": "证据摘要：E38 md - 简要抗辩思路",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-szxbqv48"
+      },
+      "createdAt": "2026-09-29T15:56:45.618Z"
+    },
+    {
+      "id": "point-e8bcaeaf-702e-4a82-bcdb-d2061882f590",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-46e85ylp:eab4a038-3553-4243-abb1-e5e22527a788",
+      "changePoints": -2,
+      "note": "证据摘要：E29 md - 诉讼权利义务告知书",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-46e85ylp"
+      },
+      "createdAt": "2026-09-29T15:56:15.491Z"
+    },
+    {
+      "id": "point-c7e3581e-e992-4c8b-a1c4-9d1f31a302f4",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-vh1a9za3:0f5cca4c-c25f-40ca-9ea2-78168ad2f100",
+      "changePoints": -2,
+      "note": "证据摘要：E14 被告证据 - 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-vh1a9za3"
+      },
+      "createdAt": "2026-09-29T15:55:23.369Z"
+    },
+    {
+      "id": "point-36004296-b7b5-4178-adef-3d80ff5d30ad",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-96ii9akv:6b3496b5-2538-4757-b52d-a6e7121f5dfd",
+      "changePoints": -2,
+      "note": "证据摘要：E11 被告法律文书 - 被告质证意见",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-96ii9akv"
+      },
+      "createdAt": "2026-09-29T15:45:05.576Z"
+    },
+    {
+      "id": "point-5e99100d-817c-4ecc-911b-d4bdd604d915",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-zq95m790:c8d45950-66d1-468e-b8ba-345340c06403",
+      "changePoints": -2,
+      "note": "证据摘要：E12 被告法律文书 - 答辩状",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-zq95m790"
+      },
+      "createdAt": "2026-09-29T15:43:46.326Z"
+    },
+    {
+      "id": "point-0e517b90-caa8-470f-8aff-4bbd87c2cc5d",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-96ii9akv:4ac2ebf4-47f8-4b84-bc22-9a061d789dd9",
+      "changePoints": -2,
+      "note": "证据摘要：E11 被告法律文书 - 被告质证意见",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-96ii9akv"
+      },
+      "createdAt": "2026-09-29T15:43:45.351Z"
+    },
+    {
+      "id": "point-1bc773d3-a97b-46c3-9b8d-51ea9d8e2a63",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-uf6kfmck:8c95068c-52f7-4b31-888e-a14d479677e7",
+      "changePoints": -2,
+      "note": "证据摘要：E37 md - 被告证据清单-张长松-2026-07-24",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-uf6kfmck"
+      },
+      "createdAt": "2026-09-29T13:53:28.981Z"
+    },
+    {
+      "id": "point-e58889bd-45b5-42e7-bc25-0ed6aac2133f",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-qi6wrumo:2a9a3711-347e-48a9-a76b-947a6b95b73e",
+      "changePoints": -2,
+      "note": "证据摘要：E22 md - 传票（张长松）",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-qi6wrumo"
+      },
+      "createdAt": "2026-09-29T13:53:25.708Z"
+    },
+    {
+      "id": "point-d747b176-ca75-4f63-9b3b-ad04ff215a17",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-uf6kfmck:c49eecb2-6987-4725-8a11-8e405df36ca1",
+      "changePoints": -2,
+      "note": "证据摘要：E37 md - 被告证据清单-张长松-2026-07-24",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-uf6kfmck"
+      },
+      "createdAt": "2026-09-29T13:53:15.054Z"
+    },
+    {
+      "id": "point-79752675-53ec-47c6-ac58-1a485605e07f",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-2ckp3sii:b68d6a99-78f8-442c-b20c-86649b1cdd05",
+      "changePoints": -2,
+      "note": "证据摘要：E23 md - 举证通知书（无日期）",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-2ckp3sii"
+      },
+      "createdAt": "2026-09-29T13:53:12.199Z"
+    },
+    {
+      "id": "point-5d3d04dc-a0f4-4580-9bbb-063e857b9eff",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "pleading_full",
+      "operationKey": "pleading_full:certificate-6vjyb7ah:19d66612-48c5-4384-8bc3-4d65c31c4827",
+      "changePoints": -20,
+      "note": "整文改写：原告质证意见",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "certificate",
+        "resourceId": "certificate-6vjyb7ah"
+      },
+      "createdAt": "2026-09-29T13:52:44.974Z"
+    },
+    {
+      "id": "point-7377529d-010d-4503-b922-a17b99d95a71",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-yn4npadl:e85725de-5ba7-40b2-853b-d3a8cfd9fa66",
+      "changePoints": -2,
+      "note": "证据摘要：E28 md - 诉讼参与人举证材料2",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-yn4npadl"
+      },
+      "createdAt": "2026-09-29T13:51:09.850Z"
+    },
+    {
+      "id": "point-9a87ac89-91bf-41ce-a881-44ebf512f021",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ve7r1ic8:f29e43b6-63a2-47ba-a2ac-c4f2311f2488",
+      "changePoints": -2,
+      "note": "证据摘要：E25 md - 起诉状及相关材料(1)",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ve7r1ic8"
+      },
+      "createdAt": "2026-09-29T13:50:02.317Z"
+    },
+    {
+      "id": "point-8c88472b-cb9d-4844-9cba-795ac5855d5e",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "pleading_full",
+      "operationKey": "pleading_full:certificate-6vjyb7ah:db2ba78a-4bb1-46a4-a23d-c24b4d734d08",
+      "changePoints": -20,
+      "note": "整文改写：庭审举证质证意见表(1)",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "certificate",
+        "resourceId": "certificate-6vjyb7ah"
+      },
+      "createdAt": "2026-09-29T13:49:39.395Z"
+    },
+    {
+      "id": "point-018d32f9-8f03-4c81-8853-eac58743fd25",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-zmxv2d48:95b69e39-139e-4f0a-8656-511af8a591ee",
+      "changePoints": -2,
+      "note": "证据摘要：E27 md - 诉讼参与人举证材料1",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-zmxv2d48"
+      },
+      "createdAt": "2026-09-29T13:42:23.829Z"
+    },
+    {
+      "id": "point-40b5afe8-5fbc-48e6-b1c7-14309d60dd42",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-zmxv2d48:148faa34-f6c0-45f6-89a7-cd671d7e95fd",
+      "changePoints": -2,
+      "note": "证据摘要：E27 md - 诉讼参与人举证材料1",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-zmxv2d48"
+      },
+      "createdAt": "2026-09-29T13:41:51.469Z"
+    },
+    {
+      "id": "point-59fbc153-7d5b-4ee9-bb18-17e065cd8761",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-1ae2k56f:999618e7-71bb-484f-8cb6-be96720f19f9",
+      "changePoints": -2,
+      "note": "证据摘要：E41 md - 质证意见-张长松对王书坡证据-2026-08-03",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-1ae2k56f"
+      },
+      "createdAt": "2026-09-29T13:41:10.582Z"
+    },
+    {
+      "id": "point-33fd7b96-6c2d-4a9f-9bc0-ad351b91ac48",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-a6rxn5oe:ba9f6c1c-015e-47a6-a2eb-311921b7f70f",
+      "changePoints": -2,
+      "note": "证据摘要：E15 被告证据 - 微信图片 20260723145025 34 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-a6rxn5oe"
+      },
+      "createdAt": "2026-09-29T13:36:57.993Z"
+    },
+    {
+      "id": "point-22a15f54-8058-4bd1-affc-a4794fa72859",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-2kj95xfr:5decb4f7-9d2c-484c-9dde-95080e5ede4c",
+      "changePoints": -2,
+      "note": "证据摘要：E13 被告证据 - 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-2kj95xfr"
+      },
+      "createdAt": "2026-09-29T13:36:37.489Z"
+    },
+    {
+      "id": "point-c58da893-8aa6-4982-b692-31e611b1a258",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-mafacs5y:afb32d42-9ccf-413e-b850-ea7c8a3338f9",
+      "changePoints": -2,
+      "note": "证据摘要：E10 被告法律文书 - 被告证据清单",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-mafacs5y"
+      },
+      "createdAt": "2026-09-29T13:36:24.476Z"
+    },
+    {
+      "id": "point-82352853-9379-4953-889d-1815ea674655",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-99mtbybj:6a1544c3-9dbb-4408-88b5-41f3d7359c8a",
+      "changePoints": -2,
+      "note": "证据摘要：E01 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-99mtbybj"
+      },
+      "createdAt": "2026-09-29T11:24:57.421Z"
+    },
+    {
+      "id": "point-b37f9dfa-25ec-4085-b163-61b170b03a76",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-pk76pc21:c017f57b-578d-49fc-bea7-146433c85533",
+      "changePoints": -2,
+      "note": "证据摘要：E02 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-pk76pc21"
+      },
+      "createdAt": "2026-09-29T11:24:53.283Z"
+    },
+    {
+      "id": "point-8ecba47f-c8ef-4679-a9f5-95d2ebf7e3bf",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-sxa63o1x:8bbfb14a-5725-4338-a3c0-f44d88777062",
+      "changePoints": -2,
+      "note": "证据摘要：E05 微信图片 20260723145350 36 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-sxa63o1x"
+      },
+      "createdAt": "2026-09-29T11:24:31.969Z"
+    },
+    {
+      "id": "point-b8d180d1-d0de-41d8-b8f3-05481c4c7acb",
+      "organizationId": "9783971a-1984-4cb7-bd59-1c563208dd8e",
+      "userId": "142f2a18-77f4-48b0-8dbd-4117cc48f830",
+      "entryType": "adjust",
+      "operationKey": "signup-bonus:142f2a18-77f4-48b0-8dbd-4117cc48f830",
+      "changePoints": 300,
+      "note": "新用户注册赠送 300 积分",
+      "metadata": {
+        "source": "signup_bonus"
+      },
+      "createdAt": "2026-09-29T10:19:19.145Z"
+    },
+    {
+      "id": "point-d282b8c4-e5be-460f-92b1-b759c86832a2",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-nuisjgnn:a61e8b81-9ea0-4c0d-8c85-9c65ae6d5916",
+      "changePoints": -2,
+      "note": "证据摘要：E04 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-nuisjgnn"
+      },
+      "createdAt": "2026-09-29T10:03:55.339Z"
+    },
+    {
+      "id": "point-0edde921-5615-460d-a0a9-a87822eaa5ab",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-9npqnjb3:c0c8778b-4591-44a2-9603-7ddbc3f67799",
+      "changePoints": -2,
+      "note": "证据摘要：E03 微信图片 20260723145025 35 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-9npqnjb3"
+      },
+      "createdAt": "2026-09-29T09:33:16.132Z"
+    },
+    {
+      "id": "point-6cd07c98-37f7-4346-85dc-8e8b4c25d6b9",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ixelz4h0:c0d5d725-ee4f-4cae-8528-2512a0a47121",
+      "changePoints": -2,
+      "note": "证据摘要：E01 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ixelz4h0"
+      },
+      "createdAt": "2026-09-29T09:33:03.863Z"
+    },
+    {
+      "id": "point-a1bf7bde-2489-46c6-9776-0bcaef0eebc0",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-138jyudy:12152db1-cff8-4518-826d-905c2a006f4f",
+      "changePoints": -2,
+      "note": "证据摘要：E02 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-t2ajtt28",
+        "resourceType": "evidence",
+        "resourceId": "evidence-138jyudy"
+      },
+      "createdAt": "2026-09-29T09:27:55.253Z"
+    },
+    {
+      "id": "point-7743ab8f-7970-43cc-a7c0-b2bb1d1465b0",
+      "organizationId": "8fb67eab-61f3-4bfc-ad41-b8bdad5e010f",
+      "userId": "76bf94c0-22b3-46fe-9e73-7917b8423ad6",
+      "entryType": "adjust",
+      "operationKey": "signup-bonus:76bf94c0-22b3-46fe-9e73-7917b8423ad6",
+      "changePoints": 300,
+      "note": "新用户注册赠送 300 积分",
+      "metadata": {
+        "source": "signup_bonus"
+      },
+      "createdAt": "2026-09-29T09:22:55.722Z"
+    },
+    {
+      "id": "point-943ce9ed-97b5-49c0-a1fc-7ea08ecb40d8",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-1m667pne:d3348d7e-8e0b-440f-9b42-965455aa96f3",
+      "changePoints": -2,
+      "note": "证据摘要：E02 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-1m667pne"
+      },
+      "createdAt": "2026-09-29T09:04:10.742Z"
+    },
+    {
+      "id": "point-f5447e16-23eb-4fe2-87fa-a2ce87734383",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-8fge7zlp:f5bc2e49-81d4-48d7-b86b-3a217ee750d3",
+      "changePoints": -2,
+      "note": "证据摘要：E01 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-fscul5yv",
+        "resourceType": "evidence",
+        "resourceId": "evidence-8fge7zlp"
+      },
+      "createdAt": "2026-09-29T09:04:06.664Z"
+    },
+    {
+      "id": "point-770c98f1-f1c8-4d2e-85fc-2c4035a2b038",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-ds0tjw31:f9cfca23-c976-454d-bd0d-125505adf491",
+      "changePoints": -2,
+      "note": "证据摘要：E02 微信图片 20260723144042 33 861",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-ds0tjw31"
+      },
+      "createdAt": "2026-09-29T08:09:55.855Z"
+    },
+    {
+      "id": "point-a7a6c926-0ffa-456d-b68d-29226a5d847c",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "consume",
+      "actionType": "evidence_summary",
+      "operationKey": "evidence_summary:evidence-o6krwbxt:59fe190a-d469-4348-b9da-fb80a71d6f16",
+      "changePoints": -2,
+      "note": "证据摘要：E01 微信图片 20260723094823 116 13",
+      "metadata": {
+        "units": 1,
+        "workspaceId": "case-c3jylmis",
+        "resourceType": "evidence",
+        "resourceId": "evidence-o6krwbxt"
+      },
+      "createdAt": "2026-09-29T08:09:54.113Z"
+    },
+    {
+      "id": "point-5a1f862e-90b1-4a29-bfc8-843eecae82ca",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "entryType": "adjust",
+      "operationKey": "signup-bonus:c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "changePoints": 300,
+      "note": "新用户注册赠送 300 积分",
+      "metadata": {
+        "source": "signup_bonus"
+      },
+      "createdAt": "2026-09-29T08:08:47.477Z"
+    },
+    {
+      "id": "point-7277bb2c-d4e4-4e11-abd2-dc67a79767d1",
+      "organizationId": "443fbb67-4ee8-40ec-bc01-795582c5fdfb",
+      "userId": "df677e28-9a13-4c87-beb6-975330aed8e3",
+      "entryType": "adjust",
+      "operationKey": "signup-bonus:df677e28-9a13-4c87-beb6-975330aed8e3",
+      "changePoints": 300,
+      "note": "新用户注册赠送 300 积分",
+      "metadata": {
+        "source": "signup_bonus"
+      },
+      "createdAt": "2026-09-29T05:09:32.773Z"
+    },
+    {
+      "id": "point-20a45366-0a71-4ae8-8d53-c91ea19d7158",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "orderId": "a9f8d866-5d3a-4824-a182-659624fa53b3",
+      "entryType": "recharge",
+      "changePoints": 500,
+      "note": "支付宝充值 500 积分",
+      "createdAt": "2026-09-27T11:45:54.070Z"
+    },
+    {
+      "id": "point-c126edae-936c-4b19-aaa8-912cc1daa83b",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "orderId": "e529d518-0321-4d96-afd2-d3c92cdf7a53",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "支付宝充值 100 积分",
+      "createdAt": "2026-09-27T11:23:54.827Z"
+    },
+    {
+      "id": "point-11659ad9-1bd3-4515-866d-20e7fa6edb8f",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "orderId": "b6c78a89-2dde-45f3-aa98-de798908e63e",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "微信支付充值 100 积分",
+      "createdAt": "2026-09-27T07:34:10.505Z"
+    },
+    {
+      "id": "point-0f8f8733-ac29-47cd-bbb0-73c3144e73d3",
+      "organizationId": "f623c476-6237-484e-b305-a87e40cbacbc",
+      "userId": "d65cfe78-5aef-480a-a0b8-ebc898b67cf0",
+      "orderId": "40100621-ff47-48ae-b2fa-506949be143f",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "支付宝充值 100 积分",
+      "createdAt": "2026-09-27T07:09:13.821Z"
+    },
+    {
+      "id": "point-bc10cdee-d17d-453e-9712-32e52af512c8",
+      "organizationId": "d41bf957-950c-4339-b638-9cf9469f5371",
+      "userId": "2d317580-425e-4a9e-96d5-798822b47728",
+      "orderId": "45072237-a6c4-4f18-a83e-dbf47cc74e7b",
+      "entryType": "recharge",
+      "changePoints": 100,
+      "note": "支付宝充值 100 积分",
+      "createdAt": "2026-09-27T05:54:18.749Z"
+    }
+  ],
+  "paymentOrders": [
+    {
+      "id": "f7bfd0a3-14e6-4bde-ab0e-49cd28c0f065",
+      "orderNo": "LV20261005224923629",
+      "packageId": "pro-monthly",
+      "packageName": "专业版月付",
+      "amountFen": 19900,
+      "points": 2500,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224923629",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224923629",
+      "providerOrderId": "dev-alipay-LV20261005224923629",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-10-05T14:49:23.206Z",
+      "updatedAt": "2026-10-05T14:49:25.956Z",
+      "expiresAt": "2026-10-05T15:19:23.206Z",
+      "organizationId": "eeb1d1e3-dd14-4129-96b5-b8e5f13e15bc",
+      "userId": "c363aaac-5cb3-482c-beb9-d51957b5ca23",
+      "paidAt": "2026-10-05T14:49:25.956Z",
+      "pointLogId": "point-d78c5057-bcda-4997-b201-c32bf069a92f"
+    },
+    {
+      "id": "9667f204-db13-4765-85cc-a35ecc61816c",
+      "orderNo": "LV20261005224859510",
+      "packageId": "points-500",
+      "packageName": "积分包 500",
+      "amountFen": 4500,
+      "points": 500,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224859510",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224859510",
+      "providerOrderId": "dev-alipay-LV20261005224859510",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-10-05T14:48:59.711Z",
+      "updatedAt": "2026-10-05T14:49:01.893Z",
+      "expiresAt": "2026-10-05T15:18:59.711Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "paidAt": "2026-10-05T14:49:01.893Z",
+      "pointLogId": "point-640af851-8f33-4af9-bae1-243f70bb8dbe"
+    },
+    {
+      "id": "8fcc58a1-5430-47fd-97b2-96a2053d46ea",
+      "orderNo": "LV20261005224854703",
+      "packageId": "points-500",
+      "packageName": "积分包 500",
+      "amountFen": 4500,
+      "points": 500,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224854703",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224854703",
+      "providerOrderId": "dev-alipay-LV20261005224854703",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-10-05T14:48:54.324Z",
+      "updatedAt": "2026-10-05T14:48:56.807Z",
+      "expiresAt": "2026-10-05T15:18:54.323Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "paidAt": "2026-10-05T14:48:56.807Z",
+      "pointLogId": "point-3b13e299-15c0-42eb-a905-5f806b8fd488"
+    },
+    {
+      "id": "45f656e0-a53c-44d9-ae63-ebdffe06ff71",
+      "orderNo": "LV20261005224849122",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224849122",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224849122",
+      "providerOrderId": "dev-alipay-LV20261005224849122",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-10-05T14:48:49.395Z",
+      "updatedAt": "2026-10-05T14:48:52.290Z",
+      "expiresAt": "2026-10-05T15:18:49.394Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "paidAt": "2026-10-05T14:48:52.290Z",
+      "pointLogId": "point-c1e1161d-b19e-46f8-867b-b9c2a15fa167"
+    },
+    {
+      "id": "4ee15990-247d-43c4-a948-489dfc7f0c26",
+      "orderNo": "LV20261005224842990",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224842990",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005224842990",
+      "providerOrderId": "dev-alipay-LV20261005224842990",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-10-05T14:48:42.112Z",
+      "updatedAt": "2026-10-05T14:48:45.945Z",
+      "expiresAt": "2026-10-05T15:18:42.111Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "paidAt": "2026-10-05T14:48:45.945Z",
+      "pointLogId": "point-ff8eb3dc-c4f2-4141-bcb8-1eca7d7784c8"
+    },
+    {
+      "id": "c48cf968-b8e4-427e-a812-77ffff5198b8",
+      "orderNo": "LV20261005200015496",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "wechat",
+      "status": "paid",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/wechat/LV20261005200015496",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/wechat/LV20261005200015496",
+      "providerOrderId": "dev-wechat-LV20261005200015496",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-10-05T12:00:15.863Z",
+      "updatedAt": "2026-10-05T12:00:35.535Z",
+      "expiresAt": "2026-10-05T12:30:15.862Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e",
+      "paidAt": "2026-10-05T12:00:35.535Z",
+      "pointLogId": "point-a94351da-ec93-408c-b59b-c8fe8c378a3b"
+    },
+    {
+      "id": "3de981fc-a28e-49d8-9c67-44a2bc4cd7f7",
+      "orderNo": "LV20261005200004806",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "pending",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005200004806",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005200004806",
+      "providerOrderId": "dev-alipay-LV20261005200004806",
+      "providerMessage": "开发环境模拟支付待完成",
+      "createdAt": "2026-10-05T12:00:04.229Z",
+      "updatedAt": "2026-10-05T15:11:36.713Z",
+      "expiresAt": "2026-10-05T12:30:04.228Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e"
+    },
+    {
+      "id": "73ad899c-04ac-415f-a633-5b631a281720",
+      "orderNo": "LV20261005195954881",
+      "packageId": "pro-monthly",
+      "packageName": "专业版月付",
+      "amountFen": 19900,
+      "points": 2500,
+      "channel": "alipay",
+      "status": "pending",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005195954881",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261005195954881",
+      "providerOrderId": "dev-alipay-LV20261005195954881",
+      "providerMessage": "开发环境模拟支付待完成",
+      "createdAt": "2026-10-05T11:59:54.867Z",
+      "updatedAt": "2026-10-05T12:00:01.991Z",
+      "expiresAt": "2026-10-05T12:29:54.866Z",
+      "organizationId": "816251e7-8a10-4a4a-9e04-5bbc92cff0e8",
+      "userId": "0c09334b-3fde-479f-a65b-a9a970c6dd6e"
+    },
+    {
+      "id": "4f6e9283-57c8-4ad2-ac71-24339e2e5ccb",
+      "orderNo": "LV20261001130758606",
+      "packageId": "pro-monthly",
+      "packageName": "专业版月付",
+      "amountFen": 19900,
+      "points": 2500,
+      "channel": "alipay",
+      "status": "pending",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261001130758606",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20261001130758606",
+      "providerOrderId": "dev-alipay-LV20261001130758606",
+      "providerMessage": "开发环境模拟支付待完成",
+      "createdAt": "2026-10-01T05:07:58.952Z",
+      "updatedAt": "2026-10-05T14:48:34.552Z",
+      "expiresAt": "2026-10-01T05:37:58.951Z",
+      "organizationId": "6f845720-126b-494b-b7c3-a9a6269bd9ce",
+      "userId": "d1ffba5b-2c83-4cde-beb9-7099f591d3d3"
+    },
+    {
+      "id": "2526c005-92ee-480e-89d5-f0600e382c04",
+      "orderNo": "LV20260928160919653",
+      "packageId": "pro-monthly",
+      "packageName": "专业版月付",
+      "amountFen": 19900,
+      "points": 2500,
+      "channel": "alipay",
+      "status": "pending",
+      "qrCodeContent": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20260928160919653",
+      "paymentUrl": "https://lawagent.zhijing.fun/dev-pay/alipay/LV20260928160919653",
+      "providerOrderId": "dev-alipay-LV20260928160919653",
+      "providerMessage": "开发环境模拟支付待完成",
+      "createdAt": "2026-09-28T08:09:19.123Z",
+      "updatedAt": "2026-10-01T05:27:05.066Z",
+      "expiresAt": "2026-09-28T08:39:19.122Z",
+      "organizationId": "6f845720-126b-494b-b7c3-a9a6269bd9ce",
+      "userId": "d1ffba5b-2c83-4cde-beb9-7099f591d3d3"
+    },
+    {
+      "id": "153eb0bc-f2e5-4831-811a-3664188808d1",
+      "orderNo": "LV20260927201118967",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "pending",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927201118967",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927201118967",
+      "providerOrderId": "dev-alipay-LV20260927201118967",
+      "providerMessage": "开发环境模拟支付待完成",
+      "createdAt": "2026-09-27T12:11:18.778Z",
+      "updatedAt": "2026-09-28T08:09:12.962Z",
+      "expiresAt": "2026-09-27T12:41:18.777Z",
+      "organizationId": "6f845720-126b-494b-b7c3-a9a6269bd9ce",
+      "userId": "d1ffba5b-2c83-4cde-beb9-7099f591d3d3"
+    },
+    {
+      "id": "b0de4ae8-6f8d-498a-983f-bbec0b1ab0a4",
+      "orderNo": "LV20260927194555602",
+      "packageId": "points-500",
+      "packageName": "积分包 500",
+      "amountFen": 4500,
+      "points": 500,
+      "channel": "alipay",
+      "status": "pending",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927194555602",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927194555602",
+      "providerOrderId": "dev-alipay-LV20260927194555602",
+      "providerMessage": "开发环境模拟支付待完成",
+      "createdAt": "2026-09-27T11:45:55.358Z",
+      "updatedAt": "2026-09-27T12:08:00.670Z",
+      "expiresAt": "2026-09-27T12:15:55.357Z",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589"
+    },
+    {
+      "id": "a9f8d866-5d3a-4824-a182-659624fa53b3",
+      "orderNo": "LV20260927194549984",
+      "packageId": "points-500",
+      "packageName": "积分包 500",
+      "amountFen": 4500,
+      "points": 500,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927194549984",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927194549984",
+      "providerOrderId": "dev-alipay-LV20260927194549984",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-09-27T11:45:49.664Z",
+      "updatedAt": "2026-09-27T11:45:54.070Z",
+      "expiresAt": "2026-09-27T12:15:49.663Z",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "paidAt": "2026-09-27T11:45:54.070Z",
+      "pointLogId": "point-20a45366-0a71-4ae8-8d53-c91ea19d7158"
+    },
+    {
+      "id": "e529d518-0321-4d96-afd2-d3c92cdf7a53",
+      "orderNo": "LV20260927192341124",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927192341124",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927192341124",
+      "providerOrderId": "dev-alipay-LV20260927192341124",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-09-27T11:23:41.240Z",
+      "updatedAt": "2026-09-27T11:23:54.827Z",
+      "expiresAt": "2026-09-27T11:53:41.239Z",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "paidAt": "2026-09-27T11:23:54.827Z",
+      "pointLogId": "point-c126edae-936c-4b19-aaa8-912cc1daa83b"
+    },
+    {
+      "id": "b6c78a89-2dde-45f3-aa98-de798908e63e",
+      "orderNo": "LV20260927153359805",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "wechat",
+      "status": "paid",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/wechat/LV20260927153359805",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/wechat/LV20260927153359805",
+      "providerOrderId": "dev-wechat-LV20260927153359805",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-09-27T07:33:59.010Z",
+      "updatedAt": "2026-09-27T07:34:10.505Z",
+      "expiresAt": "2026-09-27T08:03:59.009Z",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "paidAt": "2026-09-27T07:34:10.505Z",
+      "pointLogId": "point-11659ad9-1bd3-4515-866d-20e7fa6edb8f"
+    },
+    {
+      "id": "40100621-ff47-48ae-b2fa-506949be143f",
+      "orderNo": "LV20260927150913847",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927150913847",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927150913847",
+      "providerOrderId": "dev-alipay-LV20260927150913847",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-09-27T07:09:13.806Z",
+      "updatedAt": "2026-09-27T07:09:13.821Z",
+      "expiresAt": "2026-09-27T07:39:13.805Z",
+      "organizationId": "f623c476-6237-484e-b305-a87e40cbacbc",
+      "userId": "d65cfe78-5aef-480a-a0b8-ebc898b67cf0",
+      "paidAt": "2026-09-27T07:09:13.821Z",
+      "pointLogId": "point-0f8f8733-ac29-47cd-bbb0-73c3144e73d3"
+    },
+    {
+      "id": "45072237-a6c4-4f18-a83e-dbf47cc74e7b",
+      "orderNo": "LV20260927135418340",
+      "packageId": "points-100",
+      "packageName": "积分包 100",
+      "amountFen": 1000,
+      "points": 100,
+      "channel": "alipay",
+      "status": "paid",
+      "qrCodeContent": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927135418340",
+      "paymentUrl": "http://127.0.0.1:8788/dev-pay/alipay/LV20260927135418340",
+      "providerOrderId": "dev-alipay-LV20260927135418340",
+      "providerMessage": "DEVELOPMENT_SIMULATED_PAID",
+      "createdAt": "2026-09-27T05:54:18.733Z",
+      "updatedAt": "2026-09-27T05:54:18.749Z",
+      "expiresAt": "2026-09-27T06:24:18.732Z",
+      "organizationId": "d41bf957-950c-4339-b638-9cf9469f5371",
+      "userId": "2d317580-425e-4a9e-96d5-798822b47728",
+      "paidAt": "2026-09-27T05:54:18.749Z",
+      "pointLogId": "point-bc10cdee-d17d-453e-9712-32e52af512c8"
+    }
+  ],
+  "invoiceRequests": [
+    {
+      "id": "invoice-f78d6de3-401c-4c9d-9b07-4f06ea14e7cd",
+      "organizationId": "a2299179-634b-40ec-adf1-417017dcee08",
+      "userId": "b484eefa-f32b-4c6c-b598-c5b1d3c5c589",
+      "orderId": "LV20260927153359805",
+      "title": "按钮验证律所",
+      "amountLabel": "¥10.00",
+      "status": "submitted",
+      "createdAt": "2026-09-27T07:35:30.204Z"
+    },
+    {
+      "id": "invoice-ccbfcf25-6c89-4b91-a3b1-0b023e0f0255",
+      "organizationId": "f623c476-6237-484e-b305-a87e40cbacbc",
+      "userId": "d65cfe78-5aef-480a-a0b8-ebc898b67cf0",
+      "orderId": "LV20260927150913847",
+      "title": "??????",
+      "amountLabel": "¥10.00",
+      "status": "submitted",
+      "createdAt": "2026-09-27T07:09:13.834Z"
+    }
+  ],
+  "userFeedbacks": [
+    {
+      "id": "feedback-29e94c43-3409-4d6b-9533-35acb9dba853",
+      "organizationId": "26d3adcd-f203-427b-ab9d-16f5b8221a78",
+      "userId": "c870eb39-7925-4b07-826b-5c26b2a92d21",
+      "membershipId": "f9f02562-3605-428a-9ab5-9a126531765f",
+      "userEmail": "feedback.20261006153733@test.local",
+      "userName": "??????",
+      "source": "desktop_app",
+      "feedbackType": "bug",
+      "title": "???????????",
+      "content": "??????????????,???? app ? cloud-server ?? admin ????????????:20261006153733",
+      "contact": "feedback.20261006153733@test.local",
+      "appVersion": "0.1.16-test",
+      "clientPlatform": "electron / win32",
+      "pageContext": "workspace/overview",
+      "caseName": "??????",
+      "status": "reviewing",
+      "createdAt": "2026-10-06T07:37:33.652Z",
+      "updatedAt": "2026-10-06T07:37:33.755Z",
+      "adminNote": "??????????",
+      "handledAt": "2026-10-06T07:37:33.755Z",
+      "handledByEmail": "admin"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+﻿{
+    "web":  {
+                "stdout":  "D:\\trae_projects\\lexVerify\\tmp\\platform-runtime\\web.out.log",
+                "pid":  63148,
+                "stderr":  "D:\\trae_projects\\lexVerify\\tmp\\platform-runtime\\web.err.log"
+            },
+    "startedAt":  "2026-10-07T01:46:56",
+    "cloudServer":  {
+                        "stdout":  "D:\\trae_projects\\lexVerify\\tmp\\platform-runtime\\cloud-server.out.log",
+                        "pid":  71732,
+                        "stderr":  "D:\\trae_projects\\lexVerify\\tmp\\platform-runtime\\cloud-server.err.log"
+                    }
+}

@@ -1,0 +1,2 @@
+Web preview server listening on http://0.0.0.0:4273
+Proxying /api/* to http://127.0.0.1:8788

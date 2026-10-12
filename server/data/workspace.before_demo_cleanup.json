@@ -1,0 +1,2900 @@
+{
+  "user": {
+    "id": "user-di0pc4uz",
+    "name": "Hexuanfang",
+    "phone": "13800000000",
+    "email": "",
+    "organization": "智镜科技",
+    "title": "合伙人 / 诉讼律师",
+    "points": 160,
+    "pointLogs": [
+      {
+        "id": "point-t142v45o",
+        "type": "recharge",
+        "amount": 200,
+        "note": "初始化演示积分",
+        "createdAt": "2026-09-24T17:53:41.557Z"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "case-sfnm74t5",
+      "name": "王某买卖合同纠纷",
+      "description": "演示案件，用于验证证据锚定与左右分屏核验流程。",
+      "createdAt": "2026-09-24T17:53:41.557Z",
+      "status": "in_review"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "evidence-6yuu7ojw",
+      "caseId": "case-sfnm74t5",
+      "number": "E01",
+      "name": "微信聊天记录截图",
+      "type": "image",
+      "fileName": "微信截图_付款催告.png",
+      "uploadedAt": "2026-09-24T17:53:41.557Z",
+      "ocrText": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约定支付剩余货款 68000 元”。",
+      "previewDataUrl": "data:image/svg+xml;charset=utf-8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221200%22%20height%3D%22720%22%3E%0A%20%20%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20fill%3D%22%23f7f9ff%22%2F%3E%0A%20%20%3Crect%20x%3D%2280%22%20y%3D%22110%22%20width%3D%221040%22%20height%3D%22500%22%20rx%3D%2228%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23d7def2%22%2F%3E%0A%20%20%3Ctext%20x%3D%22140%22%20y%3D%22190%22%20font-size%3D%2234%22%20fill%3D%22%233551c8%22%20font-family%3D%22Microsoft%20YaHei%22%3E%E5%BE%AE%E4%BF%A1%E8%81%8A%E5%A4%A9%E8%AE%B0%E5%BD%95%E6%88%AA%E5%9B%BE%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22140%22%20y%3D%22270%22%20font-size%3D%2228%22%20fill%3D%22%23222222%22%20font-family%3D%22Microsoft%20YaHei%22%3E2026%E5%B9%B44%E6%9C%8812%E6%97%A5%EF%BC%8C%E8%A2%AB%E5%91%8A%E5%9C%A8%E5%BE%AE%E4%BF%A1%E4%B8%AD%E7%A1%AE%E8%AE%A4%E2%80%9C%E8%B4%A7%E5%B7%B2%E7%BB%8F%E6%94%B6%E5%88%B0%EF%BC%8C%E6%9C%AC%E5%91%A8%E4%BA%94%E5%89%8D%E5%AE%89%E6%8E%92%E5%B0%BE%E6%AC%BE%E2%80%9D%E3%80%82%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22140%22%20y%3D%22330%22%20font-size%3D%2228%22%20fill%3D%22%23222222%22%20font-family%3D%22Microsoft%20YaHei%22%3E%E5%90%8C%E6%97%A5%E5%8E%9F%E5%91%8A%E5%9B%9E%E5%A4%8D%E2%80%9C%E8%AF%B7%E6%8C%89%E5%90%88%E5%90%8C%E7%BA%A6%E5%AE%9A%E6%94%AF%E4%BB%98%E5%89%A9%E4%BD%99%E8%B4%A7%E6%AC%BE%2068000%20%E5%85%83%E2%80%9D%E3%80%82%3C%2Ftext%3E%0A%20%20%3Crect%20x%3D%22130%22%20y%3D%22388%22%20width%3D%22780%22%20height%3D%2276%22%20rx%3D%2216%22%20fill%3D%22%23fff1ad%22%2F%3E%0A%20%20%3Ctext%20x%3D%22155%22%20y%3D%22435%22%20font-size%3D%2228%22%20fill%3D%22%238a5c00%22%20font-family%3D%22Microsoft%20YaHei%22%3E%E9%AB%98%E4%BA%AE%E5%AE%9A%E4%BD%8D%EF%BC%9A%E4%BB%98%E6%AC%BE%E6%89%BF%E8%AF%BA%E4%B8%8E%E4%BB%98%E6%AC%BE%E9%87%91%E9%A2%9D%E8%A1%A8%E8%BF%B0%3C%2Ftext%3E%0A%3C%2Fsvg%3E%0A",
+      "sourceDataUrl": "data:image/svg+xml;charset=utf-8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221200%22%20height%3D%22720%22%3E%0A%20%20%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20fill%3D%22%23f7f9ff%22%2F%3E%0A%20%20%3Crect%20x%3D%2280%22%20y%3D%22110%22%20width%3D%221040%22%20height%3D%22500%22%20rx%3D%2228%22%20fill%3D%22%23ffffff%22%20stroke%3D%22%23d7def2%22%2F%3E%0A%20%20%3Ctext%20x%3D%22140%22%20y%3D%22190%22%20font-size%3D%2234%22%20fill%3D%22%233551c8%22%20font-family%3D%22Microsoft%20YaHei%22%3E%E5%BE%AE%E4%BF%A1%E8%81%8A%E5%A4%A9%E8%AE%B0%E5%BD%95%E6%88%AA%E5%9B%BE%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22140%22%20y%3D%22270%22%20font-size%3D%2228%22%20fill%3D%22%23222222%22%20font-family%3D%22Microsoft%20YaHei%22%3E2026%E5%B9%B44%E6%9C%8812%E6%97%A5%EF%BC%8C%E8%A2%AB%E5%91%8A%E5%9C%A8%E5%BE%AE%E4%BF%A1%E4%B8%AD%E7%A1%AE%E8%AE%A4%E2%80%9C%E8%B4%A7%E5%B7%B2%E7%BB%8F%E6%94%B6%E5%88%B0%EF%BC%8C%E6%9C%AC%E5%91%A8%E4%BA%94%E5%89%8D%E5%AE%89%E6%8E%92%E5%B0%BE%E6%AC%BE%E2%80%9D%E3%80%82%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22140%22%20y%3D%22330%22%20font-size%3D%2228%22%20fill%3D%22%23222222%22%20font-family%3D%22Microsoft%20YaHei%22%3E%E5%90%8C%E6%97%A5%E5%8E%9F%E5%91%8A%E5%9B%9E%E5%A4%8D%E2%80%9C%E8%AF%B7%E6%8C%89%E5%90%88%E5%90%8C%E7%BA%A6%E5%AE%9A%E6%94%AF%E4%BB%98%E5%89%A9%E4%BD%99%E8%B4%A7%E6%AC%BE%2068000%20%E5%85%83%E2%80%9D%E3%80%82%3C%2Ftext%3E%0A%20%20%3Crect%20x%3D%22130%22%20y%3D%22388%22%20width%3D%22780%22%20height%3D%2276%22%20rx%3D%2216%22%20fill%3D%22%23fff1ad%22%2F%3E%0A%20%20%3Ctext%20x%3D%22155%22%20y%3D%22435%22%20font-size%3D%2228%22%20fill%3D%22%238a5c00%22%20font-family%3D%22Microsoft%20YaHei%22%3E%E9%AB%98%E4%BA%AE%E5%AE%9A%E4%BD%8D%EF%BC%9A%E4%BB%98%E6%AC%BE%E6%89%BF%E8%AF%BA%E4%B8%8E%E4%BB%98%E6%AC%BE%E9%87%91%E9%A2%9D%E8%A1%A8%E8%BF%B0%3C%2Ftext%3E%0A%3C%2Fsvg%3E%0A",
+      "sourceMimeType": "image/svg+xml",
+      "anchorHint": "付款承诺",
+      "relativePath": "微信截图_付款催告.png",
+      "summaryStatus": "failed",
+      "summaryError": "LLM 调用失败（400）：{\"error\":{\"message\":\".messages[1]: Unsupported image_url format (request_id: 114c1d15-461a-4a38-a46c-ee63cc9fefb0)\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+      "summaryUpdatedAt": "2026-09-24T23:13:18.179Z"
+    },
+    {
+      "id": "evidence-kdk0ccv0",
+      "caseId": "case-sfnm74t5",
+      "number": "E02",
+      "name": "买卖合同",
+      "type": "word",
+      "fileName": "买卖合同.docx",
+      "uploadedAt": "2026-09-24T17:53:41.557Z",
+      "ocrText": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万分之五承担违约责任。",
+      "sourceMimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "anchorHint": "付款期限与违约责任",
+      "relativePath": "买卖合同.docx",
+      "summaryStatus": "ready",
+      "summaryText": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承担违约责任。\n1. 合同第3条约定被告应于收货后七日内支付剩余货款。\n2. 合同第7条约定逾期付款应按未付款项每日万分之五承担违约责任。\n3. 该证据为买卖合同文本，包含付款期限和逾期违约责任条款。",
+      "summaryUpdatedAt": "2026-09-24T23:13:21.703Z"
+    }
+  ],
+  "evidenceFragments": [
+    {
+      "id": "evidence-6yuu7ojw-fragment-1",
+      "caseId": "case-sfnm74t5",
+      "evidenceId": "evidence-6yuu7ojw",
+      "fragmentType": "ocr_block",
+      "sourceKind": "ocr",
+      "sequence": 1,
+      "locator": "付款承诺 1",
+      "text": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。 同日原告回复“请按合同约定支付剩余货款 68000 元”。",
+      "summary": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。 同日原告回复“请按合同约定支付剩余货款 68000 元”。",
+      "keywords": [
+        "e01",
+        "微信聊天记录截图",
+        "付款承诺",
+        "2026年4月12日",
+        "被告在微信中确认“货已经收到",
+        "本周五前安排尾款”",
+        "同日原告回复“请按合同约定支付剩余货款",
+        "68000",
+        "元”"
+      ],
+      "confidence": 0.78
+    },
+    {
+      "id": "evidence-kdk0ccv0-fragment-1",
+      "caseId": "case-sfnm74t5",
+      "evidenceId": "evidence-kdk0ccv0",
+      "fragmentType": "paragraph",
+      "sourceKind": "native_text",
+      "sequence": 1,
+      "locator": "第 1 段",
+      "text": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万分之五承担违约责任。",
+      "summary": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万分之五承担违约责任。",
+      "keywords": [
+        "e02",
+        "买卖合同",
+        "合同第3条约定",
+        "被告应于收货后七日内支付剩余货款",
+        "合同第7条约定",
+        "逾期付款的",
+        "应按未付款项每日万分之五承担违约责任"
+      ],
+      "confidence": 0.9
+    }
+  ],
+  "evidenceInsights": [
+    {
+      "id": "evidence-insight-i3pn84io",
+      "caseId": "case-sfnm74t5",
+      "evidenceId": "evidence-6yuu7ojw",
+      "version": 1,
+      "summary": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。",
+      "keyFacts": [
+        "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。",
+        "同日原告回复“请按合同约定支付剩余货款 68000 元”。"
+      ],
+      "entities": [
+        "微信聊天记录截图",
+        "被告在微信",
+        "请按合同"
+      ],
+      "timelineEvents": [
+        "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”",
+        "4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”"
+      ],
+      "amounts": [
+        "68000 元"
+      ],
+      "positions": [],
+      "issues": [],
+      "sourceFragmentIds": [
+        "evidence-6yuu7ojw-fragment-1"
+      ],
+      "confidence": 0.68,
+      "status": "ready",
+      "updatedAt": "2026-09-24T23:13:18.179Z"
+    },
+    {
+      "id": "evidence-insight-kn3km1ix",
+      "caseId": "case-sfnm74t5",
+      "evidenceId": "evidence-kdk0ccv0",
+      "version": 1,
+      "summary": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承担违约责任。",
+      "keyFacts": [
+        "合同第3条约定被告应于收货后七日内支付剩余货款。",
+        "合同第7条约定逾期付款应按未付款项每日万分之五承担违约责任。",
+        "该证据为买卖合同文本，包含付款期限和逾期违约责任条款。"
+      ],
+      "entities": [
+        "被告",
+        "买卖合同"
+      ],
+      "timelineEvents": [
+        "被告收货后七日内应支付剩余货款"
+      ],
+      "amounts": [
+        "每日万分之五"
+      ],
+      "positions": [
+        "支持原告主张被告逾期付款应承担违约责任。",
+        "支持原告主张被告应在收货后七日内支付剩余货款。"
+      ],
+      "issues": [
+        "仅提供合同条款片段，未提供完整合同文本。",
+        "未明确合同签订时间、收货时间及未付款项具体金额。",
+        "证据为文本摘录，需核对原件以确认真实性和完整性。"
+      ],
+      "sourceFragmentIds": [
+        "evidence-kdk0ccv0-fragment-1"
+      ],
+      "confidence": 0.82,
+      "status": "ready",
+      "updatedAt": "2026-09-24T23:13:21.703Z"
+    }
+  ],
+  "caseContextMemories": [
+    {
+      "id": "case-memory-34mkpo2n",
+      "caseId": "case-sfnm74t5",
+      "version": 2,
+      "summary": "本案为王某买卖合同纠纷的演示案件，用于验证证据锚定与左右分屏核验流程。现有证据包括微信聊天记录截图（E01）和买卖合同文本（E02）。E01显示2026年4月12日被告在微信中确认收到货物并承诺本周五前安排尾款，同日原告要求按合同支付剩余货款68000元。E02显示合同约定收货后七日内支付剩余货款，逾期按未付款项每日万分之五承担违约责任。目前证据可初步支持原告关于被告应付款及逾期违约责任的主张，但合同签订时间、实际收货时间、未付款项具体金额等关键事实尚待进一步证据确认。",
+      "parties": [
+        "原告：王某",
+        "被告：买卖合同相对方（姓名未在证据中明确）"
+      ],
+      "disputedFacts": [
+        "被告是否已收到货物",
+        "被告是否逾期支付剩余货款",
+        "剩余货款具体金额是否为68000元",
+        "合同签订时间及实际收货时间",
+        "被告是否应承担逾期付款违约责任"
+      ],
+      "timeline": [
+        "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”",
+        "2026年4月12日，原告回复“请按合同约定支付剩余货款 68000 元”",
+        "合同约定：被告收货后七日内应支付剩余货款"
+      ],
+      "paymentFlow": [
+        "原告主张被告应支付剩余货款68000元",
+        "合同约定逾期付款按未付款项每日万分之五承担违约责任"
+      ],
+      "contradictions": [
+        "E01中被告承诺“本周五前安排尾款”未明确具体日期，与E02合同约定的“收货后七日内支付”在付款期限表述上存在潜在不一致，需结合收货时间确定实际履行期限"
+      ],
+      "openQuestions": [
+        "合同签订的具体时间是什么？",
+        "被告实际收货的具体日期是哪一天？",
+        "剩余货款68000元是否已支付？如已支付，支付了多少？",
+        "被告是否已逾期？逾期天数如何计算？",
+        "微信聊天记录中被告的身份是否可确认？",
+        "买卖合同是否有完整原件？合同其他条款内容是什么？"
+      ],
+      "supportMatrix": [
+        {
+          "fact": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”",
+          "evidenceIds": [
+            "evidence-6yuu7ojw"
+          ],
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "fact": "2026年4月12日，原告回复“请按合同约定支付剩余货款 68000 元”",
+          "evidenceIds": [
+            "evidence-6yuu7ojw"
+          ],
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "fact": "合同第3条约定被告应于收货后七日内支付剩余货款",
+          "evidenceIds": [
+            "evidence-kdk0ccv0"
+          ],
+          "evidenceNumbers": [
+            "E02"
+          ]
+        },
+        {
+          "fact": "合同第7条约定逾期付款应按未付款项每日万分之五承担违约责任",
+          "evidenceIds": [
+            "evidence-kdk0ccv0"
+          ],
+          "evidenceNumbers": [
+            "E02"
+          ]
+        },
+        {
+          "fact": "原告主张被告应支付剩余货款68000元",
+          "evidenceIds": [
+            "evidence-6yuu7ojw"
+          ],
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "fact": "原告主张被告逾期付款应承担违约责任",
+          "evidenceIds": [
+            "evidence-kdk0ccv0"
+          ],
+          "evidenceNumbers": [
+            "E02"
+          ]
+        }
+      ],
+      "evidenceInsightIds": [
+        "evidence-insight-i3pn84io",
+        "evidence-insight-kn3km1ix"
+      ],
+      "updatedAt": "2026-09-24T23:31:44.910Z"
+    }
+  ],
+  "draftMemories": [
+    {
+      "id": "draft-memory-zga3xoz4",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "writingGoal": "重新撰写一份判决书",
+      "caseContextMemoryId": "case-memory-34mkpo2n",
+      "usedEvidenceInsightIds": [
+        "evidence-insight-i3pn84io",
+        "evidence-insight-kn3km1ix"
+      ],
+      "paragraphPlans": [
+        {
+          "paragraphId": "paragraph-1-kxiknzqh",
+          "intent": "案号：待补充 案由：买卖合同纠纷",
+          "evidenceNumbers": [
+            "E01",
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-2-bf0bjocd",
+          "intent": "质证人（原告）：王某",
+          "evidenceNumbers": [
+            "E01",
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-3-xdd06l5a",
+          "intent": "质证日期：待补充",
+          "evidenceNumbers": [
+            "E01",
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-4-ysx86167",
+          "intent": "原告王某现就本案中提交的微信聊天记录截图（E01）、买卖合同（E02）等证据材料，发表如下质证意见：",
+          "evidenceNumbers": [
+            "E01",
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-5-gtf0x0dd",
+          "intent": "一、对原告证据一（微信聊天记录截图）的质证意见",
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-6-2hlew59n",
+          "intent": "【对真实性的意见】对该组证据的真实性予以认可。该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合...",
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-7-rcdtvumv",
+          "intent": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；...",
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-8-86xvzqkv",
+          "intent": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证...",
+          "evidenceNumbers": [
+            "E01"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-9-kxmvlyqr",
+          "intent": "二、对原告证据二（买卖合同）的质证意见",
+          "evidenceNumbers": [
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-10-x6azqr0h",
+          "intent": "【对真实性的意见】对该组证据的真实性予以认可。该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五...",
+          "evidenceNumbers": [
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-11-q45z2e0d",
+          "intent": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；其关于付款...",
+          "evidenceNumbers": [
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-12-k64ktxlb",
+          "intent": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二...",
+          "evidenceNumbers": [
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-13-kwkboz6c",
+          "intent": "三、综合质证意见",
+          "evidenceNumbers": [
+            "E01",
+            "E02"
+          ]
+        },
+        {
+          "paragraphId": "paragraph-14-la6qht11",
+          "intent": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、...",
+          "evidenceNumbers": [
+            "E01",
+            "E02"
+          ]
+        }
+      ],
+      "updatedAt": "2026-09-24T23:31:51.150Z"
+    }
+  ],
+  "certificates": [
+    {
+      "id": "certificate-fiq3mzad",
+      "caseId": "case-sfnm74t5",
+      "title": "原告质证意见",
+      "role": "plaintiff",
+      "focus": "围绕微信聊天记录截图（E01）与买卖合同（E02）的真实性、合法性、关联性及证明目的发表质证意见，明确被告收货、承诺付款、合同约定付款期限及逾期违约责任等事实的证明程度与不足。",
+      "paragraphIds": [
+        "paragraph-1-kxiknzqh",
+        "paragraph-2-bf0bjocd",
+        "paragraph-3-xdd06l5a",
+        "paragraph-4-ysx86167",
+        "paragraph-5-gtf0x0dd",
+        "paragraph-6-2hlew59n",
+        "paragraph-7-rcdtvumv",
+        "paragraph-8-86xvzqkv",
+        "paragraph-9-kxmvlyqr",
+        "paragraph-10-x6azqr0h",
+        "paragraph-11-q45z2e0d",
+        "paragraph-12-k64ktxlb",
+        "paragraph-13-kwkboz6c",
+        "paragraph-14-la6qht11"
+      ],
+      "paragraphs": [
+        {
+          "id": "paragraph-1-kxiknzqh",
+          "text": "案号：待补充    案由：买卖合同纠纷",
+          "richText": "<p>案号：待补充    案由：买卖合同纠纷</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-1-link-k10psaa6",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            },
+            {
+              "id": "paragraph-1-link-9pbcgcvh",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-1-link-k10psaa6",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-2-bf0bjocd",
+          "text": "质证人（原告）：王某",
+          "richText": "<p>质证人（原告）：王某</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-2-link-9zmtsozv",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            },
+            {
+              "id": "paragraph-2-link-72axylgn",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-2-link-9zmtsozv",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-3-xdd06l5a",
+          "text": "质证日期：待补充",
+          "richText": "<p>质证日期：待补充</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-3-link-mgopxifg",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            },
+            {
+              "id": "paragraph-3-link-rosr6vxh",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-3-link-mgopxifg",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-4-ysx86167",
+          "text": "原告王某现就本案中提交的微信聊天记录截图（E01）、买卖合同（E02）等证据材料，发表如下质证意见：",
+          "richText": "<p>原告王某现就本案中提交的微信聊天记录截图（E01）、买卖合同（E02）等证据材料，发表如下质证意见：</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-4-link-zljo8frx",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            },
+            {
+              "id": "paragraph-4-link-9oq5ls32",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-4-link-zljo8frx",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-5-gtf0x0dd",
+          "text": "一、对原告证据一（微信聊天记录截图）的质证意见",
+          "richText": "<p>一、对原告证据一（微信聊天记录截图）的质证意见</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-5-link-rjbr8kpp",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-5-link-rjbr8kpp",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-6-2hlew59n",
+          "text": "【对真实性的意见】对该组证据的真实性予以认可。该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。",
+          "richText": "<p>【对真实性的意见】对该组证据的真实性予以认可。该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-6-link-874ad5hz",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-6-link-874ad5hz",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-7-rcdtvumv",
+          "text": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。",
+          "richText": "<p>【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-7-link-oquin96a",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-7-link-oquin96a",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-8-86xvzqkv",
+          "text": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+          "richText": "<p>【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-8-link-bf686d1v",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-8-link-bf686d1v",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-9-kxmvlyqr",
+          "text": "二、对原告证据二（买卖合同）的质证意见",
+          "richText": "<p>二、对原告证据二（买卖合同）的质证意见</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-9-link-j5necax6",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-9-link-j5necax6",
+            "evidenceId": "evidence-kdk0ccv0",
+            "locator": "付款期限与违约责任",
+            "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+          }
+        },
+        {
+          "id": "paragraph-10-x6azqr0h",
+          "text": "【对真实性的意见】对该组证据的真实性予以认可。该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。",
+          "richText": "<p>【对真实性的意见】对该组证据的真实性予以认可。该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-10-link-o9dce4xo",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-10-link-o9dce4xo",
+            "evidenceId": "evidence-kdk0ccv0",
+            "locator": "付款期限与违约责任",
+            "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+          }
+        },
+        {
+          "id": "paragraph-11-q45z2e0d",
+          "text": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。",
+          "richText": "<p>【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-11-link-2gof86rj",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-11-link-2gof86rj",
+            "evidenceId": "evidence-kdk0ccv0",
+            "locator": "付款期限与违约责任",
+            "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+          }
+        },
+        {
+          "id": "paragraph-12-k64ktxlb",
+          "text": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+          "richText": "<p>【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-12-link-5b1b6tuy",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-12-link-5b1b6tuy",
+            "evidenceId": "evidence-kdk0ccv0",
+            "locator": "付款期限与违约责任",
+            "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+          }
+        },
+        {
+          "id": "paragraph-13-kwkboz6c",
+          "text": "三、综合质证意见",
+          "richText": "<p>三、综合质证意见</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-13-link-tqb6s3mk",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            },
+            {
+              "id": "paragraph-13-link-x4w27sxl",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-13-link-tqb6s3mk",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        },
+        {
+          "id": "paragraph-14-la6qht11",
+          "text": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+          "richText": "<p>综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。</p>",
+          "note": "根据用户要求生成：重新撰写一份判决书",
+          "verified": false,
+          "links": [
+            {
+              "id": "paragraph-14-link-b7watt67",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "付款承诺",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            },
+            {
+              "id": "paragraph-14-link-nvc77i79",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "付款期限与违约责任",
+              "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承"
+            }
+          ],
+          "references": [],
+          "link": {
+            "id": "paragraph-14-link-b7watt67",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "付款承诺",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          }
+        }
+      ],
+      "createdAt": "2026-09-24T17:56:31.479Z"
+    },
+    {
+      "id": "certificate-h2r7z6ei",
+      "caseId": "case-sfnm74t5",
+      "title": "王某买卖合同纠纷原告质证书",
+      "role": "plaintiff",
+      "focus": "付款义务是否已履行",
+      "paragraphIds": [
+        "paragraph-1-8zsykkgg",
+        "paragraph-2-g672d5x6"
+      ],
+      "paragraphs": [
+        {
+          "id": "paragraph-1-8zsykkgg",
+          "text": "原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+          "richText": "<p>原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。</p>",
+          "note": "自动绑定到 E01，可继续人工校正定位信息。",
+          "verified": true,
+          "link": {
+            "id": "paragraph-1-8zsykkgg-link-1",
+            "evidenceId": "evidence-6yuu7ojw",
+            "locator": "图片高亮区域",
+            "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+          },
+          "references": [
+            {
+              "id": "reference-p5yaal2p",
+              "type": "statute",
+              "targetId": "article-nx7505sz",
+              "sourceTitle": "中华人民共和国民法典",
+              "label": "中华人民共和国民法典 第五百零九条",
+              "locator": "第五百零九条",
+              "quote": "当事人应当按照约定全面履行自己的义务。"
+            },
+            {
+              "id": "reference-cdyfzdwy",
+              "type": "case",
+              "targetId": "excerpt-d5zmlh09",
+              "sourceTitle": "张某与李某买卖合同纠纷案",
+              "label": "北京市第一中级人民法院 · (2024)京01民终218号",
+              "locator": "裁判理由第 3 段",
+              "quote": "买方在微信聊天中明确表示“货已经收到，本周五前安排尾款”，应视为对收货事实及付款义务的再次确认。"
+            }
+          ],
+          "links": [
+            {
+              "id": "paragraph-1-8zsykkgg-link-1",
+              "evidenceId": "evidence-6yuu7ojw",
+              "locator": "图片高亮区域",
+              "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约"
+            }
+          ]
+        },
+        {
+          "id": "paragraph-2-g672d5x6",
+          "text": "原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+          "richText": "<p>原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。</p>",
+          "note": "自动绑定到 E02，可继续人工校正定位信息。",
+          "verified": false,
+          "link": {
+            "id": "paragraph-2-g672d5x6-link-1",
+            "evidenceId": "evidence-kdk0ccv0",
+            "locator": "段落 1",
+            "quote": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万"
+          },
+          "links": [
+            {
+              "id": "paragraph-2-g672d5x6-link-1",
+              "evidenceId": "evidence-kdk0ccv0",
+              "locator": "段落 1",
+              "quote": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万"
+            }
+          ],
+          "references": []
+        }
+      ],
+      "createdAt": "2026-09-24T17:53:41.557Z"
+    }
+  ],
+  "claimUnits": [
+    {
+      "id": "paragraph-1-kxiknzqh-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-1-kxiknzqh",
+      "sentenceIndex": 0,
+      "text": "案号：待补充    案由：买卖合同纠纷",
+      "normalizedText": "案号：待补充 案由：买卖合同纠纷",
+      "sourceParagraphText": "案号：待补充    案由：买卖合同纠纷",
+      "labels": [
+        "案号",
+        "待补充",
+        "案由",
+        "买卖合同纠纷"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-2-bf0bjocd-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-2-bf0bjocd",
+      "sentenceIndex": 0,
+      "text": "质证人（原告）：王某",
+      "normalizedText": "质证人（原告）：王某",
+      "sourceParagraphText": "质证人（原告）：王某",
+      "labels": [
+        "质证人",
+        "原告",
+        "王某"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-3-xdd06l5a-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-3-xdd06l5a",
+      "sentenceIndex": 0,
+      "text": "质证日期：待补充",
+      "normalizedText": "质证日期：待补充",
+      "sourceParagraphText": "质证日期：待补充",
+      "labels": [
+        "质证日期",
+        "待补充"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-4-ysx86167-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-4-ysx86167",
+      "sentenceIndex": 0,
+      "text": "原告王某现就本案中提交的微信聊天记录截图（E01）、买卖合同（E02）等证据材料，发表如下质证意见：",
+      "normalizedText": "原告王某现就本案中提交的微信聊天记录截图（E01）、买卖合同（E02）等证据材料，发表如下质证意见：",
+      "sourceParagraphText": "原告王某现就本案中提交的微信聊天记录截图（E01）、买卖合同（E02）等证据材料，发表如下质证意见：",
+      "labels": [
+        "原告王某现就本案中提交的微信聊天记录截图",
+        "e01",
+        "买卖合同",
+        "e02",
+        "等证据材料",
+        "发表如下质证意见"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-5-gtf0x0dd-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-5-gtf0x0dd",
+      "sentenceIndex": 0,
+      "text": "一、对原告证据一（微信聊天记录截图）的质证意见",
+      "normalizedText": "一、对原告证据一（微信聊天记录截图）的质证意见",
+      "sourceParagraphText": "一、对原告证据一（微信聊天记录截图）的质证意见",
+      "labels": [
+        "对原告证据一",
+        "微信聊天记录截图",
+        "的质证意见"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-6-2hlew59n-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-6-2hlew59n",
+      "sentenceIndex": 0,
+      "text": "【对真实性的意见】对该组证据的真实性予以认可。",
+      "normalizedText": "【对真实性的意见】对该组证据的真实性予以认可。",
+      "sourceParagraphText": "【对真实性的意见】对该组证据的真实性予以认可。该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。",
+      "labels": [
+        "对真实性的意见",
+        "对该组证据的真实性予以认可"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-6-2hlew59n-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-6-2hlew59n",
+      "sentenceIndex": 1,
+      "text": "该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。",
+      "normalizedText": "该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。",
+      "sourceParagraphText": "【对真实性的意见】对该组证据的真实性予以认可。该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。",
+      "labels": [
+        "该微信聊天记录截图显示",
+        "2026年4月12日被告在微信中确认“货已经收到",
+        "本周五前安排尾款”",
+        "同日原告回复“请按合同约定支付剩余货款68000元”"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-6-2hlew59n-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-6-2hlew59n",
+      "sentenceIndex": 2,
+      "text": "上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。",
+      "normalizedText": "上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。",
+      "sourceParagraphText": "【对真实性的意见】对该组证据的真实性予以认可。该微信聊天记录截图显示，2026年4月12日被告在微信中确认“货已经收到，本周五前安排尾款”，同日原告回复“请按合同约定支付剩余货款68000元”。上述内容能够反映双方就收货及付款事宜进行沟通的客观过程，在被告未提出相反证据足以推翻的情况下，应认可其真实性。",
+      "labels": [
+        "上述内容能够反映双方就收货及付款事宜进行沟通的客观过程",
+        "在被告未提出相反证据足以推翻的情况下",
+        "应认可其真实性"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-7-rcdtvumv-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-7-rcdtvumv",
+      "sentenceIndex": 0,
+      "text": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。",
+      "normalizedText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。",
+      "sourceParagraphText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。",
+      "labels": [
+        "对合法性",
+        "关联性的意见",
+        "对该组证据的合法性",
+        "关联性予以认可"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-7-rcdtvumv-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-7-rcdtvumv",
+      "sentenceIndex": 1,
+      "text": "该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；",
+      "normalizedText": "该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；",
+      "sourceParagraphText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。",
+      "labels": [
+        "该证据系原告在与被告日常交易沟通中形成并留存",
+        "取得方式合法",
+        "内容不违反法律",
+        "行政法规的强制性规定"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-7-rcdtvumv-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-7-rcdtvumv",
+      "sentenceIndex": 2,
+      "text": "其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。",
+      "normalizedText": "其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。",
+      "sourceParagraphText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该证据系原告在与被告日常交易沟通中形成并留存，取得方式合法，内容不违反法律、行政法规的强制性规定；其反映的收货确认、付款承诺及欠款金额等内容，与本案买卖合同履行及货款支付争议具有直接关联，能够作为认定案件相关事实的依据。",
+      "labels": [
+        "其反映的收货确认",
+        "付款承诺及欠款金额等内容",
+        "与本案买卖合同履行及货款支付争议具有直接关联",
+        "能够作为认定案件相关事实的依据"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-8-86xvzqkv",
+      "sentenceIndex": 0,
+      "text": "【对证明目的的意见】对该组证据的证明目的部分认可。",
+      "normalizedText": "【对证明目的的意见】对该组证据的证明目的部分认可。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "labels": [
+        "对证明目的的意见",
+        "对该组证据的证明目的部分认可"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-8-86xvzqkv",
+      "sentenceIndex": 1,
+      "text": "第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；",
+      "normalizedText": "第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "labels": [
+        "第一",
+        "该证据能够证明被告于2026年4月12日确认已收到货物",
+        "可初步证明原告已履行交货义务"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-8-86xvzqkv",
+      "sentenceIndex": 2,
+      "text": "第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；",
+      "normalizedText": "第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "labels": [
+        "第二",
+        "该证据能够证明被告作出“本周五前安排尾款”的付款承诺",
+        "表明其负有支付尾款的义务"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-4",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-8-86xvzqkv",
+      "sentenceIndex": 3,
+      "text": "第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。",
+      "normalizedText": "第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "labels": [
+        "第三",
+        "该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-5",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-8-86xvzqkv",
+      "sentenceIndex": 4,
+      "text": "但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "normalizedText": "但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。第一，该证据能够证明被告于2026年4月12日确认已收到货物，可初步证明原告已履行交货义务；第二，该证据能够证明被告作出“本周五前安排尾款”的付款承诺，表明其负有支付尾款的义务；第三，该证据能够证明原告于同日明确要求被告按合同约定支付剩余货款68000元。但该证据尚不足以单独证明被告实际收货的具体日期、剩余货款68000元是否已部分或全部支付、被告是否已构成逾期以及逾期天数等事实，上述事实仍需结合买卖合同约定及其他证据进一步查明。",
+      "labels": [
+        "但该证据尚不足以单独证明被告实际收货的具体日期",
+        "剩余货款68000元是否已部分或全部支付",
+        "被告是否已构成逾期以及逾期天数等事实",
+        "上述事实仍需结合买卖合同约定及其他证据进一步查明"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-9-kxmvlyqr-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-9-kxmvlyqr",
+      "sentenceIndex": 0,
+      "text": "二、对原告证据二（买卖合同）的质证意见",
+      "normalizedText": "二、对原告证据二（买卖合同）的质证意见",
+      "sourceParagraphText": "二、对原告证据二（买卖合同）的质证意见",
+      "labels": [
+        "对原告证据二",
+        "买卖合同",
+        "的质证意见"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-10-x6azqr0h-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-10-x6azqr0h",
+      "sentenceIndex": 0,
+      "text": "【对真实性的意见】对该组证据的真实性予以认可。",
+      "normalizedText": "【对真实性的意见】对该组证据的真实性予以认可。",
+      "sourceParagraphText": "【对真实性的意见】对该组证据的真实性予以认可。该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。",
+      "labels": [
+        "对真实性的意见",
+        "对该组证据的真实性予以认可"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-10-x6azqr0h-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-10-x6azqr0h",
+      "sentenceIndex": 1,
+      "text": "该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。",
+      "normalizedText": "该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。",
+      "sourceParagraphText": "【对真实性的意见】对该组证据的真实性予以认可。该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。",
+      "labels": [
+        "该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款",
+        "合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-10-x6azqr0h-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-10-x6azqr0h",
+      "sentenceIndex": 2,
+      "text": "上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。",
+      "normalizedText": "上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。",
+      "sourceParagraphText": "【对真实性的意见】对该组证据的真实性予以认可。该买卖合同文本载明合同第3条约定被告应于收货后七日内支付剩余货款，合同第7条约定逾期付款的应按未付款项每日万分之五承担违约责任。上述条款内容明确、具体，能够反映双方关于付款期限及逾期违约责任的约定，在被告未提供相反证据的情况下，应认可其真实性。",
+      "labels": [
+        "上述条款内容明确",
+        "具体",
+        "能够反映双方关于付款期限及逾期违约责任的约定",
+        "在被告未提供相反证据的情况下",
+        "应认可其真实性"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-11-q45z2e0d-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-11-q45z2e0d",
+      "sentenceIndex": 0,
+      "text": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。",
+      "normalizedText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。",
+      "sourceParagraphText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。",
+      "labels": [
+        "对合法性",
+        "关联性的意见",
+        "对该组证据的合法性",
+        "关联性予以认可"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-11-q45z2e0d-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-11-q45z2e0d",
+      "sentenceIndex": 1,
+      "text": "该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；",
+      "normalizedText": "该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；",
+      "sourceParagraphText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。",
+      "labels": [
+        "该合同系双方就买卖交易达成的合意",
+        "内容不违反法律",
+        "行政法规的强制性规定",
+        "形式及来源合法"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-11-q45z2e0d-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-11-q45z2e0d",
+      "sentenceIndex": 2,
+      "text": "其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。",
+      "normalizedText": "其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。",
+      "sourceParagraphText": "【对合法性、关联性的意见】对该组证据的合法性、关联性予以认可。该合同系双方就买卖交易达成的合意，内容不违反法律、行政法规的强制性规定，形式及来源合法；其关于付款期限、逾期违约责任等约定，与本案争议的货款支付及违约责任认定具有直接关联，可作为确定双方权利义务的依据。",
+      "labels": [
+        "其关于付款期限",
+        "逾期违约责任等约定",
+        "与本案争议的货款支付及违约责任认定具有直接关联",
+        "可作为确定双方权利义务的依据"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 0,
+      "text": "【对证明目的的意见】对该组证据的证明目的部分认可。",
+      "normalizedText": "【对证明目的的意见】对该组证据的证明目的部分认可。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "对证明目的的意见",
+        "对该组证据的证明目的部分认可"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 1,
+      "text": "（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；",
+      "normalizedText": "（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "该证据能够证明双方约定被告应于收货后七日内支付剩余货款",
+        "为认定被告付款义务及履行期限提供了合同依据"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 2,
+      "text": "（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；",
+      "normalizedText": "（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任",
+        "为原告主张逾期违约责任提供了合同依据"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-4",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 3,
+      "text": "（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。",
+      "normalizedText": "（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "但该证据目前仅提供合同条款片段",
+        "未提供完整合同文本",
+        "尚不足以证明合同签订的具体时间",
+        "合同其他条款内容以及合同的实际履行情况"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-5",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 4,
+      "text": "第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；",
+      "normalizedText": "第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "第一",
+        "合同签订时间未明确",
+        "可能影响对付款期限起算及违约责任的判断"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-6",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 5,
+      "text": "第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；",
+      "normalizedText": "第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "第二",
+        "被告实际收货的具体日期尚未查明",
+        "收货后七日内付款的期限起算点无法最终确定"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-7",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 6,
+      "text": "第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。",
+      "normalizedText": "第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "第三",
+        "剩余货款68000元是否已支付",
+        "支付了多少",
+        "尚欠多少",
+        "仍需结合付款凭证等证据进一步核实"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-8",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-12-k64ktxlb",
+      "sentenceIndex": 7,
+      "text": "因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "normalizedText": "因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "sourceParagraphText": "【对证明目的的意见】对该组证据的证明目的部分认可。（一）该证据能够证明双方约定被告应于收货后七日内支付剩余货款，为认定被告付款义务及履行期限提供了合同依据；（二）该证据能够证明双方约定逾期付款应按未付款项每日万分之五承担违约责任，为原告主张逾期违约责任提供了合同依据；（三）但该证据目前仅提供合同条款片段，未提供完整合同文本，尚不足以证明合同签订的具体时间、合同其他条款内容以及合同的实际履行情况。第一，合同签订时间未明确，可能影响对付款期限起算及违约责任的判断；第二，被告实际收货的具体日期尚未查明，收货后七日内付款的期限起算点无法最终确定；第三，剩余货款68000元是否已支付、支付了多少、尚欠多少，仍需结合付款凭证等证据进一步核实。因此，该证据能够证明合同约定内容，但不足以单独证明被告已构成逾期及逾期天数，相关事实应结合其他证据综合认定。",
+      "labels": [
+        "因此",
+        "该证据能够证明合同约定内容",
+        "但不足以单独证明被告已构成逾期及逾期天数",
+        "相关事实应结合其他证据综合认定"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-13-kwkboz6c-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-13-kwkboz6c",
+      "sentenceIndex": 0,
+      "text": "三、综合质证意见",
+      "normalizedText": "三、综合质证意见",
+      "sourceParagraphText": "三、综合质证意见",
+      "labels": [
+        "综合质证意见"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-14-la6qht11",
+      "sentenceIndex": 0,
+      "text": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。",
+      "normalizedText": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。",
+      "sourceParagraphText": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+      "labels": [
+        "综合上述质证意见",
+        "原告提交的微信聊天记录截图",
+        "e01",
+        "与买卖合同",
+        "e02",
+        "来源合法",
+        "内容真实",
+        "与本案买卖合同货款支付争议具有关联性"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-14-la6qht11",
+      "sentenceIndex": 1,
+      "text": "但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。",
+      "normalizedText": "但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。",
+      "sourceParagraphText": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+      "labels": [
+        "但现有证据尚不足以完整证明合同签订时间",
+        "被告实际收货的具体日期",
+        "剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-14-la6qht11",
+      "sentenceIndex": 2,
+      "text": "上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。",
+      "normalizedText": "上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。",
+      "sourceParagraphText": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+      "labels": [
+        "上述事实的认定",
+        "仍需结合付款凭证",
+        "收货凭证",
+        "完整合同文本等证据进一步查明"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-4",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-fiq3mzad",
+      "paragraphId": "paragraph-14-la6qht11",
+      "sentenceIndex": 3,
+      "text": "请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+      "normalizedText": "请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+      "sourceParagraphText": "综合上述质证意见，原告提交的微信聊天记录截图（E01）与买卖合同（E02）来源合法、内容真实，与本案买卖合同货款支付争议具有关联性，能够初步证明被告已收到货物、承诺支付尾款，以及双方约定收货后七日内付款、逾期按未付款项每日万分之五承担违约责任等事实，可作为认定案件事实的依据。但现有证据尚不足以完整证明合同签订时间、被告实际收货的具体日期、剩余货款68000元的支付情况以及被告是否已构成逾期及逾期天数等关键事实。上述事实的认定，仍需结合付款凭证、收货凭证、完整合同文本等证据进一步查明。请法庭在综合审查全案证据的基础上，依法认定被告应否支付剩余货款及承担相应逾期违约责任。",
+      "labels": [
+        "请法庭在综合审查全案证据的基础上",
+        "依法认定被告应否支付剩余货款及承担相应逾期违约责任"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-1-8zsykkgg-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-h2r7z6ei",
+      "paragraphId": "paragraph-1-8zsykkgg",
+      "sentenceIndex": 0,
+      "text": "原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。",
+      "normalizedText": "原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。",
+      "sourceParagraphText": "原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "labels": [
+        "原告质证意见",
+        "针对证据",
+        "e01《微信聊天记录截图》",
+        "当前可重点围绕“付款义务是否已履行”展开核验"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-1-8zsykkgg-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-h2r7z6ei",
+      "paragraphId": "paragraph-1-8zsykkgg",
+      "sentenceIndex": 1,
+      "text": "结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。",
+      "normalizedText": "结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。",
+      "sourceParagraphText": "原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "labels": [
+        "结合材料摘录“2026年4月12日",
+        "被告在微信中确认“货已经收到",
+        "本周五前安排尾款”"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-1-8zsykkgg-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-h2r7z6ei",
+      "paragraphId": "paragraph-1-8zsykkgg",
+      "sentenceIndex": 2,
+      "text": "同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "normalizedText": "同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "sourceParagraphText": "原告质证意见：针对证据 E01《微信聊天记录截图》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "labels": [
+        "同日原告回复“请按合同约”",
+        "建议进一步核对形成时间",
+        "来源链路及与待证事实的对应关系"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-2-g672d5x6-claim-1",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-h2r7z6ei",
+      "paragraphId": "paragraph-2-g672d5x6",
+      "sentenceIndex": 0,
+      "text": "原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。",
+      "normalizedText": "原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。",
+      "sourceParagraphText": "原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "labels": [
+        "原告质证意见",
+        "针对证据",
+        "e02《买卖合同》",
+        "当前可重点围绕“付款义务是否已履行”展开核验"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-2-g672d5x6-claim-2",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-h2r7z6ei",
+      "paragraphId": "paragraph-2-g672d5x6",
+      "sentenceIndex": 1,
+      "text": "结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。",
+      "normalizedText": "结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。",
+      "sourceParagraphText": "原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "labels": [
+        "结合材料摘录“合同第3条约定",
+        "被告应于收货后七日内支付剩余货款"
+      ],
+      "status": "linked"
+    },
+    {
+      "id": "paragraph-2-g672d5x6-claim-3",
+      "caseId": "case-sfnm74t5",
+      "certificateId": "certificate-h2r7z6ei",
+      "paragraphId": "paragraph-2-g672d5x6",
+      "sentenceIndex": 2,
+      "text": "合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "normalizedText": "合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "sourceParagraphText": "原告质证意见：针对证据 E02《买卖合同》，当前可重点围绕“付款义务是否已履行”展开核验。结合材料摘录“合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。",
+      "labels": [
+        "合同第7条约定",
+        "逾期付款的",
+        "应按未付款项每日万”",
+        "建议进一步核对形成时间",
+        "来源链路及与待证事实的对应关系"
+      ],
+      "status": "linked"
+    }
+  ],
+  "claimEvidenceMatches": [
+    {
+      "id": "paragraph-1-kxiknzqh-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-1-kxiknzqh-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-1-kxiknzqh-claim-1-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-1-kxiknzqh-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-2-bf0bjocd-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-2-bf0bjocd-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-2-bf0bjocd-claim-1-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-2-bf0bjocd-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-3-xdd06l5a-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-3-xdd06l5a-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-3-xdd06l5a-claim-1-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-3-xdd06l5a-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-4-ysx86167-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-4-ysx86167-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-4-ysx86167-claim-1-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-4-ysx86167-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-5-gtf0x0dd-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-5-gtf0x0dd-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-6-2hlew59n-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-6-2hlew59n-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-6-2hlew59n-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-6-2hlew59n-claim-2",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-6-2hlew59n-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-6-2hlew59n-claim-3",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-7-rcdtvumv-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-7-rcdtvumv-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-7-rcdtvumv-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-7-rcdtvumv-claim-2",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-7-rcdtvumv-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-7-rcdtvumv-claim-3",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-8-86xvzqkv-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-8-86xvzqkv-claim-2",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-8-86xvzqkv-claim-3",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-4-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-8-86xvzqkv-claim-4",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-8-86xvzqkv-claim-5-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-8-86xvzqkv-claim-5",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-9-kxmvlyqr-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-9-kxmvlyqr-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-10-x6azqr0h-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-10-x6azqr0h-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-10-x6azqr0h-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-10-x6azqr0h-claim-2",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-10-x6azqr0h-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-10-x6azqr0h-claim-3",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-11-q45z2e0d-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-11-q45z2e0d-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-11-q45z2e0d-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-11-q45z2e0d-claim-2",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-11-q45z2e0d-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-11-q45z2e0d-claim-3",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-2",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-3",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-4-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-4",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-5-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-5",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-6-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-6",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-7-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-7",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-7-heuristic-match-evidence-6yuu7ojw-fragment-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-7",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "partial",
+      "score": 0.19,
+      "reason": "系统先按主张关键词召回，再结合数字锚点与否定信号进行规则精排。，命中 0 个关键词，1 处数字锚点，1 处事实动词，存在待核实表达",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。 同日原告回...",
+      "locator": "付款承诺 1",
+      "source": "heuristic",
+      "verified": false
+    },
+    {
+      "id": "paragraph-12-k64ktxlb-claim-8-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-12-k64ktxlb-claim-8",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-13-kwkboz6c-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-13-kwkboz6c-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-13-kwkboz6c-claim-1-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-13-kwkboz6c-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-1-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-2",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-2-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-2",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-3",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-3-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-3",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-4-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-4",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "付款承诺",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-14-la6qht11-claim-4-match-2",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-14-la6qht11-claim-4",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "该证据为买卖合同文本，核心约定被告应在收货后七日内支付剩余货款，逾期付款按未付款项每日万分之五承",
+      "locator": "付款期限与违约责任",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-1-8zsykkgg-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-1-8zsykkgg-claim-1",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.98,
+      "reason": "当前段落已人工核验并绑定证据。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "图片高亮区域",
+      "source": "manual",
+      "verified": true
+    },
+    {
+      "id": "paragraph-1-8zsykkgg-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-1-8zsykkgg-claim-2",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.98,
+      "reason": "当前段落已人工核验并绑定证据。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "图片高亮区域",
+      "source": "manual",
+      "verified": true
+    },
+    {
+      "id": "paragraph-1-8zsykkgg-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-1-8zsykkgg-claim-3",
+      "evidenceId": "evidence-6yuu7ojw",
+      "evidenceFragmentId": "evidence-6yuu7ojw-fragment-1",
+      "relation": "support",
+      "score": 0.98,
+      "reason": "当前段落已人工核验并绑定证据。",
+      "quote": "2026年4月12日，被告在微信中确认“货已经收到，本周五前安排尾款”。同日原告回复“请按合同约",
+      "locator": "图片高亮区域",
+      "source": "manual",
+      "verified": true
+    },
+    {
+      "id": "paragraph-2-g672d5x6-claim-1-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-2-g672d5x6-claim-1",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万",
+      "locator": "段落 1",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-2-g672d5x6-claim-2-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-2-g672d5x6-claim-2",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万",
+      "locator": "段落 1",
+      "source": "manual",
+      "verified": false
+    },
+    {
+      "id": "paragraph-2-g672d5x6-claim-3-match-1",
+      "caseId": "case-sfnm74t5",
+      "claimUnitId": "paragraph-2-g672d5x6-claim-3",
+      "evidenceId": "evidence-kdk0ccv0",
+      "evidenceFragmentId": "evidence-kdk0ccv0-fragment-1",
+      "relation": "support",
+      "score": 0.88,
+      "reason": "当前段落已人工绑定证据，待进一步核验。",
+      "quote": "合同第3条约定：被告应于收货后七日内支付剩余货款。合同第7条约定：逾期付款的，应按未付款项每日万",
+      "locator": "段落 1",
+      "source": "manual",
+      "verified": false
+    }
+  ],
+  "knowledgeCases": [
+    {
+      "id": "knowledge-case-yuandian-e3e2f970530063208ba432d2c526576e",
+      "title": "陈英;苹果电子产品商贸（北京）有限公司;产品责任纠纷二审民事裁定书",
+      "caseNumber": "（2022）京02民终11474号",
+      "courtName": "北京市第二中级人民法院",
+      "courtLevel": "中级",
+      "region": "北京",
+      "trialLevel": "二审案件",
+      "caseType": "民事案件",
+      "cause": "产品责任纠纷",
+      "judgmentDate": "2022-11-28T00:00:00.000Z",
+      "effectiveDate": "2022-11-28T00:00:00.000Z",
+      "issueSummary": "买卖合同纠纷案件中，当确定当事人时，应依据合同相对性原则明确合同双方的权利义务关系，若原审确定当事人不当，应予纠正，确保案件审理准确反映合同法律关系的本质，维护交易安全和公平。",
+      "holdingSummary": "买卖合同纠纷案件中，当确定当事人时，应依据合同相对性原则明确合同双方的权利义务关系，若原审确定当事人不当，应予纠正，确保案件审理准确反映合同法律关系的本质，维护交易安全和公平。",
+      "reasoningSummary": "买卖合同纠纷案件中，当确定当事人时，应依据合同相对性原则明确合同双方的权利义务关系，若原审确定当事人不当，应予纠正，确保案件审理准确反映合同法律关系的本质，维护交易安全和公平。",
+      "resultSummary": "买卖合同纠纷案件中，当确定当事人时，应依据合同相对性原则明确合同双方的权利义务关系，若原审确定当事人不当，应予纠正，确保案件审理准确反映合同法律关系的本质，维护交易安全和公平。",
+      "sourceUrl": "https://ydzk.chineselaw.com/ydzk/caseDetail/case/e3e2f970530063208ba432d2c526576e",
+      "sourceType": "元典MCP",
+      "keywords": [
+        "陈英;苹果电子产品商贸（北京）有限公司;产品责任纠纷二审民事裁定书",
+        "（2022）京02民终11474号",
+        "北京市第二中级人民法院",
+        "产品责任纠纷",
+        "总结"
+      ],
+      "focusTags": [
+        "总结"
+      ],
+      "referencedStatutes": [],
+      "excerpts": [
+        {
+          "id": "excerpt-knowledge-case-yuandian-e3e2f970530063208ba432d2c526576e-holding-买卖合同纠纷案件中-当确定当事人时-应依据合同相对性原则明确合同双方的权利义务关系-若原审确定当事人不当-应予纠正-确保案件审理准确反映合同法律关系的本质-维护交易安全和公平",
+          "caseId": "knowledge-case-yuandian-e3e2f970530063208ba432d2c526576e",
+          "excerptType": "holding",
+          "locator": "元典摘要 1",
+          "content": "买卖合同纠纷案件中，当确定当事人时，应依据合同相对性原则明确合同双方的权利义务关系，若原审确定当事人不当，应予纠正，确保案件审理准确反映合同法律关系的本质，维护交易安全和公平。",
+          "summary": "买卖合同纠纷案件中，当确定当事人时，应依据合同相对性原则明确合同双方的权利义务关系，若原审确定当事人不当，应予纠正，确保案件审理准确反映合同法律关系的本质，维护交易安全和公平。",
+          "keywords": [
+            "买卖合同纠纷案件中",
+            "当确定当事人时",
+            "应依据合同相对性原则明确合同双方的权利义务关系",
+            "若原审确定当事人不当",
+            "应予纠正",
+            "确保案件审理准确反映合同法律关系的本质"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-yuandian-e24e78b6d0983ec12a798a60f264298e",
+      "title": "铁岭市锡友机械设备有限公司、李文彬合同纠纷二审民事裁定书",
+      "caseNumber": "（2019）辽12民终1652号",
+      "courtName": "铁岭市中级人民法院",
+      "courtLevel": "中级",
+      "region": "辽宁",
+      "trialLevel": "二审案件",
+      "caseType": "民事案件",
+      "cause": "合同纠纷",
+      "judgmentDate": "2019-11-19T00:00:00.000Z",
+      "effectiveDate": "2019-11-19T00:00:00.000Z",
+      "issueSummary": "买卖合同纠纷中，当标的物的具体情况影响合同履行时，需先确定合同是解除还是继续履行，再判断一方是否存在违约行为并据此决定是否支持其诉讼请求。若原审认定的基本事实不清，则应撤销原判并发回重审。争议焦点1：买卖合同是解除还是继续履行。争议焦点2：被上诉人是否违约。",
+      "holdingSummary": "买卖合同纠纷中，当标的物的具体情况影响合同履行时，需先确定合同是解除还是继续履行，再判断一方是否存在违约行为并据此决定是否支持其诉讼请求。若原审认定的基本事实不清，则应撤销原判并发回重审。争议焦点1：买卖合同是解除还是继续履行。争议焦点2：被上诉人是否违约。",
+      "reasoningSummary": "买卖合同纠纷中，当标的物的具体情况影响合同履行时，需先确定合同是解除还是继续履行，再判断一方是否存在违约行为并据此决定是否支持其诉讼请求。若原审认定的基本事实不清，则应撤销原判并发回重审。争议焦点1：买卖合同是解除还是继续履行。争议焦点2：被上诉人是否违约。",
+      "resultSummary": "买卖合同纠纷中，当标的物的具体情况影响合同履行时，需先确定合同是解除还是继续履行，再判断一方是否存在违约行为并据此决定是否支持其诉讼请求。若原审认定的基本事实不清，则应撤销原判并发回重审。争议焦点1：买卖合同是解除还是继续履行。争议焦点2：被上诉人是否违约。",
+      "sourceUrl": "https://ydzk.chineselaw.com/ydzk/caseDetail/case/e24e78b6d0983ec12a798a60f264298e",
+      "sourceType": "元典MCP",
+      "keywords": [
+        "铁岭市锡友机械设备有限公司、李文彬合同纠纷二审民事裁定书",
+        "（2019）辽12民终1652号",
+        "铁岭市中级人民法院",
+        "合同纠纷",
+        "总结"
+      ],
+      "focusTags": [
+        "总结"
+      ],
+      "referencedStatutes": [],
+      "excerpts": [
+        {
+          "id": "excerpt-knowledge-case-yuandian-e24e78b6d0983ec12a798a60f264298e-holding-买卖合同纠纷中-当标的物的具体情况影响合同履行时-需先确定合同是解除还是继续履行-再判断一方是否存在违约行为并据此决定是否支持其诉讼请求-若原审认定的基本事实不清-则应撤销原判并发回重审-争议焦点1-买卖合同是解除还是继续履行-争议焦点2-被上诉人是否违约",
+          "caseId": "knowledge-case-yuandian-e24e78b6d0983ec12a798a60f264298e",
+          "excerptType": "holding",
+          "locator": "元典摘要 1",
+          "content": "买卖合同纠纷中，当标的物的具体情况影响合同履行时，需先确定合同是解除还是继续履行，再判断一方是否存在违约行为并据此决定是否支持其诉讼请求。若原审认定的基本事实不清，则应撤销原判并发回重审。争议焦点1：买卖合同是解除还是继续履行。争议焦点2：被上诉人是否违约。",
+          "summary": "买卖合同纠纷中，当标的物的具体情况影响合同履行时，需先确定合同是解除还是继续履行，再判断一方是否存在违约行为并据此决定是否支持其诉讼请求。若原审认定的基本事实不清，则应撤销原判并发回重审。争议焦点1：买卖合同是解除还是继续履行。争议焦点2：",
+          "keywords": [
+            "买卖合同纠纷中",
+            "当标的物的具体情况影响合同履行时",
+            "需先确定合同是解除还是继续履行",
+            "再判断一方是否存在违约行为并据此决定是否支持其诉讼请求",
+            "若原审认定的基本事实不清",
+            "则应撤销原判并发回重审"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-yuandian-3a0d4224dc82b89799b61d86a6118239",
+      "title": "左国强、孟凤云房屋买卖合同纠纷二审民事裁定书",
+      "caseNumber": "（2017）冀05民终2574号",
+      "courtName": "邢台市中级人民法院",
+      "courtLevel": "中级",
+      "region": "河北",
+      "trialLevel": "二审案件",
+      "caseType": "民事案件",
+      "cause": "房屋买卖合同纠纷",
+      "judgmentDate": "2017-10-23T00:00:00.000Z",
+      "effectiveDate": "2017-10-23T00:00:00.000Z",
+      "issueSummary": "争议焦点1：本案房产买卖合同目的是否能够实现。争议焦点2：是否存在违约行为，如果是，何方违约。争议焦点3：违约责任应当如何承担。",
+      "holdingSummary": "争议焦点1：本案房产买卖合同目的是否能够实现。争议焦点2：是否存在违约行为，如果是，何方违约。争议焦点3：违约责任应当如何承担。",
+      "reasoningSummary": "争议焦点1：本案房产买卖合同目的是否能够实现。争议焦点2：是否存在违约行为，如果是，何方违约。争议焦点3：违约责任应当如何承担。",
+      "resultSummary": "争议焦点1：本案房产买卖合同目的是否能够实现。争议焦点2：是否存在违约行为，如果是，何方违约。争议焦点3：违约责任应当如何承担。",
+      "sourceUrl": "https://ydzk.chineselaw.com/ydzk/caseDetail/case/3a0d4224dc82b89799b61d86a6118239",
+      "sourceType": "元典MCP",
+      "keywords": [
+        "左国强、孟凤云房屋买卖合同纠纷二审民事裁定书",
+        "（2017）冀05民终2574号",
+        "邢台市中级人民法院",
+        "房屋买卖合同纠纷",
+        "总结"
+      ],
+      "focusTags": [
+        "总结"
+      ],
+      "referencedStatutes": [],
+      "excerpts": [
+        {
+          "id": "excerpt-knowledge-case-yuandian-3a0d4224dc82b89799b61d86a6118239-holding-争议焦点1-本案房产买卖合同目的是否能够实现-争议焦点2-是否存在违约行为-如果是-何方违约-争议焦点3-违约责任应当如何承担",
+          "caseId": "knowledge-case-yuandian-3a0d4224dc82b89799b61d86a6118239",
+          "excerptType": "holding",
+          "locator": "元典摘要 1",
+          "content": "争议焦点1：本案房产买卖合同目的是否能够实现。争议焦点2：是否存在违约行为，如果是，何方违约。争议焦点3：违约责任应当如何承担。",
+          "summary": "争议焦点1：本案房产买卖合同目的是否能够实现。争议焦点2：是否存在违约行为，如果是，何方违约。争议焦点3：违约责任应当如何承担。",
+          "keywords": [
+            "争议焦点1：本案房产买卖合同目的是否能够实现",
+            "争议焦点2：是否存在违约行为",
+            "如果是",
+            "何方违约",
+            "争议焦点3：违约责任应当如何承担"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-yuandian-dc9e8a9eeb30f5f14391885814867c7e",
+      "title": "某甲公司、某乙公司、吴某买卖合同纠纷二审民事判决书",
+      "caseNumber": "（2025）闽01民终7787号",
+      "courtName": "福州市中级人民法院",
+      "courtLevel": "中级",
+      "region": "福建",
+      "trialLevel": "二审案件",
+      "caseType": "民事案件",
+      "cause": "买卖合同纠纷",
+      "judgmentDate": "2025-11-25T00:00:00.000Z",
+      "effectiveDate": "2025-11-25T00:00:00.000Z",
+      "issueSummary": "本案的案件基本事实为：2024年1月29日，某甲公司与某乙公司签订《购销合同》，约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补），总价1770830元，约定预付款30%于签约前支付，余款70%于2024年4月29日前支付，逾期付款按日万分之四计违约金，交货地点为宁德市＊＊，联系人为王某；某甲公司于2024年3月至2025年5月累计付款931000元；某乙公司于2024年1月向某己公司采购了与上述合同几乎完全一致的产品，某己公司于2023年12月至2024年2月将货物发往项目地址或某乙公司指定地址并由某乙公司签收；“海＊＊德项目”微信群中包含某甲公司、某乙公司、某己公司及某丁公司人员，自2024年1月起持续沟通合同相关事宜，2025年3月至5月期间多次催款，黄某乙曾回应付款困难；2024年12月2日，宁德市＊＊＊项目（信息化部分）经某庚公司组织专家验收并通过；某甲公司为吴某自然人独资的一人有限公司。本案争议焦点在于某甲公司是否应向某乙公司支付案涉货款及逾期付款违约金。法院认为，某甲公司与某乙公司于2024年1月29日签订《购销合同》，明确约定某乙公司向某甲公司供应案涉设备，双方形成买卖合同关系；虽某甲公司主张其系应某丁公司要求与某乙公司签约且未实际签收货物，但其未能提供任何证据证明该主张，而案涉“海＊＊德项目”微信群中包含某甲公司代表黄某乙，自2024年1月起至2025年6月持续就合同内容、开票信息、收款账户及催款事宜进行沟通，期间某甲公司从未对货物数量、质量或应付金额提出异议，亦未在诉讼中举证证明存在其他供应商供货或某乙公司未完全履行合同义务，且在一审、二审中均未能对某乙公司供货部分与其他供应商供货进行剥离说明，相反，某乙公司提交了其与某己公司的合同、到货确认书及某己公司工作人员与某丁公司王某的微信往来记录，结合案涉项目已于2024年12月验收完成的事实，足以证明某乙公司已全面履行供货义务；根据《中华人民共和国民事诉讼法》第六十七条“当事人对自己提出的主张有责任提供证据”之规定，某甲公司作为买方未能就其抗辩主张完成举证责任，依法应承担不利后果，故一审法院判令其支付货款839830元及相应逾期付款违约金，事实清楚、证据充分，适用法律正确，应予维持。当事人主张合同关系不成立或未履行供货义务的，应承担举证责任；若双方签订书面合同，且通过沟通记录、项目验收等事实可印证合同实际履行，而主张方未能提供有效反证否定供货事实或说明具体履约差异的，应承担举证不能的不利后果，依法认定供货义务已履行并支持货款及违约金请求。争议焦点1：某甲公司与某乙公司之间是否存在真实的买卖合同关系。  争议焦点2：某乙公司是否已履行案涉《购销合同》项下的供货义务。  争议焦点3：某甲公司是否应向某乙公司支付货款及逾期付款违约金。",
+      "holdingSummary": "本案的案件基本事实为：2024年1月29日，某甲公司与某乙公司签订《购销合同》，约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补），总价1770830元，约定预付款30%于签约前支付，余款70%于2024年4月29日前支付，逾期付款按日万分之四计违约金，交货地点为宁德市＊＊，联系人为王某；某甲公司于2024年3月至2025年5月累计付款931000元；某乙公司于2024年1月向某己公司采购了与上述合同几乎完全一致的产品，某己公司于2023年12月至2024年2月将货物发往项目地址或某乙公司指定地址并由某乙公司签收；“海＊＊德项目”微信群中包含某甲公司、某乙公司、某己公司及某丁公司人员，自2024年1月起持续沟通合同相关事宜，2025年3月至5月期间多次催款，黄某乙曾回应付款困难；2024年12月2日，宁德市＊＊＊项目（信息化部分）经某庚公司组织专家验收并通过；某甲公司为吴某自然人独资的一人有限公司。本案争议焦点在于某甲公司是否应向某乙公司支付案涉货款及逾期付款违约金。法院认为，某甲公司与某乙公司于2024年1月29日签订《购销合同》，明确约定某乙公司向某甲公司供应案涉设备，双方形成买卖合同关系；虽某甲公司主张其系应某丁公司要求与某乙公司签约且未实际签收货物，但其未能提供任何证据证明该主张，而案涉“海＊＊德项目”微信群中包含某甲公司代表黄某乙，自2024年1月起至2025年6月持续就合同内容、开票信息、收款账户及催款事宜进行沟通，期间某甲公司从未对货物数量、质量或应付金额提出异议，亦未在诉讼中举证证明存在其他供应商供货或某乙公司未完全履行合同义务，且在一审、二审中均未能对某乙公司供货部分与其他供应商供货进行剥离说明，相反，某乙公司提交了其与某己公司的合同、到货确认书及某己公司工作人员与某丁公司王某的微信往来记录，结合案涉项目已于2024年12月验收完成的事实，足以证明某乙公司已全面履行供货义务；根据《中华人民共和国民事诉讼法》第六十七条“当事人对自己提出的主张有责任提供证据”之规定，某甲公司作为买方未能就其抗辩主张完成举证责任，依法应承担不利后果，故一审法院判令其支付货款839830元及相应逾期付款违约金，事实清楚、证据充分，适用法律正确，应予维持。当事人主张合同关系不成立或未履行供货义务的，应承担举证责任；若双方签订书面合同，且通过沟通记录、项目验收等事实可印证合同实际履行，而主张方未能提供有效反证否定供货事实或说明具体履约差异的，应承担举证不能的不利后果，依法认定供货义务已履行并支持货款及违约金请求。争议焦点1：某甲公司与某乙公司之间是否存在真实的买卖合同关系。  争议焦点2：某乙公司是否已履行案涉《购销合同》项下的供货义务。  争议焦点3：某甲公司是否应向某乙公司支付货款及逾期付款违约金。",
+      "reasoningSummary": "本案的案件基本事实为：2024年1月29日，某甲公司与某乙公司签订《购销合同》，约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补），总价1770830元，约定预付款30%于签约前支付，余款70%于2024年4月29日前支付，逾期付款按日万分之四计违约金，交货地点为宁德市＊＊，联系人为王某；某甲公司于2024年3月至2025年5月累计付款931000元；某乙公司于2024年1月向某己公司采购了与上述合同几乎完全一致的产品，某己公司于2023年12月至2024年2月将货物发往项目地址或某乙公司指定地址并由某乙公司签收；“海＊＊德项目”微信群中包含某甲公司、某乙公司、某己公司及某丁公司人员，自2024年1月起持续沟通合同相关事宜，2025年3月至5月期间多次催款，黄某乙曾回应付款困难；2024年12月2日，宁德市＊＊＊项目（信息化部分）经某庚公司组织专家验收并通过；某甲公司为吴某自然人独资的一人有限公司。本案争议焦点在于某甲公司是否应向某乙公司支付案涉货款及逾期付款违约金。法院认为，某甲公司与某乙公司于2024年1月29日签订《购销合同》，明确约定某乙公司向某甲公司供应案涉设备，双方形成买卖合同关系；虽某甲公司主张其系应某丁公司要求与某乙公司签约且未实际签收货物，但其未能提供任何证据证明该主张，而案涉“海＊＊德项目”微信群中包含某甲公司代表黄某乙，自2024年1月起至2025年6月持续就合同内容、开票信息、收款账户及催款事宜进行沟通，期间某甲公司从未对货物数量、质量或应付金额提出异议，亦未在诉讼中举证证明存在其他供应商供货或某乙公司未完全履行合同义务，且在一审、二审中均未能对某乙公司供货部分与其他供应商供货进行剥离说明，相反，某乙公司提交了其与某己公司的合同、到货确认书及某己公司工作人员与某丁公司王某的微信往来记录，结合案涉项目已于2024年12月验收完成的事实，足以证明某乙公司已全面履行供货义务；根据《中华人民共和国民事诉讼法》第六十七条“当事人对自己提出的主张有责任提供证据”之规定，某甲公司作为买方未能就其抗辩主张完成举证责任，依法应承担不利后果，故一审法院判令其支付货款839830元及相应逾期付款违约金，事实清楚、证据充分，适用法律正确，应予维持。当事人主张合同关系不成立或未履行供货义务的，应承担举证责任；若双方签订书面合同，且通过沟通记录、项目验收等事实可印证合同实际履行，而主张方未能提供有效反证否定供货事实或说明具体履约差异的，应承担举证不能的不利后果，依法认定供货义务已履行并支持货款及违约金请求。争议焦点1：某甲公司与某乙公司之间是否存在真实的买卖合同关系。  争议焦点2：某乙公司是否已履行案涉《购销合同》项下的供货义务。  争议焦点3：某甲公司是否应向某乙公司支付货款及逾期付款违约金。",
+      "resultSummary": "本案的案件基本事实为：2024年1月29日，某甲公司与某乙公司签订《购销合同》，约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补），总价1770830元，约定预付款30%于签约前支付，余款70%于2024年4月29日前支付，逾期付款按日万分之四计违约金，交货地点为宁德市＊＊，联系人为王某；某甲公司于2024年3月至2025年5月累计付款931000元；某乙公司于2024年1月向某己公司采购了与上述合同几乎完全一致的产品，某己公司于2023年12月至2024年2月将货物发往项目地址或某乙公司指定地址并由某乙公司签收；“海＊＊德项目”微信群中包含某甲公司、某乙公司、某己公司及某丁公司人员，自2024年1月起持续沟通合同相关事宜，2025年3月至5月期间多次催款，黄某乙曾回应付款困难；2024年12月2日，宁德市＊＊＊项目（信息化部分）经某庚公司组织专家验收并通过；某甲公司为吴某自然人独资的一人有限公司。本案争议焦点在于某甲公司是否应向某乙公司支付案涉货款及逾期付款违约金。法院认为，某甲公司与某乙公司于2024年1月29日签订《购销合同》，明确约定某乙公司向某甲公司供应案涉设备，双方形成买卖合同关系；虽某甲公司主张其系应某丁公司要求与某乙公司签约且未实际签收货物，但其未能提供任何证据证明该主张，而案涉“海＊＊德项目”微信群中包含某甲公司代表黄某乙，自2024年1月起至2025年6月持续就合同内容、开票信息、收款账户及催款事宜进行沟通，期间某甲公司从未对货物数量、质量或应付金额提出异议，亦未在诉讼中举证证明存在其他供应商供货或某乙公司未完全履行合同义务，且在一审、二审中均未能对某乙公司供货部分与其他供应商供货进行剥离说明，相反，某乙公司提交了其与某己公司的合同、到货确认书及某己公司工作人员与某丁公司王某的微信往来记录，结合案涉项目已于2024年12月验收完成的事实，足以证明某乙公司已全面履行供货义务；根据《中华人民共和国民事诉讼法》第六十七条“当事人对自己提出的主张有责任提供证据”之规定，某甲公司作为买方未能就其抗辩主张完成举证责任，依法应承担不利后果，故一审法院判令其支付货款839830元及相应逾期付款违约金，事实清楚、证据充分，适用法律正确，应予维持。当事人主张合同关系不成立或未履行供货义务的，应承担举证责任；若双方签订书面合同，且通过沟通记录、项目验收等事实可印证合同实际履行，而主张方未能提供有效反证否定供货事实或说明具体履约差异的，应承担举证不能的不利后果，依法认定供货义务已履行并支持货款及违约金请求。争议焦点1：某甲公司与某乙公司之间是否存在真实的买卖合同关系。  争议焦点2：某乙公司是否已履行案涉《购销合同》项下的供货义务。  争议焦点3：某甲公司是否应向某乙公司支付货款及逾期付款违约金。",
+      "sourceUrl": "https://ydzk.chineselaw.com/ydzk/caseDetail/case/dc9e8a9eeb30f5f14391885814867c7e",
+      "sourceType": "元典MCP",
+      "keywords": [
+        "某甲公司、某乙公司、吴某买卖合同纠纷二审民事判决书",
+        "（2025）闽01民终7787号",
+        "福州市中级人民法院",
+        "买卖合同纠纷",
+        "总结"
+      ],
+      "focusTags": [
+        "总结"
+      ],
+      "referencedStatutes": [],
+      "excerpts": [
+        {
+          "id": "excerpt-knowledge-case-yuandian-dc9e8a9eeb30f5f14391885814867c7e-holding-本案的案件基本事实为-2024年1月29日-某甲公司与某乙公司签订-购销合同-约定由某乙公司向某甲公司供应宁德-项目-信息化部分-所需25项产品-其中4项为增补-总价1770830元-约定预付款30-于签约前支付-余款70-于2024年4月29日前支付-逾期付款按日万分之四计违约金-交货地点为宁德市-联系人为王某-某甲公司于2024年3月至2025年5月累计付款931000元-某乙公司于2024年1月向某己公司采购了与上述合同几乎完全一致的产品-某己公司于2023年12月至2024年2月将货物发往项目地址或某乙公司指定地址并由某乙公司签收-海-德项目-微信群中包含某甲公司-某乙公司-某己公司及某丁公司人员-自2024年1月起持续沟通合同相关事宜-2025年3月至5月期间多次催款-黄某乙曾回应付款困难-2024年12月2日-宁德市-项目-信息化部分-经某庚公司组织专家验收并通过-某甲公司为吴某自然人独资的一人有限公司-本案争议焦点在于某甲公司是否应向某乙公司支付案涉货款及逾期付款违约金-法院认为-某甲公司与某乙公司于2024年1月29日签订-购销合同-明确约定某乙公司向某甲公司供应案涉设备-双方形成买卖合同关系-虽某甲公司主张其系应某丁公司要求与某乙公司签约且未实际签收货物-但其未能提供任何证据证明该主张-而案涉-海-德项目-微信群中包含某甲公司代表黄某乙-自2024年1月起至2025年6月持续就合同内容-开票信息-收款账户及催款事宜进行沟通-期间某甲公司从未对货物数量-质量或应付金额提出异议-亦未在诉讼中举证证明存在其他供应商供货或某乙公司未完全履行合同义务-且在一审-二审中均未能对某乙公司供货部分与其他供应商供货进行剥离说明-相反-某乙公司提交了其与某己公司的合同-到货确认书及某己公司工作人员与某丁公司王某的微信往来记录-结合案涉项目已于2024年12月验收完成的事实-足以证明某乙公司已全面履行供货义务-根据-中华人民共和国民事诉讼法-第六十七条-当事人对自己提出的主张有责任提供证据-之规定-某甲公司作为买方未能就其抗辩主张完成举证责任-依法应承担不利后果-故一审法院判令其支付货款839830元及相应逾期付款违约金-事实清楚-证据充分-适用法律正确-应予维持-当事人主张合同关系不成立或未履行供货义务的-应承担举证责任-若双方签订书面合同-且通过沟通记录-项目验收等事实可印证合同实际履行-而主张方未能提供有效反证否定供货事实或说明具体履约差异的-应承担举证不能的不利后果-依法认定供货义务已履行并支持货款及违约金请求-争议焦点1-某甲公司与某乙公司之间是否存在真实的买卖合同关系-争议焦点2-某乙公司是否已履行案涉-购销合同-项下的供货义务-争议焦点3-某甲公司是否应向某乙公司支付货款及逾期付款违约金",
+          "caseId": "knowledge-case-yuandian-dc9e8a9eeb30f5f14391885814867c7e",
+          "excerptType": "holding",
+          "locator": "元典摘要 1",
+          "content": "本案的案件基本事实为：2024年1月29日，某甲公司与某乙公司签订《购销合同》，约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补），总价1770830元，约定预付款30%于签约前支付，余款70%于2024年4月29日前支付，逾期付款按日万分之四计违约金，交货地点为宁德市＊＊，联系人为王某；某甲公司于2024年3月至2025年5月累计付款931000元；某乙公司于2024年1月向某己公司采购了与上述合同几乎完全一致的产品，某己公司于2023年12月至2024年2月将货物发往项目地址或某乙公司指定地址并由某乙公司签收；“海＊＊德项目”微信群中包含某甲公司、某乙公司、某己公司及某丁公司人员，自2024年1月起持续沟通合同相关事宜，2025年3月至5月期间多次催款，黄某乙曾回应付款困难；2024年12月2日，宁德市＊＊＊项目（信息化部分）经某庚公司组织专家验收并通过；某甲公司为吴某自然人独资的一人有限公司。本案争议焦点在于某甲公司是否应向某乙公司支付案涉货款及逾期付款违约金。法院认为，某甲公司与某乙公司于2024年1月29日签订《购销合同》，明确约定某乙公司向某甲公司供应案涉设备，双方形成买卖合同关系；虽某甲公司主张其系应某丁公司要求与某乙公司签约且未实际签收货物，但其未能提供任何证据证明该主张，而案涉“海＊＊德项目”微信群中包含某甲公司代表黄某乙，自2024年1月起至2025年6月持续就合同内容、开票信息、收款账户及催款事宜进行沟通，期间某甲公司从未对货物数量、质量或应付金额提出异议，亦未在诉讼中举证证明存在其他供应商供货或某乙公司未完全履行合同义务，且在一审、二审中均未能对某乙公司供货部分与其他供应商供货进行剥离说明，相反，某乙公司提交了其与某己公司的合同、到货确认书及某己公司工作人员与某丁公司王某的微信往来记录，结合案涉项目已于2024年12月验收完成的事实，足以证明某乙公司已全面履行供货义务；根据《中华人民共和国民事诉讼法》第六十七条“当事人对自己提出的主张有责任提供证据”之规定，某甲公司作为买方未能就其抗辩主张完成举证责任，依法应承担不利后果，故一审法院判令其支付货款839830元及相应逾期付款违约金，事实清楚、证据充分，适用法律正确，应予维持。当事人主张合同关系不成立或未履行供货义务的，应承担举证责任；若双方签订书面合同，且通过沟通记录、项目验收等事实可印证合同实际履行，而主张方未能提供有效反证否定供货事实或说明具体履约差异的，应承担举证不能的不利后果，依法认定供货义务已履行并支持货款及违约金请求。争议焦点1：某甲公司与某乙公司之间是否存在真实的买卖合同关系。  争议焦点2：某乙公司是否已履行案涉《购销合同》项下的供货义务。  争议焦点3：某甲公司是否应向某乙公司支付货款及逾期付款违约金。",
+          "summary": "本案的案件基本事实为：2024年1月29日，某甲公司与某乙公司签订《购销合同》，约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补），总价1770830元，约定预付款30%于签约前支付，余款70%于202",
+          "keywords": [
+            "本案的案件基本事实为：2024年1月29日",
+            "某甲公司与某乙公司签订《购销合同》",
+            "约定由某乙公司向某甲公司供应宁德＊＊＊项目（信息化部分）所需25项产品（其中4项为增补）",
+            "总价1770830元",
+            "约定预付款30%于签约前支付",
+            "余款70%于2024年4月29日前支付"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-yuandian-8d225ecc3589e258c97acc6c5ade2c3f",
+      "title": "王某、朱某东买卖合同纠纷民事二审民事判决书",
+      "caseNumber": "（2024）冀10民终6932号",
+      "courtName": "廊坊市中级人民法院",
+      "courtLevel": "中级",
+      "region": "河北",
+      "trialLevel": "二审案件",
+      "caseType": "民事案件",
+      "cause": "买卖合同纠纷",
+      "judgmentDate": "2024-10-25T00:00:00.000Z",
+      "effectiveDate": "2024-10-25T00:00:00.000Z",
+      "issueSummary": "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识，朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉，王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元。本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元。法院认为，《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款明确规定，即使对账确认函、债权确认书等函件、凭证没有记载债权人名称，只要买卖合同当事人一方能够以此证明存在买卖合同关系，并且对方没有相反证据足以推翻的情况下，法院应予支持。本案中，朱某东持有王某签名确认的证明，表明合各庄工地材料款尚余17500元，尽管该证明中未记载朱某东姓名，但根据上述法律规定，朱某东可以据此主张债权。同时，王某未能提供充分有效的反证来推翻该证明的真实性，因此，法院支持朱某东的诉求，认定王某作为工程项目承包人，应当承担给付剩余材料款的责任。综上，王某的上诉请求因缺乏充足有效证据支持而不能成立，法院予以驳回。在买卖合同纠纷中，当一方当事人提供的证据不足以支持其主张时，需承担不利后果。根据《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款，若当事人持有未明确记载债权人名称的债权确认文件，并无相反证据推翻的情况下，可据此主张债权。因此，债务人未能提供充足证据反驳债权人主张的债权凭证时，法院将支持债权人的诉讼请求。争议焦点1：双方当事人之间是否存在买卖合同关系。争议焦点2：王某是否拖欠朱某东的货款17500元。",
+      "holdingSummary": "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识，朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉，王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元。本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元。法院认为，《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款明确规定，即使对账确认函、债权确认书等函件、凭证没有记载债权人名称，只要买卖合同当事人一方能够以此证明存在买卖合同关系，并且对方没有相反证据足以推翻的情况下，法院应予支持。本案中，朱某东持有王某签名确认的证明，表明合各庄工地材料款尚余17500元，尽管该证明中未记载朱某东姓名，但根据上述法律规定，朱某东可以据此主张债权。同时，王某未能提供充分有效的反证来推翻该证明的真实性，因此，法院支持朱某东的诉求，认定王某作为工程项目承包人，应当承担给付剩余材料款的责任。综上，王某的上诉请求因缺乏充足有效证据支持而不能成立，法院予以驳回。在买卖合同纠纷中，当一方当事人提供的证据不足以支持其主张时，需承担不利后果。根据《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款，若当事人持有未明确记载债权人名称的债权确认文件，并无相反证据推翻的情况下，可据此主张债权。因此，债务人未能提供充足证据反驳债权人主张的债权凭证时，法院将支持债权人的诉讼请求。争议焦点1：双方当事人之间是否存在买卖合同关系。争议焦点2：王某是否拖欠朱某东的货款17500元。",
+      "reasoningSummary": "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识，朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉，王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元。本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元。法院认为，《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款明确规定，即使对账确认函、债权确认书等函件、凭证没有记载债权人名称，只要买卖合同当事人一方能够以此证明存在买卖合同关系，并且对方没有相反证据足以推翻的情况下，法院应予支持。本案中，朱某东持有王某签名确认的证明，表明合各庄工地材料款尚余17500元，尽管该证明中未记载朱某东姓名，但根据上述法律规定，朱某东可以据此主张债权。同时，王某未能提供充分有效的反证来推翻该证明的真实性，因此，法院支持朱某东的诉求，认定王某作为工程项目承包人，应当承担给付剩余材料款的责任。综上，王某的上诉请求因缺乏充足有效证据支持而不能成立，法院予以驳回。在买卖合同纠纷中，当一方当事人提供的证据不足以支持其主张时，需承担不利后果。根据《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款，若当事人持有未明确记载债权人名称的债权确认文件，并无相反证据推翻的情况下，可据此主张债权。因此，债务人未能提供充足证据反驳债权人主张的债权凭证时，法院将支持债权人的诉讼请求。争议焦点1：双方当事人之间是否存在买卖合同关系。争议焦点2：王某是否拖欠朱某东的货款17500元。",
+      "resultSummary": "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识，朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉，王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元。本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元。法院认为，《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款明确规定，即使对账确认函、债权确认书等函件、凭证没有记载债权人名称，只要买卖合同当事人一方能够以此证明存在买卖合同关系，并且对方没有相反证据足以推翻的情况下，法院应予支持。本案中，朱某东持有王某签名确认的证明，表明合各庄工地材料款尚余17500元，尽管该证明中未记载朱某东姓名，但根据上述法律规定，朱某东可以据此主张债权。同时，王某未能提供充分有效的反证来推翻该证明的真实性，因此，法院支持朱某东的诉求，认定王某作为工程项目承包人，应当承担给付剩余材料款的责任。综上，王某的上诉请求因缺乏充足有效证据支持而不能成立，法院予以驳回。在买卖合同纠纷中，当一方当事人提供的证据不足以支持其主张时，需承担不利后果。根据《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款，若当事人持有未明确记载债权人名称的债权确认文件，并无相反证据推翻的情况下，可据此主张债权。因此，债务人未能提供充足证据反驳债权人主张的债权凭证时，法院将支持债权人的诉讼请求。争议焦点1：双方当事人之间是否存在买卖合同关系。争议焦点2：王某是否拖欠朱某东的货款17500元。",
+      "sourceUrl": "https://ydzk.chineselaw.com/ydzk/caseDetail/case/8d225ecc3589e258c97acc6c5ade2c3f",
+      "sourceType": "元典MCP",
+      "keywords": [
+        "王某、朱某东买卖合同纠纷民事二审民事判决书",
+        "（2024）冀10民终6932号",
+        "廊坊市中级人民法院",
+        "买卖合同纠纷",
+        "总结"
+      ],
+      "focusTags": [
+        "总结"
+      ],
+      "referencedStatutes": [],
+      "excerpts": [
+        {
+          "id": "excerpt-knowledge-case-yuandian-8d225ecc3589e258c97acc6c5ade2c3f-holding-本案的案件基本事实为-原告朱某东通过刘某玉介绍与被告王某相识-朱某东向王某承包的北京市朝阳区-庄工地工程项目供应砂浆和腻子粉-王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元-本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元-法院认为-最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释-第一条第二款明确规定-即使对账确认函-债权确认书等函件-凭证没有记载债权人名称-只要买卖合同当事人一方能够以此证明存在买卖合同关系-并且对方没有相反证据足以推翻的情况下-法院应予支持-本案中-朱某东持有王某签名确认的证明-表明合各庄工地材料款尚余17500元-尽管该证明中未记载朱某东姓名-但根据上述法律规定-朱某东可以据此主张债权-同时-王某未能提供充分有效的反证来推翻该证明的真实性-因此-法院支持朱某东的诉求-认定王某作为工程项目承包人-应当承担给付剩余材料款的责任-综上-王某的上诉请求因缺乏充足有效证据支持而不能成立-法院予以驳回-在买卖合同纠纷中-当一方当事人提供的证据不足以支持其主张时-需承担不利后果-根据-最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释-第一条第二款-若当事人持有未明确记载债权人名称的债权确认文件-并无相反证据推翻的情况下-可据此主张债权-因此-债务人未能提供充足证据反驳债权人主张的债权凭证时-法院将支持债权人的诉讼请求-争议焦点1-双方当事人之间是否存在买卖合同关系-争议焦点2-王某是否拖欠朱某东的货款17500元",
+          "caseId": "knowledge-case-yuandian-8d225ecc3589e258c97acc6c5ade2c3f",
+          "excerptType": "holding",
+          "locator": "元典摘要 1",
+          "content": "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识，朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉，王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元。本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元。法院认为，《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款明确规定，即使对账确认函、债权确认书等函件、凭证没有记载债权人名称，只要买卖合同当事人一方能够以此证明存在买卖合同关系，并且对方没有相反证据足以推翻的情况下，法院应予支持。本案中，朱某东持有王某签名确认的证明，表明合各庄工地材料款尚余17500元，尽管该证明中未记载朱某东姓名，但根据上述法律规定，朱某东可以据此主张债权。同时，王某未能提供充分有效的反证来推翻该证明的真实性，因此，法院支持朱某东的诉求，认定王某作为工程项目承包人，应当承担给付剩余材料款的责任。综上，王某的上诉请求因缺乏充足有效证据支持而不能成立，法院予以驳回。在买卖合同纠纷中，当一方当事人提供的证据不足以支持其主张时，需承担不利后果。根据《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款，若当事人持有未明确记载债权人名称的债权确认文件，并无相反证据推翻的情况下，可据此主张债权。因此，债务人未能提供充足证据反驳债权人主张的债权凭证时，法院将支持债权人的诉讼请求。争议焦点1：双方当事人之间是否存在买卖合同关系。争议焦点2：王某是否拖欠朱某东的货款17500元。",
+          "summary": "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识，朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉，王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元。本案争议焦点在于朱某东是否能够依据相关证明向王",
+          "keywords": [
+            "本案的案件基本事实为：原告朱某东通过刘某玉介绍与被告王某相识",
+            "朱某东向王某承包的北京市朝阳区××庄工地工程项目供应砂浆和腻子粉",
+            "王某于2016年2月6日出具证明确认尚欠朱某东材料款17500元",
+            "本案争议焦点在于朱某东是否能够依据相关证明向王某主张剩余材料款17500元",
+            "法院认为",
+            "《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第一条第二款明确规定"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-bdirvc10",
+      "title": "张某与李某买卖合同纠纷案",
+      "caseNumber": "(2024)京01民终218号",
+      "courtName": "北京市第一中级人民法院",
+      "courtLevel": "中级人民法院",
+      "region": "北京",
+      "trialLevel": "二审",
+      "caseType": "民事",
+      "cause": "买卖合同纠纷",
+      "judgmentDate": "2024-04-18T00:00:00.000Z",
+      "effectiveDate": "2024-04-18T00:00:00.000Z",
+      "issueSummary": "围绕聊天记录、收货确认和尾款支付承诺是否足以证明付款义务到期且未履行。",
+      "holdingSummary": "对方在即时通信中明确确认收货并承诺付款的，可以作为认定义务到期及未履行的补强证据。",
+      "reasoningSummary": "结合合同付款条款、物流签收和微信确认内容，足以形成完整证据链，证明买方负有支付尾款义务。",
+      "resultSummary": "判令被告支付剩余货款及逾期付款损失。",
+      "sourceType": "裁判文书",
+      "sourceUrl": "https://wenshu.court.gov.cn/",
+      "keywords": [
+        "微信聊天记录",
+        "收货确认",
+        "尾款",
+        "付款义务"
+      ],
+      "focusTags": [
+        "付款义务",
+        "电子数据真实性",
+        "合同履行"
+      ],
+      "referencedStatutes": [
+        "中华人民共和国民法典 第五百零九条",
+        "中华人民共和国民法典 第五百七十七条"
+      ],
+      "excerpts": [
+        {
+          "id": "excerpt-d5zmlh09",
+          "caseId": "knowledge-case-bdirvc10",
+          "excerptType": "holding",
+          "locator": "裁判理由第 3 段",
+          "content": "买方在微信聊天中明确表示“货已经收到，本周五前安排尾款”，应视为对收货事实及付款义务的再次确认。",
+          "summary": "微信确认可作为收货与付款承诺的补强证据。",
+          "keywords": [
+            "微信",
+            "尾款",
+            "收货确认"
+          ]
+        },
+        {
+          "id": "excerpt-fchoab3i",
+          "caseId": "knowledge-case-bdirvc10",
+          "excerptType": "reasoning",
+          "locator": "裁判理由第 5 段",
+          "content": "电子数据与合同文本、送货单形成相互印证时，其真实性和关联性足以达到优势证明标准。",
+          "summary": "电子数据可与书证相互印证形成完整证明链。",
+          "keywords": [
+            "电子数据",
+            "优势证明",
+            "相互印证"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-u7h5bw0e",
+      "title": "某贸易公司与某供应链公司买卖合同纠纷案",
+      "caseNumber": "(2023)沪0115民初9218号",
+      "courtName": "上海市浦东新区人民法院",
+      "courtLevel": "基层人民法院",
+      "region": "上海",
+      "trialLevel": "一审",
+      "caseType": "民事",
+      "cause": "买卖合同纠纷",
+      "judgmentDate": "2023-11-06T00:00:00.000Z",
+      "effectiveDate": "2023-11-21T00:00:00.000Z",
+      "issueSummary": "电子对账及催款记录能否证明对方认可欠款余额。",
+      "holdingSummary": "连续的催款与回复记录、对账单和发票可共同证明欠款事实。",
+      "reasoningSummary": "即便没有单独签章确认，只要交易过程持续、往来内容稳定一致，也可认定商业往来中的债务确认。",
+      "resultSummary": "支持原告诉请，判令支付货款及违约金。",
+      "sourceType": "裁判文书",
+      "sourceUrl": "https://wenshu.court.gov.cn/",
+      "keywords": [
+        "对账单",
+        "催款",
+        "商业往来",
+        "欠款确认"
+      ],
+      "focusTags": [
+        "欠款确认",
+        "商业惯例",
+        "违约责任"
+      ],
+      "referencedStatutes": [
+        "中华人民共和国民法典 第五百七十七条"
+      ],
+      "excerpts": [
+        {
+          "id": "excerpt-z37p8dkj",
+          "caseId": "knowledge-case-u7h5bw0e",
+          "excerptType": "issue",
+          "locator": "争议焦点第 1 点",
+          "content": "被告虽抗辩未签署最终对账单，但对连续催款记录从未提出异议，应认定其对欠款事实知悉。",
+          "summary": "持续催款未异议可作为认知欠款的推定基础。",
+          "keywords": [
+            "催款",
+            "未异议",
+            "欠款事实"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-case-aclvm365",
+      "title": "最高人民法院指导性案例：电子数据证据审查规则",
+      "caseNumber": "指导性案例",
+      "courtName": "最高人民法院",
+      "courtLevel": "最高人民法院",
+      "region": "全国",
+      "trialLevel": "指导案例",
+      "caseType": "民事",
+      "cause": "电子数据证据审查",
+      "judgmentDate": "2022-06-10T00:00:00.000Z",
+      "effectiveDate": "2022-06-10T00:00:00.000Z",
+      "issueSummary": "电子数据的形成方式、存储介质与提取路径如何影响其证明力。",
+      "holdingSummary": "对电子数据应从形成主体、保存完整性、关联印证材料等方面综合判断真实性。",
+      "reasoningSummary": "电子数据并不因载体可变而当然不可信，关键在于是否有连续、稳定、可核验的来源链路。",
+      "resultSummary": "明确电子数据真实性审查的多维标准。",
+      "sourceType": "指导案例",
+      "sourceUrl": "https://www.court.gov.cn/",
+      "keywords": [
+        "电子数据",
+        "真实性",
+        "审查规则",
+        "来源链路"
+      ],
+      "focusTags": [
+        "电子数据真实性",
+        "证据审查"
+      ],
+      "referencedStatutes": [
+        "中华人民共和国民事诉讼法 第六十六条",
+        "中华人民共和国民事诉讼法 第七十一条"
+      ],
+      "excerpts": [
+        {
+          "id": "excerpt-k5tusc6h",
+          "caseId": "knowledge-case-aclvm365",
+          "excerptType": "reasoning",
+          "locator": "裁判要旨",
+          "content": "对电子数据真实性的判断，应结合形成时间、生成主体、存储环境以及与其他证据的印证情况综合认定。",
+          "summary": "电子数据真实性审查应采用综合判断方法。",
+          "keywords": [
+            "形成时间",
+            "存储环境",
+            "综合认定"
+          ]
+        }
+      ]
+    }
+  ],
+  "knowledgeFiles": [],
+  "knowledgeStatutes": [
+    {
+      "id": "statute-cyahsf8c",
+      "title": "中华人民共和国民事诉讼法",
+      "docType": "法律",
+      "issuer": "全国人民代表大会常务委员会",
+      "effectiveStatus": "effective",
+      "effectiveDate": "2024-01-01T00:00:00.000Z",
+      "publishDate": "2023-09-01T00:00:00.000Z",
+      "revisionDate": "2023-09-01T00:00:00.000Z",
+      "version": "2023 修正",
+      "sourceUrl": "https://www.npc.gov.cn/npc/c2/c30834/202310/t20231018_432137.html",
+      "sourceTextUrl": "https://www.npc.gov.cn/npc/c2/c30834/202310/t20231018_432137.html",
+      "sourceProvider": "npc_flk",
+      "sourceAuthority": "全国人大常委会办公厅",
+      "sourceVerifiedAt": "2026-09-24T00:00:00.000Z",
+      "keywords": [
+        "民诉法",
+        "民事诉讼法",
+        "电子数据",
+        "证据",
+        "举证",
+        "质证",
+        "真实性"
+      ],
+      "articles": [
+        {
+          "id": "article-gfrh4g3v",
+          "documentId": "statute-cyahsf8c",
+          "articleNumber": "第六十六条",
+          "content": "证据包括：（一）当事人的陈述；（二）书证；（三）物证；（四）视听资料；（五）电子数据；（六）证人证言；（七）鉴定意见；（八）勘验笔录。证据必须查证属实，才能作为认定事实的根据。",
+          "plainText": "证据包括：（一）当事人的陈述；（二）书证；（三）物证；（四）视听资料；（五）电子数据；（六）证人证言；（七）鉴定意见；（八）勘验笔录。证据必须查证属实，才能作为认定事实的根据。",
+          "aliases": [
+            "证据种类",
+            "法定证据种类",
+            "电子数据证据",
+            "微信聊天记录证据"
+          ],
+          "topicTags": [
+            "证据能力",
+            "电子数据"
+          ]
+        },
+        {
+          "id": "article-2z66suk4",
+          "documentId": "statute-cyahsf8c",
+          "articleNumber": "第六十七条",
+          "content": "当事人对自己提出的主张，有责任提供证据。当事人及其诉讼代理人因客观原因不能自行收集的证据，或者人民法院认为审理案件需要的证据，人民法院应当调查收集。",
+          "plainText": "当事人对自己提出的主张，有责任提供证据。当事人及其诉讼代理人因客观原因不能自行收集的证据，或者人民法院认为审理案件需要的证据，人民法院应当调查收集。",
+          "aliases": [
+            "举证责任",
+            "谁主张谁举证",
+            "主张责任"
+          ],
+          "topicTags": [
+            "举证责任",
+            "证明责任"
+          ]
+        },
+        {
+          "id": "article-exda3hba",
+          "documentId": "statute-cyahsf8c",
+          "articleNumber": "第七十一条",
+          "content": "人民法院应当按照法定程序，全面、客观地审查核实证据。",
+          "plainText": "人民法院应当按照法定程序，全面、客观地审查核实证据。",
+          "aliases": [
+            "证据审查",
+            "审查核实"
+          ],
+          "topicTags": [
+            "证据审查",
+            "证明力"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "statute-w9wnmi21",
+      "title": "中华人民共和国民法典",
+      "docType": "法律",
+      "issuer": "全国人民代表大会",
+      "effectiveStatus": "effective",
+      "effectiveDate": "2021-01-01T00:00:00.000Z",
+      "publishDate": "2020-05-28T00:00:00.000Z",
+      "version": "现行有效",
+      "sourceUrl": "https://flk.npc.gov.cn/",
+      "sourceTextUrl": "https://flk.npc.gov.cn/",
+      "sourceProvider": "npc_flk",
+      "sourceAuthority": "全国人大常委会办公厅",
+      "sourceVerifiedAt": "2026-09-24T00:00:00.000Z",
+      "keywords": [
+        "民法典",
+        "合同履行",
+        "违约责任",
+        "买卖合同",
+        "付款义务"
+      ],
+      "articles": [
+        {
+          "id": "article-nx7505sz",
+          "documentId": "statute-w9wnmi21",
+          "articleNumber": "第五百零九条",
+          "content": "当事人应当按照约定全面履行自己的义务。",
+          "plainText": "当事人应当按照约定全面履行自己的义务。",
+          "aliases": [
+            "全面履行原则"
+          ],
+          "topicTags": [
+            "合同履行",
+            "付款义务"
+          ]
+        },
+        {
+          "id": "article-f0paw6zd",
+          "documentId": "statute-w9wnmi21",
+          "articleNumber": "第五百七十七条",
+          "content": "当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
+          "plainText": "当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担违约责任。",
+          "aliases": [
+            "违约责任",
+            "不履行合同义务"
+          ],
+          "topicTags": [
+            "违约责任",
+            "损失赔偿"
+          ]
+        },
+        {
+          "id": "article-kdhh7w50",
+          "documentId": "statute-w9wnmi21",
+          "articleNumber": "第五百八十五条",
+          "content": "当事人可以约定一方违约时应当根据违约情况向对方支付一定数额的违约金，也可以约定因违约产生的损失赔偿额的计算方法。约定的违约金低于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以增加；约定的违约金过分高于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以适当减少。当事人就迟延履行约定违约金的，违约方支付违约金后，还应当履行债务。",
+          "plainText": "当事人可以约定违约金或者损失赔偿额的计算方法。约定的违约金低于造成的损失的，可以请求增加；过分高于造成的损失的，可以请求适当减少。迟延履行约定违约金的，支付违约金后仍应履行债务。",
+          "aliases": [
+            "违约金",
+            "约定违约金",
+            "损失赔偿额计算方法"
+          ],
+          "topicTags": [
+            "违约责任",
+            "违约金",
+            "损失赔偿"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "statute-1utim3dm",
+      "title": "最高人民法院关于适用《中华人民共和国民事诉讼法》的解释",
+      "docType": "司法解释",
+      "issuer": "最高人民法院",
+      "effectiveStatus": "effective",
+      "effectiveDate": "2022-04-10T00:00:00.000Z",
+      "publishDate": "2022-03-22T00:00:00.000Z",
+      "revisionDate": "2022-03-22T00:00:00.000Z",
+      "version": "2022 修正",
+      "sourceUrl": "https://gw.nscourt.gov.cn/nscourt/wzsy/swgk/sfwj/content/post_1473222.html",
+      "sourceTextUrl": "https://gw.nscourt.gov.cn/nscourt/wzsy/swgk/sfwj/content/post_1473222.html",
+      "sourceProvider": "npc_flk",
+      "sourceAuthority": "最高人民法院",
+      "sourceVerifiedAt": "2026-09-24T00:00:00.000Z",
+      "keywords": [
+        "民诉解释",
+        "民事诉讼法解释",
+        "电子数据",
+        "视听资料",
+        "微信聊天记录"
+      ],
+      "articles": [
+        {
+          "id": "article-7j9bgvvq",
+          "documentId": "statute-1utim3dm",
+          "articleNumber": "第一百一十六条",
+          "content": "视听资料包括录音资料和影像资料。电子数据是指通过电子邮件、电子数据交换、网上聊天记录、博客、微博客、手机短信、电子签名、域名等形成或者存储在电子介质中的信息。存储在电子介质中的录音资料和影像资料，适用电子数据的规定。",
+          "plainText": "视听资料包括录音资料和影像资料。电子数据是指通过电子邮件、电子数据交换、网上聊天记录、博客、微博客、手机短信、电子签名、域名等形成或者存储在电子介质中的信息。存储在电子介质中的录音资料和影像资料，适用电子数据的规定。",
+          "aliases": [
+            "电子数据定义",
+            "视听资料与电子数据",
+            "微信聊天记录"
+          ],
+          "topicTags": [
+            "电子数据",
+            "视听资料",
+            "证据能力"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "statute-udqmdz1x",
+      "title": "最高人民法院关于民事诉讼证据的若干规定",
+      "docType": "司法解释",
+      "issuer": "最高人民法院",
+      "effectiveStatus": "effective",
+      "effectiveDate": "2020-05-01T00:00:00.000Z",
+      "publishDate": "2019-12-25T00:00:00.000Z",
+      "revisionDate": "2019-12-25T00:00:00.000Z",
+      "version": "2019 修正",
+      "sourceUrl": "https://www.guizhoucourt.gov.cn/qwfb/213174.jhtml",
+      "sourceTextUrl": "https://www.guizhoucourt.gov.cn/qwfb/213174.jhtml",
+      "sourceProvider": "npc_flk",
+      "sourceAuthority": "最高人民法院",
+      "sourceVerifiedAt": "2026-09-24T00:00:00.000Z",
+      "keywords": [
+        "证据规定",
+        "民事证据规定",
+        "电子数据",
+        "即时通信",
+        "微信聊天记录"
+      ],
+      "articles": [
+        {
+          "id": "article-62y7r9cz",
+          "documentId": "statute-udqmdz1x",
+          "articleNumber": "第十四条",
+          "content": "电子数据包括下列信息、电子文件：（一）网页、博客、微博客等网络平台发布的信息；（二）手机短信、电子邮件、即时通信、通讯群组等网络应用服务的通信信息；（三）用户注册信息、身份认证信息、电子交易记录、通信记录、登录日志等信息；（四）文档、图片、音频、视频、数字证书、计算机程序等电子文件；（五）其他以数字化形式存储、处理、传输的能够证明案件事实的信息。",
+          "plainText": "电子数据包括下列信息、电子文件：（一）网页、博客、微博客等网络平台发布的信息；（二）手机短信、电子邮件、即时通信、通讯群组等网络应用服务的通信信息；（三）用户注册信息、身份认证信息、电子交易记录、通信记录、登录日志等信息；（四）文档、图片、音频、视频、数字证书、计算机程序等电子文件；（五）其他以数字化形式存储、处理、传输的能够证明案件事实的信息。",
+          "aliases": [
+            "电子数据范围",
+            "微信聊天记录",
+            "即时通信证据"
+          ],
+          "topicTags": [
+            "电子数据",
+            "即时通信",
+            "证据审查"
+          ]
+        }
+      ]
+    }
+  ]
+}

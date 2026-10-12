@@ -1,0 +1,3 @@
+LexVerify server running on http://localhost:8787
+Legacy API: http://localhost:8787/api
+Versioned API: http://localhost:8787/api/v1

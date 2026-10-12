@@ -1,0 +1,96 @@
+:root {
+  --text: #61708a;
+  --text-h: #1f2937;
+  --bg: #f5f7fb;
+  --panel-bg: #ffffff;
+  --panel-soft: #f8faff;
+  --sidebar-bg: #f9fbff;
+  --border: #dde4f1;
+  --accent: #3f63f3;
+  --accent-bg: rgba(63, 99, 243, 0.12);
+  --accent-border: rgba(63, 99, 243, 0.34);
+  --warn-bg: rgba(255, 236, 214, 0.78);
+  --danger: #d25545;
+  --success: #0f8b55;
+  --sans: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* 全局字号梯队（UI 语义令牌）：层级靠字重与颜色区分，禁止新增散值 */
+  --font-micro: 11px;    /* 徽章/角标 */
+  --font-caption: 12px;  /* 辅助信息：路径、时间、说明 */
+  --font-body: 13px;     /* 基准：正文、列表、按钮、表单 */
+  --font-title: 16px;    /* 面板标题、卡片主信息 */
+  --font-page: 20px;     /* 页面级标题、侧栏关键数字 */
+  --font-display: 28px;  /* 大数字指标、登录主标题 */
+
+  font: 16px/1.6 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #a8b3ca;
+    --text-h: #edf2ff;
+    --bg: #0f1726;
+    --panel-bg: #121d31;
+    --panel-soft: #16233b;
+    --sidebar-bg: #0d1627;
+    --border: #22304b;
+    --accent: #7c99ff;
+    --accent-bg: rgba(124, 153, 255, 0.16);
+    --accent-border: rgba(124, 153, 255, 0.34);
+    --warn-bg: rgba(104, 67, 22, 0.45);
+    --danger: #ff8c7f;
+    --success: #57d39b;
+  }
+}
+
+#root {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--text-h);
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  box-shadow: 0 0 0 3px rgba(63, 99, 243, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}

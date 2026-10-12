@@ -1,0 +1,21 @@
+services:
+  collabora:
+    image: collabora/code:26.04.2.4.1
+    container_name: lawverify-collabora
+    restart: unless-stopped
+    ports:
+      - "9980:9980"
+    environment:
+      # Official platform website mapping:
+      # - PLATFORM_WEB_ORIGIN: full HTTPS origin used by Collabora aliasgroup
+      # - PLATFORM_WEB_DOMAIN: host name used by server_name and post_allow
+      aliasgroup1: ${PLATFORM_WEB_ORIGIN:-https://127.0.0.1:443}
+      server_name: ${PLATFORM_WEB_DOMAIN:-127.0.0.1}
+      username: admin
+      password: admin123456
+      DONT_GEN_SSL_CERT: "true"
+      extra_params: --o:ssl.enable=false --o:ssl.termination=true --o:net.service_root=/collabora --o:net.post_allow.host[0]=${PLATFORM_WEB_DOMAIN:-127.0.0.1} --o:welcome.enable=false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - MKNOD

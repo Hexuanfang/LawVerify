@@ -1,0 +1,16 @@
+services:
+  cloud-postgres:
+    image: postgres:16-alpine
+    container_name: lawverify-cloud-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lawverify_cloud
+      POSTGRES_USER: lawverify
+      POSTGRES_PASSWORD: lawverify_dev
+    ports:
+      - "54329:5432"
+    volumes:
+      - lawverify-cloud-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  lawverify-cloud-postgres-data:

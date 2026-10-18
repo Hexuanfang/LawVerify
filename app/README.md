@@ -1,73 +1,16 @@
-# 律师证据质证助手
+# LawVerify Desktop
 
-当前版本已升级为前后端分离架构：
+本目录包含 React + Tiptap 工作台和 Electron Windows 客户端。
+完整功能、配置、开发与打包说明统一维护在仓库根目录：
 
-- `app/`：前端 Web 工作台 + Electron 客户端
-- `server/`：后端 API 服务
-- `docs/architecture.md`：系统架构说明
+- [中文 README](../README.md)
+- [English README](../README.en.md)
 
-## 已实现能力
+This directory contains the React/Tiptap workbench and Electron Windows client.
+See the root documentation above for setup, architecture, packaging, and security notes.
 
-1. 专业登录页与工作台布局
-2. 案件文件夹管理
-3. 证据导入、OCR 占位文本、人工修订
-4. AI 质证书生成与积分扣减
-5. 左右分屏核验、批注、重绑、解绑
-6. Word / PDF 导出
-7. Express 后端接口与文件持久化
-8. Electron 客户端壳层
+从仓库根目录启动桌面联调 / Start desktop development from the repository root:
 
-## 启动方式
-
-先安装依赖：
-
-```bash
-cd server
-npm install
-
-cd ../app
-npm install
+```powershell
+npm --prefix app run dev:desktop
 ```
-
-启动前后端联调：
-
-```bash
-cd app
-npm run dev:stack
-```
-
-启动前后端 + Electron：
-
-```bash
-cd app
-npm run dev:desktop
-```
-
-单独启动前端：
-
-```bash
-cd app
-npm run dev:web
-```
-
-单独启动后端：
-
-```bash
-cd server
-npm run dev
-```
-
-## 架构说明
-
-详见：
-
-- [系统架构文档](file:///d:/trae_projects/lexVerify/docs/architecture.md)
-- [Windows 安装包签名说明](file:///d:/trae_projects/lexVerify/docs/windows-code-signing.md)
-
-## 下一步建议
-
-1. 将后端持久化从 JSON 文件升级为数据库
-2. 接入真实 OCR / 文档解析能力
-3. 接入 LLM 输出 EvidenceLink
-4. 接入对象存储保存原始证据文件
-5. 接入正式账号与权限系统

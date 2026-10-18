@@ -98,6 +98,8 @@ export interface Evidence {
   ocrText: string
   previewDataUrl?: string
   sourceDataUrl?: string
+  storageKey?: string
+  storageUrl?: string
   pageImageDataUrls?: string[]
   sourceMimeType?: string
   pages?: number
@@ -134,6 +136,8 @@ export interface EvidenceLink {
   sentenceIndex?: number
   sentenceText?: string
   note?: string
+  relation?: 'support' | 'contradict' | 'context'
+  reason?: string
 }
 
 export type ParagraphReferenceType = 'case' | 'statute'
@@ -149,6 +153,7 @@ export interface ParagraphReference {
   sentenceIndex?: number
   sentenceText?: string
   note?: string
+  reason?: string
 }
 
 export interface CertificateParagraph {
@@ -160,6 +165,18 @@ export interface CertificateParagraph {
   link?: EvidenceLink
   links?: EvidenceLink[]
   references?: ParagraphReference[]
+  linkageFocus?: SentenceLinkageFocus[]
+}
+
+export interface SentenceLinkageFocus {
+  sentenceIndex: number
+  sentenceText: string
+  kind: 'fact' | 'dispute' | 'legal_issue' | 'identity' | 'background' | 'heading'
+  priority: 'high' | 'normal' | 'skip'
+  reason: string
+  evidenceNeeded: boolean
+  statuteNeeded: boolean
+  caseNeeded: boolean
 }
 
 export interface ClaimUnit {
@@ -202,6 +219,11 @@ export interface EvidenceInsight {
   amounts: string[]
   positions: string[]
   issues: string[]
+  materialRole?: 'source_evidence' | 'identity' | 'working_draft' | 'party_statement' | 'reference_material' | 'unknown'
+  proofPurposes?: string[]
+  proofLimitations?: string[]
+  disputedPoints?: string[]
+  keyExcerpts?: { quote: string; significance: string; pageNumber?: number }[]
   sourceFragmentIds: string[]
   confidence: number
   status: EvidenceInsightStatus

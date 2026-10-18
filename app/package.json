@@ -1,115 +1,117 @@
 {
-  "name": "lawverify-mvp",
-  "description": "LawVerify desktop client for local evidence verification workbench",
-  "productName": "LawVerify",
-  "author": "Hexuanfang",
-  "private": true,
-  "version": "0.1.19",
-  "type": "module",
-  "main": "electron/main.cjs",
-  "scripts": {
-    "dev": "vite",
-    "dev:api": "npm --prefix ../server run dev",
-    "dev:web": "vite",
-    "dev:stack": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:electron": "wait-on http-get://127.0.0.1:5173 && electron electron/main.cjs",
-    "dev:desktop": "concurrently -k \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:electron\"",
-    "build:server": "npm --prefix ../server run build",
-    "prepare:desktop": "node electron/prepare-desktop.cjs",
-    "prepare:builder-cache": "node electron/prepare-builder-cache.cjs",
-    "build": "tsc -b && vite build",
-    "build:desktop": "npm run build && npm run build:server && npm run prepare:desktop && npm run prepare:builder-cache && node electron/run-electron-builder.cjs --publish never --win nsis",
-    "build:desktop:signed": "npm run build:desktop",
-    "build:desktop:dir": "npm run build && npm run build:server && npm run prepare:desktop && npm run prepare:builder-cache && node electron/run-electron-builder.cjs --publish never --win dir",
-    "verify:signature": "powershell -NoProfile -ExecutionPolicy Bypass -File electron/inspect-windows-signature.ps1 -RequireValid",
-    "lint": "oxlint",
-    "preview": "vite preview",
-    "desktop": "electron electron/main.cjs"
-  },
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "compression": "^1.8.2",
-    "cors": "^2.8.5",
-    "docx": "^9.7.1",
-    "dotenv": "^18.0.1",
-    "express": "^5.1.0",
-    "helmet": "^8.3.0",
-    "http-proxy": "^1.18.1",
-    "jsonwebtoken": "^9.0.3",
-    "mammoth": "^1.12.3",
-    "multer": "^2.4.0",
-    "pg": "^8.23.0",
-    "zod": "^4.6.5"
-  },
-  "devDependencies": {
-    "@types/node": "^24.13.3",
-    "@types/qrcode": "^1.5.6",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
-    "@tiptap/extension-text-align": "^3.0.9",
-    "@tiptap/extension-underline": "^3.0.9",
-    "@tiptap/react": "^3.0.9",
-    "@tiptap/starter-kit": "^3.0.9",
-    "concurrently": "^10.0.5",
-    "docx-preview": "^0.4.0",
-    "electron": "^44.4.2",
-    "electron-builder": "^26.0.12",
-    "html-to-image": "^1.11.13",
-    "oxlint": "^1.81.0",
-    "pdfjs-dist": "^5.4.296",
-    "qrcode": "^1.5.4",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "typescript": "~6.0.2",
-    "vite": "^8.3.0",
-    "wait-on": "^9.1.0"
-  },
-  "build": {
-    "appId": "com.zhijing.lawverify",
-    "productName": "LawVerify",
-    "compression": "maximum",
-    "electronDist": "node_modules/electron/dist",
-    "electronLanguages": [
-      "zh-CN",
-      "en-US"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      ".desktop/server/.env.local",
-      ".desktop/**/*",
-      "package.json"
-    ],
-    "win": {
-      "signAndEditExecutable": false,
-      "signtoolOptions": {
-        "signingHashAlgorithms": [
-          "sha256"
-        ],
-        "rfc3161TimeStampServer": "http://timestamp.digicert.com",
-        "timeStampServer": "http://timestamp.digicert.com"
-      },
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "LawVerify-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "include": "build/installer.nsh",
-      "createDesktopShortcut": true,
-      "shortcutName": "LawVerify"
-    }
-  }
+    "name":  "lawverify-mvp",
+    "description":  "LawVerify desktop client for local evidence verification workbench",
+    "productName":  "LawVerify",
+    "author":  "Hexuanfang",
+    "private":  true,
+    "version":  "0.1.33",
+    "type":  "module",
+    "main":  "electron/main.cjs",
+    "scripts":  {
+                    "dev":  "vite",
+                    "dev:api":  "npm --prefix ../server run dev",
+                    "dev:web":  "vite",
+                    "dev:stack":  "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
+                    "dev:electron":  "wait-on http-get://127.0.0.1:5173 \u0026\u0026 electron electron/main.cjs",
+                    "dev:desktop":  "concurrently -k \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:electron\"",
+                    "build:server":  "npm --prefix ../server run build",
+                    "prepare:desktop":  "node electron/prepare-desktop.cjs",
+                    "prepare:builder-cache":  "node electron/prepare-builder-cache.cjs",
+                    "build":  "tsc -b \u0026\u0026 vite build",
+                    "build:desktop":  "npm run build \u0026\u0026 npm run build:server \u0026\u0026 npm run prepare:desktop \u0026\u0026 npm run prepare:builder-cache \u0026\u0026 node electron/run-electron-builder.cjs --publish never --win nsis",
+                    "build:desktop:signed":  "npm run build:desktop",
+                    "build:desktop:dir":  "npm run build \u0026\u0026 npm run build:server \u0026\u0026 npm run prepare:desktop \u0026\u0026 npm run prepare:builder-cache \u0026\u0026 node electron/run-electron-builder.cjs --publish never --win dir",
+                    "verify:signature":  "powershell -NoProfile -ExecutionPolicy Bypass -File electron/inspect-windows-signature.ps1 -RequireValid",
+                    "verify:workspace":  "node electron/verify-workspace-sqlite.cjs",
+                    "lint":  "oxlint",
+                    "preview":  "vite preview",
+                    "desktop":  "electron electron/main.cjs"
+                },
+    "dependencies":  {
+                         "bcryptjs":  "^3.0.3",
+                         "compression":  "^1.8.2",
+                         "cors":  "^2.8.5",
+                         "docx":  "^9.7.1",
+                         "dotenv":  "^18.0.1",
+                         "express":  "^5.1.0",
+                         "helmet":  "^8.3.0",
+                         "http-proxy":  "^1.18.1",
+                         "jsonwebtoken":  "^9.0.3",
+                         "mammoth":  "^1.12.3",
+                         "multer":  "^2.4.0",
+                         "pdf-parse":  "^2.4.5",
+                         "pg":  "^8.23.0",
+                         "zod":  "^4.6.5"
+                     },
+    "devDependencies":  {
+                            "@tiptap/extension-text-align":  "^3.0.9",
+                            "@tiptap/extension-underline":  "^3.0.9",
+                            "@tiptap/react":  "^3.0.9",
+                            "@tiptap/starter-kit":  "^3.0.9",
+                            "@types/node":  "^24.13.3",
+                            "@types/qrcode":  "^1.5.6",
+                            "@types/react":  "^19.2.18",
+                            "@types/react-dom":  "^19.2.7",
+                            "@vitejs/plugin-react":  "^6.1.1",
+                            "concurrently":  "^10.0.5",
+                            "docx-preview":  "^0.4.0",
+                            "electron":  "^44.4.2",
+                            "electron-builder":  "^26.0.12",
+                            "html-to-image":  "^1.11.13",
+                            "oxlint":  "^1.81.0",
+                            "pdfjs-dist":  "^5.4.296",
+                            "qrcode":  "^1.5.4",
+                            "react":  "^19.2.8",
+                            "react-dom":  "^19.2.8",
+                            "typescript":  "~6.0.2",
+                            "vite":  "^8.3.0",
+                            "wait-on":  "^9.1.0"
+                        },
+    "build":  {
+                  "appId":  "com.zhijing.lawverify",
+                  "productName":  "LawVerify",
+                  "compression":  "maximum",
+                  "electronDist":  "node_modules/electron/dist",
+                  "electronLanguages":  [
+                                            "zh-CN",
+                                            "en-US"
+                                        ],
+                  "directories":  {
+                                      "output":  "release"
+                                  },
+                  "files":  [
+                                "dist/**/*",
+                                "electron/**/*",
+                                ".desktop/server/.env.local",
+                                ".desktop/**/*",
+                                "package.json"
+                            ],
+                  "win":  {
+                              "signAndEditExecutable":  false,
+                              "signtoolOptions":  {
+                                                      "signingHashAlgorithms":  [
+                                                                                    "sha256"
+                                                                                ],
+                                                      "rfc3161TimeStampServer":  "http://timestamp.digicert.com",
+                                                      "timeStampServer":  "http://timestamp.digicert.com"
+                                                  },
+                              "target":  [
+                                             {
+                                                 "target":  "nsis",
+                                                 "arch":  [
+                                                              "x64"
+                                                          ]
+                                             }
+                                         ],
+                              "artifactName":  "LawVerify-Setup-${version}.${ext}"
+                          },
+                  "nsis":  {
+                               "oneClick":  false,
+                               "perMachine":  false,
+                               "allowToChangeInstallationDirectory":  true,
+                               "include":  "build/installer.nsh",
+                               "createDesktopShortcut":  true,
+                               "shortcutName":  "LawVerify"
+                           }
+              }
 }

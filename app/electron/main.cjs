@@ -63,6 +63,8 @@ if (!isDev) {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 }
 
+const authInputPrimedWindows = new WeakSet()
+
 function focusWindowContents(window) {
   if (!window || window.isDestroyed()) {
     return
@@ -78,14 +80,18 @@ function focusWindowContents(window) {
 
   window.focus()
   window.webContents.focus()
+}
+
+function primeAuthInputFocus(window) {
+  if (!window || window.isDestroyed() || authInputPrimedWindows.has(window)) {
+    return
+  }
 
   setTimeout(() => {
-    if (window.isDestroyed()) {
+    if (window.isDestroyed() || authInputPrimedWindows.has(window)) {
       return
     }
 
-    window.focus()
-    window.webContents.focus()
     void window.webContents.executeJavaScript(`
       (() => {
         const isEditableElement = (element) => {
@@ -102,12 +108,12 @@ function focusWindowContents(window) {
 
         const loginCard = document.querySelector('.login-card')
         if (!loginCard) {
-          return
+          return false
         }
 
         const active = document.activeElement
         if (isEditableElement(active)) {
-          return
+          return true
         }
 
         const preferred =
@@ -116,9 +122,18 @@ function focusWindowContents(window) {
 
         if (isEditableElement(preferred)) {
           preferred.focus({ preventScroll: true })
+          return true
         }
+
+        return false
       })();
-    `).catch(() => {})
+    `)
+      .then((didPrime) => {
+        if (didPrime && !window.isDestroyed()) {
+          authInputPrimedWindows.add(window)
+        }
+      })
+      .catch(() => {})
   }, 80)
 }
 
@@ -142,6 +157,7 @@ function createWindow() {
   window.once('ready-to-show', () => {
     window.show()
     focusWindowContents(window)
+    primeAuthInputFocus(window)
   })
 
   window.on('restore', () => {
@@ -155,6 +171,7 @@ function createWindow() {
 
   window.webContents.on('did-finish-load', () => {
     focusWindowContents(window)
+    primeAuthInputFocus(window)
   })
 
   return window

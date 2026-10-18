@@ -17,7 +17,8 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   server: {
-    host: '127.0.0.1',
+    // Allow LAN browsers to access the hot-reload development server.
+    host: '0.0.0.0',
     port: 5173,
     strictPort: true,
   },

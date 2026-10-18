@@ -1,9 +1,0 @@
-@@DEBUG_SERVER_INFO
-{
-  "api_url": "http://127.0.0.1:7777/event",
-  "session_id": "backend-file-load",
-  "log_dir": "d:/trae_projects/lexVerify/.dbg",
-  "log_file": "d:\\trae_projects\\lexVerify\\.dbg\\trae-debug-log-backend-file-load.ndjson",
-  "env_file": "d:\\trae_projects\\lexVerify\\.dbg\\backend-file-load.env"
-}
-@@END_DEBUG_SERVER_INFO

@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import * as mammoth from 'mammoth/mammoth.browser'
-import { toPng } from 'html-to-image'
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import QRCode from 'qrcode'
 import { Extension } from '@tiptap/core'
 import TextAlign from '@tiptap/extension-text-align'
@@ -13,6 +10,10 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { exportCertificateToWord } from './export-word'
+import { AttentionText, EvidenceAttention } from './EvidenceAttention'
+import { AgentPromptInput, type AgentPromptInputHandle } from './AgentPromptInput'
+import { getAttentionTerms } from './evidence-attention'
+import { createDocumentTaskQueue } from './document-task-queue'
 import './App.css'
 import { api, fetchWithWorkspaceAccount, getEvidenceSourceUrl, isCloudAuthApiError } from './api'
 import type {
@@ -41,9 +42,18 @@ const AUTH_STORAGE_KEY = 'lawverify-auth-session'
 const CLOUD_TOKEN_STORAGE_KEY = 'lawverify-cloud-token'
 const LOGIN_ACCOUNT_STORAGE_KEY = 'lawverify-login-account'
 const STREAMLINED_SIDEBAR_COLLAPSED_STORAGE_KEY = 'lawverify-streamlined-sidebar-collapsed'
-const MAX_INLINE_SOURCE_SIZE = 12_000_000
+const STREAMLINED_SIDEBAR_WIDTH_STORAGE_KEY = 'lawverify-streamlined-sidebar-width'
+const MAX_EVIDENCE_SOURCE_UPLOAD_BATCH_BYTES = 48_000_000
+const MAX_EVIDENCE_SOURCE_UPLOAD_BATCH_COUNT = 18
 const DEFAULT_GENERATION_ROLE = 'plaintiff'
 const DEFAULT_GENERATION_FOCUS = '真实性、关联性与证明力'
+const DEFAULT_STREAMLINED_SIDEBAR_WIDTH = 300
+const MIN_STREAMLINED_SIDEBAR_WIDTH = 220
+const MAX_STREAMLINED_SIDEBAR_WIDTH = 420
+const COLLAPSED_STREAMLINED_SIDEBAR_WIDTH = 56
+const STREAMLINED_SIDEBAR_COLLAPSE_THRESHOLD = 120
+const MIN_STREAMLINED_MAIN_WIDTH = 720
+const STREAMLINED_SIDEBAR_RESIZER_WIDTH = 14
 const DEFAULT_INSIGHT_PANEL_WIDTH = 520
 const PROGRESS_UPDATE_INTERVAL_MS = 80
 const MAIN_THREAD_YIELD_INTERVAL_MS = 24
@@ -54,18 +64,20 @@ const DEFAULT_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 320
 const MIN_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 240
 const MAX_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 560
 const KNOWLEDGE_FILES_SIDEBAR_RESIZER_WIDTH = 14
-const DEFAULT_INSIGHT_TOP_HEIGHT = 460
-const MIN_INSIGHT_TOP_HEIGHT = 260
-const MIN_INSIGHT_BOTTOM_HEIGHT = 260
-const INSIGHT_SECTION_RESIZER_HEIGHT = 14
 const AGENT_DOCK_MARGIN = 20
 const AGENT_DOCK_COLLAPSED_SIZE = 68
 const AGENT_DOCK_EXPANDED_WIDTH = 420
 const AGENT_DOCK_EXPANDED_HEIGHT = 560
 const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
+const DEV_SERVICE_HOST = typeof window !== 'undefined'
+  && window.location.hostname
+  && window.location.hostname !== 'localhost'
+  && window.location.hostname !== '127.0.0.1'
+  ? window.location.hostname
+  : '127.0.0.1'
 const ACCOUNT_CENTER_BASE_URL = (
   import.meta.env.VITE_ACCOUNT_CENTER_URL?.trim()
-  ?? (import.meta.env.DEV ? 'http://127.0.0.1:4273' : OFFICIAL_PLATFORM_BASE_URL)
+  ?? (import.meta.env.DEV ? `http://${DEV_SERVICE_HOST}:4273` : OFFICIAL_PLATFORM_BASE_URL)
 ).replace(/\/$/, '')
 
 type AppTab = 'overview' | 'workspace' | 'knowledge' | 'settings'
@@ -82,12 +94,7 @@ const DEFAULT_POINT_POLICY_MAP: Record<ChargeablePointAction, number> = {
   evidence_summary: 2,
   pleading_full: 15,
 }
-const MAX_RENDERED_VISION_PAGES = 6
-const OFFSCREEN_PAGE_WIDTH = 794
-const OFFSCREEN_PAGE_MIN_HEIGHT = 1123
 const sentenceHighlightPluginKey = new PluginKey<{ activeSentenceIndex: number | null }>('lawverifySentenceHighlight')
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 interface SelectionState {
   selectedCaseId: string | null
@@ -151,6 +158,20 @@ interface CloudLedgerEntrySnapshot {
   operationKey?: string
 }
 
+function clampStreamlinedSidebarWidth(width: number, containerWidth?: number) {
+  const maxWidth = containerWidth
+    ? Math.min(
+        MAX_STREAMLINED_SIDEBAR_WIDTH,
+        Math.max(
+          MIN_STREAMLINED_SIDEBAR_WIDTH,
+          containerWidth - MIN_STREAMLINED_MAIN_WIDTH - STREAMLINED_SIDEBAR_RESIZER_WIDTH,
+        ),
+      )
+    : MAX_STREAMLINED_SIDEBAR_WIDTH
+
+  return Math.min(Math.max(width, MIN_STREAMLINED_SIDEBAR_WIDTH), maxWidth)
+}
+
 interface DirectoryPickerFileHandle {
   kind: 'file'
   name: string
@@ -173,6 +194,29 @@ function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
       <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z" />
       <circle cx="12" cy="12" r="2.7" />
       {visible ? null : <path d="M4 4l16 16" />}
+    </svg>
+  )
+}
+
+function SidebarToggleIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 4.5h1.5v11H4z" fill="currentColor" stroke="none" />
+      {collapsed ? (
+        <path d="m8 6 4 4-4 4" />
+      ) : (
+        <path d="m12 6-4 4 4 4" />
+      )}
     </svg>
   )
 }
@@ -488,244 +532,6 @@ function getEvidenceType(fileName: string, mimeType: string): EvidenceType {
   }
 
   return 'other'
-}
-
-async function readAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(new Error('读取图片预览失败'))
-    reader.readAsDataURL(file)
-  })
-}
-
-function buildPlainTextDocumentHtml(text: string) {
-  const paragraphs = text
-    .split(/\n\s*\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-  if (!paragraphs.length) {
-    const normalized = text.trim()
-    return normalized ? `<p>${escapeHtml(normalized)}</p>` : ''
-  }
-
-  return paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`).join('')
-}
-
-function splitHtmlIntoPageMarkup(html: string, maxCharsPerPage = 1800) {
-  if (typeof DOMParser === 'undefined') {
-    return html ? [html] : []
-  }
-
-  const parser = new DOMParser()
-  const documentNode = parser.parseFromString(`<div>${html}</div>`, 'text/html')
-  const blocks = Array.from(documentNode.body.firstElementChild?.children ?? [])
-  if (!blocks.length) {
-    return html ? [html] : []
-  }
-
-  const pages: string[] = []
-  let currentPage = ''
-  let currentLength = 0
-
-  for (const block of blocks) {
-    const blockHtml = block.outerHTML.trim()
-    const blockTextLength = block.textContent?.trim().length ?? 0
-
-    if (currentPage && currentLength + blockTextLength > maxCharsPerPage) {
-      pages.push(currentPage)
-      currentPage = ''
-      currentLength = 0
-    }
-
-    currentPage += blockHtml
-    currentLength += Math.max(blockTextLength, 80)
-  }
-
-  if (currentPage) {
-    pages.push(currentPage)
-  }
-
-  return pages.filter(Boolean)
-}
-
-function createOffscreenRenderHost() {
-  const host = document.createElement('div')
-  host.style.position = 'fixed'
-  host.style.left = '-100000px'
-  host.style.top = '0'
-  host.style.width = `${OFFSCREEN_PAGE_WIDTH}px`
-  host.style.pointerEvents = 'none'
-  host.style.opacity = '0'
-  host.style.zIndex = '-1'
-  document.body.appendChild(host)
-  return host
-}
-
-async function renderHtmlPagesToImages(pageMarkupList: string[]) {
-  if (!pageMarkupList.length) {
-    return [] as string[]
-  }
-
-  const host = createOffscreenRenderHost()
-  const pageImages: string[] = []
-
-  try {
-    for (const markup of pageMarkupList.slice(0, MAX_RENDERED_VISION_PAGES)) {
-      const page = document.createElement('div')
-      page.style.width = `${OFFSCREEN_PAGE_WIDTH}px`
-      page.style.minHeight = `${OFFSCREEN_PAGE_MIN_HEIGHT}px`
-      page.style.boxSizing = 'border-box'
-      page.style.padding = '56px 64px'
-      page.style.background = '#ffffff'
-      page.style.color = '#111827'
-      page.style.fontSize = '16px'
-      page.style.lineHeight = '1.8'
-      page.style.fontFamily = '"Microsoft YaHei", "PingFang SC", sans-serif'
-      page.style.wordBreak = 'break-word'
-      page.style.overflowWrap = 'anywhere'
-      page.innerHTML = markup
-      host.appendChild(page)
-
-      await yieldToMainThread()
-      pageImages.push(await toPng(page, {
-        cacheBust: true,
-        pixelRatio: 1.75,
-        backgroundColor: '#ffffff',
-      }))
-
-      host.removeChild(page)
-    }
-  } finally {
-    host.remove()
-  }
-
-  return pageImages
-}
-
-async function renderPdfFileToPageImages(file: File) {
-  const pdfDocument = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise
-  const pageImages: string[] = []
-
-  for (let pageNumber = 1; pageNumber <= Math.min(pdfDocument.numPages, MAX_RENDERED_VISION_PAGES); pageNumber += 1) {
-    const page = await pdfDocument.getPage(pageNumber)
-    const viewport = page.getViewport({ scale: 1.45 })
-    const canvas = document.createElement('canvas')
-    const context = canvas.getContext('2d')
-    if (!context) {
-      continue
-    }
-
-    canvas.width = Math.ceil(viewport.width)
-    canvas.height = Math.ceil(viewport.height)
-    await page.render({ canvasContext: context, viewport, canvas }).promise
-    pageImages.push(canvas.toDataURL('image/png'))
-    await yieldToMainThread()
-  }
-
-  return {
-    pageImages,
-    pages: pdfDocument.numPages,
-  }
-}
-
-async function buildWordLikeDocumentAssets(file: File) {
-  const lowerName = file.name.toLowerCase()
-
-  if (lowerName.endsWith('.docx')) {
-    const arrayBuffer = await file.arrayBuffer()
-    const [textResult, htmlResult] = await Promise.all([
-      mammoth.extractRawText({ arrayBuffer }),
-      mammoth.convertToHtml({ arrayBuffer }),
-    ])
-    const pageMarkupList = splitHtmlIntoPageMarkup(htmlResult.value)
-    return {
-      ocrText: textResult.value.trim(),
-      pageImageDataUrls: await renderHtmlPagesToImages(pageMarkupList),
-      pageCount: Math.max(pageMarkupList.length, 1),
-    }
-  }
-
-  if (lowerName.endsWith('.rtf')) {
-    const content = stripRtfControlText(await file.text())
-    const pageMarkupList = splitHtmlIntoPageMarkup(buildPlainTextDocumentHtml(content))
-    return {
-      ocrText: content,
-      pageImageDataUrls: await renderHtmlPagesToImages(pageMarkupList),
-      pageCount: Math.max(pageMarkupList.length, 1),
-    }
-  }
-
-  if (lowerName.endsWith('.txt') || lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) {
-    const content = (await file.text()).trim()
-    const pageMarkupList = splitHtmlIntoPageMarkup(buildPlainTextDocumentHtml(content))
-    return {
-      ocrText: content,
-      pageImageDataUrls: await renderHtmlPagesToImages(pageMarkupList),
-      pageCount: Math.max(pageMarkupList.length, 1),
-    }
-  }
-
-  return {
-    ocrText: '',
-    pageImageDataUrls: [] as string[],
-    pageCount: 1,
-  }
-}
-
-async function buildImportedEvidenceAssets(file: File, type: EvidenceType) {
-  if (type === 'image') {
-    const sourceDataUrl =
-      file.size <= MAX_INLINE_SOURCE_SIZE ? await readAsDataUrl(file) : undefined
-
-    return {
-      ocrText: buildOcrPlaceholder(file.name, type),
-      sourceDataUrl,
-      previewDataUrl: sourceDataUrl,
-      pageImageDataUrls: sourceDataUrl ? [sourceDataUrl] : [],
-      pages: 1,
-    }
-  }
-
-  if (type === 'pdf') {
-    const sourceDataUrl =
-      file.size <= MAX_INLINE_SOURCE_SIZE ? await readAsDataUrl(file) : undefined
-    const rendered = await renderPdfFileToPageImages(file)
-
-    return {
-      ocrText: buildOcrPlaceholder(file.name, type),
-      sourceDataUrl,
-      previewDataUrl: rendered.pageImages[0] ?? sourceDataUrl,
-      pageImageDataUrls: rendered.pageImages,
-      pages: rendered.pages,
-    }
-  }
-
-  if (type === 'word' || type === 'text') {
-    const sourceDataUrl =
-      file.size <= MAX_INLINE_SOURCE_SIZE ? await readAsDataUrl(file) : undefined
-    const rendered = await buildWordLikeDocumentAssets(file)
-
-    return {
-      ocrText: rendered.ocrText || buildOcrPlaceholder(file.name, type),
-      sourceDataUrl,
-      previewDataUrl: rendered.pageImageDataUrls[0] ?? sourceDataUrl,
-      pageImageDataUrls: rendered.pageImageDataUrls,
-      pages: rendered.pageCount,
-    }
-  }
-
-  const sourceDataUrl =
-    file.size <= MAX_INLINE_SOURCE_SIZE ? await readAsDataUrl(file) : undefined
-
-  return {
-    ocrText: buildOcrPlaceholder(file.name, type),
-    sourceDataUrl,
-    previewDataUrl: undefined,
-    pageImageDataUrls: [] as string[],
-    pages: 1,
-  }
 }
 
 function getMonotonicNow() {
@@ -1147,25 +953,6 @@ function getEvidenceDirectoryParts(evidence: Pick<Evidence, 'relativePath' | 'fi
     folderKey: segments.length > 1 ? segments.slice(0, -1).join('/') : '',
     folderLabel: segments.length > 1 ? segments.slice(0, -1).join(' / ') : '根目录',
   }
-}
-
-function renderHighlightedText(text: string, quote?: string) {
-  if (!quote) {
-    return text
-  }
-
-  const index = text.indexOf(quote)
-  if (index < 0) {
-    return text
-  }
-
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark>{quote}</mark>
-      {text.slice(index + quote.length)}
-    </>
-  )
 }
 
 function isPlaceholderStatuteContent(content?: string) {
@@ -1803,10 +1590,17 @@ function deriveSelection(
   workspace: AppState,
   current: Partial<SelectionState> = {},
 ): SelectionState {
+  const explicitCertificate = current.selectedCertificateId
+    ? workspace.certificates.find((item) => item.id === current.selectedCertificateId) ?? null
+    : null
+
   const selectedCaseId =
-    current.selectedCaseId && workspace.cases.some((item) => item.id === current.selectedCaseId)
+    explicitCertificate?.caseId
+    ?? (
+      current.selectedCaseId && workspace.cases.some((item) => item.id === current.selectedCaseId)
       ? current.selectedCaseId
       : workspace.cases[0]?.id ?? null
+    )
 
   const caseEvidences = workspace.evidences.filter((item) => item.caseId === selectedCaseId)
   const caseCertificates = workspace.certificates
@@ -1921,6 +1715,7 @@ function extractPlainTextFromHtml(html: string) {
 
 interface ParagraphRichEditorProps {
   paragraph: CertificateParagraph
+  editable: boolean
   active: boolean
   activeSentenceIndex: number | null
   inlineReferences: Array<{
@@ -1931,14 +1726,15 @@ interface ParagraphRichEditorProps {
     onClick: () => void
   }>
   onActivate: () => void
-  onActivateSentence: (sentenceIndex: number, sentenceText: string) => void
-  onCommit: (patch: Partial<CertificateParagraph>) => void
+  onActivateSentence: (sentenceIndex: number, sentenceText: string, userInitiated?: boolean) => void
+  onCommit: (patch: Partial<CertificateParagraph>) => Promise<boolean>
   onRegisterEditor: (editor: Editor | null) => void
   onEditorStateChange: () => void
 }
 
 function ParagraphRichEditor({
   paragraph,
+  editable,
   active,
   activeSentenceIndex,
   inlineReferences,
@@ -2019,10 +1815,11 @@ function ParagraphRichEditor({
         return
       }
 
-      lastCommittedRef.current = { html, text }
-      onCommitRef.current({
+      void onCommitRef.current({
         text,
         richText: html,
+      }).then((saved) => {
+        if (saved) lastCommittedRef.current = { html, text }
       })
     },
   })
@@ -2041,7 +1838,7 @@ function ParagraphRichEditor({
 
     const nextContent = paragraph.richText ?? buildParagraphRichText(paragraph.text)
     const currentHtml = editor.getHTML()
-    if (!editor.isFocused && currentHtml !== nextContent) {
+    if (!editor.isFocused && currentHtml === lastCommittedRef.current.html && currentHtml !== nextContent) {
       editor.commands.setContent(nextContent, { emitUpdate: false })
       lastCommittedRef.current = {
         html: nextContent,
@@ -2049,6 +1846,10 @@ function ParagraphRichEditor({
       }
     }
   }, [editor, paragraph.richText, paragraph.text])
+
+  useEffect(() => {
+    editor?.setEditable(editable)
+  }, [editor, editable])
 
   useEffect(() => {
     if (!editor) {
@@ -2069,9 +1870,20 @@ function ParagraphRichEditor({
   return (
     <div
       className={`tiptap-inline-paragraph ${active ? 'active' : ''}`}
-      onClick={() => {
+      onClick={(event) => {
+        // Keep the editor's sentence selection from being reset by paragraph clicks.
+        event.stopPropagation()
         onActivate()
-        editor?.commands.focus()
+        if (!editor) {
+          return
+        }
+        if (!editor.isFocused) {
+          editor.commands.focus()
+        }
+        const sentence = resolveSentenceSelectionFromEditor(editor)
+        if (sentence) {
+          onActivateSentence(sentence.index, sentence.text, true)
+        }
       }}
     >
       <EditorContent editor={editor} />
@@ -2101,38 +1913,49 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [fallbackPreviewText, setFallbackPreviewText] = useState('')
+  const isDocx = isDocxEvidence(evidence)
+  const isRtf = evidence.fileName.toLowerCase().endsWith('.rtf')
 
   useEffect(() => {
     const container = containerRef.current
     const source = sourceUrl
 
-    if (!container || !source || !isDocxEvidence(evidence)) {
+    if (!container || !source || !isDocx) {
       return
     }
 
     let disposed = false
+    const controller = new AbortController()
     setError(null)
-    container.innerHTML = ''
+    container.replaceChildren()
+    container.scrollTop = 0
 
     void (async () => {
       try {
         const [{ renderAsync }, response] = await Promise.all([
           import('docx-preview'),
-          fetchWithWorkspaceAccount(source),
+          fetchWithWorkspaceAccount(source, { signal: controller.signal }),
         ])
+        if (!response.ok) {
+          throw new Error('原件暂时无法读取，请重新选择文件或检查本地服务。')
+        }
         const arrayBuffer = await response.arrayBuffer()
 
         if (disposed) {
           return
         }
 
-        container.innerHTML = ''
-        await renderAsync(arrayBuffer, container, undefined, {
+        // Render off-screen so an obsolete async render cannot overwrite the current file.
+        const stagingContainer = document.createElement('div')
+        await renderAsync(arrayBuffer, stagingContainer, undefined, {
           className: 'word-preview-document',
           inWrapper: true,
           ignoreWidth: false,
           ignoreHeight: false,
         })
+        if (!disposed) {
+          container.replaceChildren(...Array.from(stagingContainer.childNodes))
+        }
       } catch (renderError) {
         if (!disposed) {
           setError(renderError instanceof Error ? renderError.message : 'Word 预览加载失败')
@@ -2142,28 +1965,25 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
 
     return () => {
       disposed = true
-      if (container) {
-        container.innerHTML = ''
-      }
+      controller.abort()
+      container.replaceChildren()
     }
-  }, [evidence, sourceUrl])
+  }, [evidence.id, isDocx, sourceUrl])
 
   useEffect(() => {
-    if (!sourceUrl || isDocxEvidence(evidence)) {
-      setFallbackPreviewText('')
-      return
-    }
-
-    const lowerFileName = evidence.fileName.toLowerCase()
-    if (!lowerFileName.endsWith('.rtf')) {
-      setFallbackPreviewText('')
+    setFallbackPreviewText('')
+    if (!sourceUrl || isDocx || !isRtf) {
       return
     }
 
     let disposed = false
+    const controller = new AbortController()
     void (async () => {
       try {
-        const response = await fetchWithWorkspaceAccount(sourceUrl)
+        const response = await fetchWithWorkspaceAccount(sourceUrl, { signal: controller.signal })
+        if (!response.ok) {
+          throw new Error('原件暂时无法读取')
+        }
         const text = await response.text()
         if (!disposed) {
           setFallbackPreviewText(stripRtfControlText(text))
@@ -2177,14 +1997,15 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
 
     return () => {
       disposed = true
+      controller.abort()
     }
-  }, [evidence, sourceUrl])
+  }, [evidence.id, isDocx, isRtf, sourceUrl])
 
   if (!sourceUrl) {
     return <div className="preview-empty">当前 Word 原件尚未写入可预览内容。</div>
   }
 
-  if (!isDocxEvidence(evidence)) {
+  if (!isDocx) {
     const previewParagraphs = (fallbackPreviewText || evidence.ocrText)
       .split('\n')
       .map((line) => line.trim())
@@ -2208,16 +2029,17 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
     )
   }
 
-  if (error) {
-    return (
-      <div className="preview-fallback-card">
-        <strong>Word 预览暂未生成</strong>
-        <p>{error}</p>
-      </div>
-    )
-  }
-
-  return <div className="word-preview-host" ref={containerRef} />
+  return (
+    <>
+      <div className="word-preview-host" ref={containerRef} hidden={Boolean(error)} />
+      {error ? (
+        <div className="preview-fallback-card">
+          <strong>Word 预览暂未生成</strong>
+          <p>{error}</p>
+        </div>
+      ) : null}
+    </>
+  )
 }
 
 function getDefaultSentenceText(paragraph: CertificateParagraph | null | undefined) {
@@ -2257,6 +2079,7 @@ function App() {
     password: '',
     loginType: 'password',
   })
+  const loginEmailInputRef = useRef<HTMLInputElement | null>(null)
   const [isLoginPasswordVisible, setIsLoginPasswordVisible] = useState(false)
   const [registerForm, setRegisterForm] = useState<DesktopRegisterForm>({
     organizationName: '',
@@ -2264,13 +2087,19 @@ function App() {
     email: '',
     password: '',
   })
+  const registerOrganizationInputRef = useRef<HTMLInputElement | null>(null)
   const [isRegisterPasswordVisible, setIsRegisterPasswordVisible] = useState(false)
   const [caseSearch, setCaseSearch] = useState('')
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
   const [selectedCertificateId, setSelectedCertificateId] = useState<string | null>(null)
   const [activeParagraphId, setActiveParagraphId] = useState<string | null>(null)
   const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([])
-  const [manualPreviewEvidenceId, setManualPreviewEvidenceId] = useState<string | null>(null)
+  const [manualPreviewEvidenceId, setManualPreviewEvidenceIdState] = useState<string | null>(null)
+  const manualPreviewEvidenceIdRef = useRef<string | null>(null)
+  const setManualPreviewEvidenceId = useCallback((evidenceId: string | null) => {
+    manualPreviewEvidenceIdRef.current = evidenceId
+    setManualPreviewEvidenceIdState(evidenceId)
+  }, [])
   const [lockedPreviewEvidenceId, setLockedPreviewEvidenceId] = useState<string | null>(null)
   const [localPreviewSourceMap, setLocalPreviewSourceMap] = useState<Record<string, string>>({})
   const [imageViewerState, setImageViewerState] = useState<ImageViewerState | null>(null)
@@ -2278,13 +2107,26 @@ function App() {
   const [locatorDraft, setLocatorDraft] = useState('段落 1')
   const [activeSentenceIndex, setActiveSentenceIndex] = useState<number | null>(null)
   const [activeSentenceText, setActiveSentenceText] = useState('')
+  const activeSentenceAnchorRef = useRef<{
+    certificateId: string | null
+    paragraphId: string | null
+    sentenceIndex: number | null
+    sentenceText: string
+  } | null>(null)
+  useEffect(() => {
+    activeSentenceAnchorRef.current = {
+      certificateId: selectedCertificateId,
+      paragraphId: activeParagraphId,
+      sentenceIndex: activeSentenceIndex,
+      sentenceText: activeSentenceText,
+    }
+  }, [selectedCertificateId, activeParagraphId, activeSentenceIndex, activeSentenceText])
   const [activeTab, setActiveTab] = useState<AppTab>('overview')
   const [caseCenterTab, setCaseCenterTab] = useState<CaseCenterTab>('overview')
   const [previewPanelMode, setPreviewPanelMode] = useState<PreviewPanelMode>('preview')
   const [verifyInsightTab, setVerifyInsightTab] = useState<VerifyInsightTab>('evidence')
   const [activeReferenceIndex, setActiveReferenceIndex] = useState(0)
   const [selectedKnowledgeReferenceId, setSelectedKnowledgeReferenceId] = useState<string | null>(null)
-  const [linkEvidenceDraft, setLinkEvidenceDraft] = useState('')
   const [knowledgeTab, setKnowledgeTab] = useState<KnowledgeTab>('cases')
   const [knowledgeKeyword, setKnowledgeKeyword] = useState('')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('statutes')
@@ -2307,12 +2149,21 @@ function App() {
 
     return window.localStorage.getItem(STREAMLINED_SIDEBAR_COLLAPSED_STORAGE_KEY) === '1'
   })
+  const [streamlinedSidebarWidth, setStreamlinedSidebarWidth] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_STREAMLINED_SIDEBAR_WIDTH
+    }
+
+    const storedWidth = Number(window.localStorage.getItem(STREAMLINED_SIDEBAR_WIDTH_STORAGE_KEY))
+    return Number.isFinite(storedWidth)
+      ? clampStreamlinedSidebarWidth(storedWidth)
+      : DEFAULT_STREAMLINED_SIDEBAR_WIDTH
+  })
+  const [isResizingStreamlinedSidebar, setIsResizingStreamlinedSidebar] = useState(false)
   const [insightPanelWidth, setInsightPanelWidth] = useState(DEFAULT_INSIGHT_PANEL_WIDTH)
   const [isResizingWorkbench, setIsResizingWorkbench] = useState(false)
   const [knowledgeFilesSidebarWidth, setKnowledgeFilesSidebarWidth] = useState(DEFAULT_KNOWLEDGE_FILES_SIDEBAR_WIDTH)
   const [isResizingKnowledgeFilesSidebar, setIsResizingKnowledgeFilesSidebar] = useState(false)
-  const [insightTopHeight, setInsightTopHeight] = useState(DEFAULT_INSIGHT_TOP_HEIGHT)
-  const [isResizingInsightSection, setIsResizingInsightSection] = useState(false)
   const [caseDialogState, setCaseDialogState] = useState<CaseDialogState | null>(null)
   const [rechargeDialogState, setRechargeDialogState] = useState<RechargeDialogState | null>(null)
   const [feedbackDialogState, setFeedbackDialogState] = useState<FeedbackDialogState | null>(null)
@@ -2328,7 +2179,12 @@ function App() {
     y: AGENT_DOCK_MARGIN,
   }))
   const [isDraggingAgentDock, setIsDraggingAgentDock] = useState(false)
-  const [agentPrompt, setAgentPrompt] = useState('')
+  const agentPromptRef = useRef('')
+  const agentPromptInputRef = useRef<AgentPromptInputHandle | null>(null)
+  function setAgentPrompt(value: string) {
+    agentPromptRef.current = value
+    agentPromptInputRef.current?.setValue(value)
+  }
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([])
   const [streamingCertificatePreview, setStreamingCertificatePreview] = useState<StreamingCertificatePreview | null>(null)
   const [pointPolicyMap, setPointPolicyMap] = useState<Record<ChargeablePointAction, number>>(DEFAULT_POINT_POLICY_MAP)
@@ -2337,6 +2193,8 @@ function App() {
   const certificateUploadRef = useRef<HTMLInputElement | null>(null)
   const certificateUploadInputId = useId()
   const knowledgeFileUploadInputId = useId()
+  const streamlinedShellRef = useRef<HTMLDivElement | null>(null)
+  const streamlinedSidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const settingsKnowledgeFilesSectionRef = useRef<HTMLElement | null>(null)
   const settingsStatutesSectionRef = useRef<HTMLElement | null>(null)
   const evidenceColumnRef = useRef<HTMLDivElement | null>(null)
@@ -2348,9 +2206,6 @@ function App() {
   const knowledgeUploadClearTimerRef = useRef<number | null>(null)
   const knowledgeReindexTimerRefs = useRef<Record<string, number[]>>({})
   const knowledgeReindexClearTimerRefs = useRef<Record<string, number>>({})
-  const insightPanelRef = useRef<HTMLElement | null>(null)
-  const insightPanelHeaderRef = useRef<HTMLDivElement | null>(null)
-  const insightSectionResizeRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const agentDockRef = useRef<HTMLDivElement | null>(null)
   const agentDockDragRef = useRef<{
     offsetX: number
@@ -2361,10 +2216,13 @@ function App() {
   const agentDockClickGuardRef = useRef(false)
   const agentDockInitializedRef = useRef(false)
   const paragraphEditorsRef = useRef<Record<string, Editor | null>>({})
+  const documentTaskQueueRef = useRef(createDocumentTaskQueue())
+  const documentAnalysisRunningRef = useRef(false)
   const localPreviewSourceMapRef = useRef<Record<string, string>>({})
   const localWorkspaceRef = useRef<AppState | null>(null)
   const cloudPointsSyncRef = useRef<CloudPointsSyncState | null>(null)
   const cloudAccountProfileRef = useRef<CloudAccountSessionProfile | null>(null)
+  const hasCheckedAppUpdateOnLaunchRef = useRef(false)
   const isDesktopClient = window.lawVerifyDesktop?.channel === 'electron'
 
   const checkForAppUpdate = useCallback(async (options: { silent?: boolean } = {}) => {
@@ -2453,15 +2311,36 @@ function App() {
       return
     }
 
+    if (hasCheckedAppUpdateOnLaunchRef.current) {
+      return
+    }
+
+    hasCheckedAppUpdateOnLaunchRef.current = true
     void checkForAppUpdate({ silent: true })
-    const timerId = window.setInterval(() => {
-      void checkForAppUpdate({ silent: true })
-    }, 4 * 60 * 60 * 1000)
+  }, [checkForAppUpdate, isDesktopClient])
+
+  useEffect(() => {
+    if (authToken || isSubmitting) {
+      return
+    }
+
+    const targetInput = authMode === 'login'
+      ? loginEmailInputRef.current
+      : registerOrganizationInputRef.current
+
+    if (!targetInput) {
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      targetInput.focus({ preventScroll: true })
+      targetInput.select()
+    }, 50)
 
     return () => {
-      window.clearInterval(timerId)
+      window.clearTimeout(timerId)
     }
-  }, [checkForAppUpdate, isDesktopClient])
+  }, [authMode, authToken, isSubmitting])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2475,28 +2354,30 @@ function App() {
   }, [isStreamlinedSidebarCollapsed])
 
   useEffect(() => {
-    if (!autoLinkingCertificateId) {
+    if (typeof window === 'undefined') {
       return
     }
 
-    const messages = [
-      '正在深度理解文书各段落的事实主张与争议焦点...',
-      '正在细化分析颗粒度，拆分句组与逻辑意图...',
-      '正在匹配本地证据材料，建立事实与证据的关联...',
-      '正在检索关联法条，构建法律适用逻辑...',
-      '正在联查元典、威科、北大法宝案例库...',
-      '正在整合证据、法条、案例，生成联动结果...',
-    ]
-    let index = 0
-    setAutoLinkFeedback({ tone: 'loading', text: messages[index] })
+    window.localStorage.setItem(
+      STREAMLINED_SIDEBAR_WIDTH_STORAGE_KEY,
+      String(Math.round(streamlinedSidebarWidth)),
+    )
+  }, [streamlinedSidebarWidth])
 
-    const interval = setInterval(() => {
-      index = (index + 1) % messages.length
-      setAutoLinkFeedback({ tone: 'loading', text: messages[index] })
-    }, 2500)
+  useEffect(() => {
+    const syncStreamlinedSidebarWidth = () => {
+      setStreamlinedSidebarWidth((current) => {
+        const containerWidth = streamlinedShellRef.current?.getBoundingClientRect().width ?? 0
+        return clampStreamlinedSidebarWidth(current, containerWidth || undefined)
+      })
+    }
 
-    return () => clearInterval(interval)
-  }, [autoLinkingCertificateId])
+    syncStreamlinedSidebarWidth()
+    window.addEventListener('resize', syncStreamlinedSidebarWidth)
+    return () => {
+      window.removeEventListener('resize', syncStreamlinedSidebarWidth)
+    }
+  }, [])
 
   const replaceLocalPreviewSourceMap = (nextEntries: Record<string, string>) => {
     setLocalPreviewSourceMap((current) => {
@@ -2720,22 +2601,35 @@ function App() {
       locatorDraft,
       ...nextSelection,
     })
-    const shouldPreserveManualPreview = options.preserveManualPreview
-      && Boolean(manualPreviewEvidenceId)
+    const currentManualPreviewEvidenceId = manualPreviewEvidenceIdRef.current
+    const shouldPreserveManualPreview = options.preserveManualPreview !== false
+      && Boolean(currentManualPreviewEvidenceId)
       && displayWorkspace.evidences.some(
-        (item) => item.id === manualPreviewEvidenceId && item.caseId === selection.selectedCaseId,
+        (item) => item.id === currentManualPreviewEvidenceId && item.caseId === selection.selectedCaseId,
       )
+    const sentenceAnchor = activeSentenceAnchorRef.current
+    const nextParagraph = findSelectedParagraph(displayWorkspace, selection)
+    const shouldPreserveSentence = sentenceAnchor
+      && sentenceAnchor.certificateId === selection.selectedCertificateId
+      && sentenceAnchor.paragraphId === nextParagraph?.id
+    const nextSentence = resolveParagraphSentenceSelection(
+      nextParagraph,
+      shouldPreserveSentence ? {
+        sentenceIndex: sentenceAnchor.sentenceIndex ?? undefined,
+        sentenceText: sentenceAnchor.sentenceText,
+      } : getParagraphLinks(nextParagraph)[0],
+    )
 
     setAppState(displayWorkspace)
     setSelectedCaseId(selection.selectedCaseId)
     setSelectedCertificateId(selection.selectedCertificateId)
     setActiveParagraphId(selection.activeParagraphId)
     setSelectedEvidenceIds(selection.selectedEvidenceIds)
-    setManualPreviewEvidenceId(shouldPreserveManualPreview ? manualPreviewEvidenceId : null)
+    setManualPreviewEvidenceId(shouldPreserveManualPreview ? currentManualPreviewEvidenceId : null)
     setImageViewerState(null)
     setLocatorDraft(selection.locatorDraft)
-    setActiveSentenceIndex(getDefaultSentenceIndex(findSelectedParagraph(displayWorkspace, selection)))
-    setActiveSentenceText(getDefaultSentenceText(findSelectedParagraph(displayWorkspace, selection)))
+    setActiveSentenceIndex(nextSentence.index)
+    setActiveSentenceText(nextSentence.text)
   }
 
   const applyWorkspaceWithKnowledgeFiles = useCallback((
@@ -3085,6 +2979,55 @@ function App() {
   }, [isResizingWorkbench])
 
   useEffect(() => {
+    if (!isResizingStreamlinedSidebar) {
+      return
+    }
+
+    const updateStreamlinedSidebarWidth = (clientX: number) => {
+      const dragState = streamlinedSidebarResizeRef.current
+      const containerWidth = streamlinedShellRef.current?.getBoundingClientRect().width ?? 0
+
+      if (!dragState || !containerWidth) {
+        return
+      }
+
+      const nextRawWidth = dragState.startWidth + (clientX - dragState.startX)
+      if (nextRawWidth <= STREAMLINED_SIDEBAR_COLLAPSE_THRESHOLD) {
+        setIsStreamlinedSidebarCollapsed(true)
+        return
+      }
+
+      setIsStreamlinedSidebarCollapsed(false)
+      setStreamlinedSidebarWidth(clampStreamlinedSidebarWidth(nextRawWidth, containerWidth))
+    }
+
+    const stopStreamlinedSidebarResize = () => {
+      streamlinedSidebarResizeRef.current = null
+      setIsResizingStreamlinedSidebar(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      updateStreamlinedSidebarWidth(event.clientX)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', stopStreamlinedSidebarResize)
+    window.addEventListener('pointercancel', stopStreamlinedSidebarResize)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', stopStreamlinedSidebarResize)
+      window.removeEventListener('pointercancel', stopStreamlinedSidebarResize)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isResizingStreamlinedSidebar])
+
+  useEffect(() => {
     if (!isResizingKnowledgeFilesSidebar) {
       return
     }
@@ -3201,83 +3144,6 @@ function App() {
   }, [isDraggingAgentDock])
 
   useEffect(() => {
-    const clampInsightTopHeight = () => {
-      setInsightTopHeight((current) => {
-        const panelHeight = insightPanelRef.current?.getBoundingClientRect().height ?? 0
-        const headerHeight = insightPanelHeaderRef.current?.getBoundingClientRect().height ?? 0
-        const availableHeight = panelHeight - headerHeight
-
-        if (!availableHeight || availableHeight <= 0) {
-          return current
-        }
-
-        const maxHeight = Math.max(
-          MIN_INSIGHT_TOP_HEIGHT,
-          availableHeight - MIN_INSIGHT_BOTTOM_HEIGHT - INSIGHT_SECTION_RESIZER_HEIGHT,
-        )
-
-        return Math.min(Math.max(current, MIN_INSIGHT_TOP_HEIGHT), maxHeight)
-      })
-    }
-
-    clampInsightTopHeight()
-    window.addEventListener('resize', clampInsightTopHeight)
-    return () => {
-      window.removeEventListener('resize', clampInsightTopHeight)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isResizingInsightSection) {
-      return
-    }
-
-    const updateInsightTopHeight = (clientY: number) => {
-      const dragState = insightSectionResizeRef.current
-      const panelHeight = insightPanelRef.current?.getBoundingClientRect().height ?? 0
-      const headerHeight = insightPanelHeaderRef.current?.getBoundingClientRect().height ?? 0
-      const availableHeight = panelHeight - headerHeight
-
-      if (!dragState || !availableHeight) {
-        return
-      }
-
-      const nextHeight = dragState.startHeight + (clientY - dragState.startY)
-      const maxHeight = Math.max(
-        MIN_INSIGHT_TOP_HEIGHT,
-        availableHeight - MIN_INSIGHT_BOTTOM_HEIGHT - INSIGHT_SECTION_RESIZER_HEIGHT,
-      )
-
-      setInsightTopHeight(Math.min(Math.max(nextHeight, MIN_INSIGHT_TOP_HEIGHT), maxHeight))
-    }
-
-    const stopInsightSectionResize = () => {
-      insightSectionResizeRef.current = null
-      setIsResizingInsightSection(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      updateInsightTopHeight(event.clientY)
-    }
-
-    document.body.style.cursor = 'row-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', stopInsightSectionResize)
-    window.addEventListener('pointercancel', stopInsightSectionResize)
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', stopInsightSectionResize)
-      window.removeEventListener('pointercancel', stopInsightSectionResize)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-  }, [isResizingInsightSection])
-
-  useEffect(() => {
     if (!authToken) {
       return
     }
@@ -3309,6 +3175,69 @@ function App() {
       active = false
     }
   }, [authToken, syncCloudPoints])
+
+  const hasBackgroundEvidenceProcessing = Boolean(
+    appState?.evidences.some((item) => item.summaryStatus === 'processing'),
+  )
+
+  useEffect(() => {
+    if (!authToken || !hasBackgroundEvidenceProcessing) {
+      return
+    }
+
+    let active = true
+    const syncWorkspace = async () => {
+      try {
+        const { workspace } = await api.getWorkspace()
+        if (!active) {
+          return
+        }
+
+        applyWorkspace(workspace, {
+          selectedCaseId,
+          selectedCertificateId,
+          activeParagraphId,
+          selectedEvidenceIds,
+          locatorDraft,
+        }, {
+          preserveManualPreview: true,
+        })
+      } catch {
+        // 后台处理中时静默同步，避免打断当前操作。
+      }
+    }
+
+    void syncWorkspace()
+    const timer = window.setInterval(() => {
+      void syncWorkspace()
+    }, 3000)
+    const handleFocus = () => {
+      void syncWorkspace()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void syncWorkspace()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [
+    activeParagraphId,
+    authToken,
+    hasBackgroundEvidenceProcessing,
+    locatorDraft,
+    selectedCaseId,
+    selectedCertificateId,
+    selectedEvidenceIds,
+  ])
 
   useEffect(() => {
     if (entryOnboardingStep !== 'create-case' || !appState) {
@@ -3409,6 +3338,39 @@ function App() {
     && entryOnboardingStep === 'link-folder',
   )
 
+  function renderFolderLinkGuidePopup() {
+    if (!shouldShowFolderLinkOnboarding) {
+      return null
+    }
+
+    return (
+      <aside className="case-entry-guide-popup" role="status" aria-live="polite">
+        <button
+          aria-label="关闭提示"
+          className="case-entry-guide-popup-close"
+          type="button"
+          onClick={() => setEntryOnboardingStep('idle')}
+          disabled={isSubmitting}
+        >
+          ×
+        </button>
+        <div className="case-entry-guide-popup-body">
+          <span className="eyebrow">下一步</span>
+          <h2>请先链接本地文件夹</h2>
+          <p>案件已经建立完成。把电脑里的案件材料目录接进来后，就可以继续整理证据和生成文书。</p>
+        </div>
+        <div className="case-entry-guide-actions case-entry-guide-popup-actions">
+          <button className="primary-button" type="button" onClick={() => void handleLinkFolder()} disabled={isSubmitting || Boolean(evidenceImportProgress)}>
+            链接本地文件夹
+          </button>
+          <button className="ghost-button" type="button" onClick={() => setEntryOnboardingStep('idle')} disabled={isSubmitting}>
+            稍后处理
+          </button>
+        </div>
+      </aside>
+    )
+  }
+
   const caseCertificates = useMemo(() => {
     return (
       appState?.certificates
@@ -3439,7 +3401,6 @@ function App() {
     const paragraphIndex = activeCertificate.paragraphs.findIndex((item) => item.id === activeParagraph.id)
     return paragraphIndex >= 0 ? paragraphIndex + 1 : null
   }, [activeCertificate, activeParagraph])
-  const activeSentenceUnits = useMemo(() => splitSentenceRanges(activeParagraph?.text ?? ''), [activeParagraph?.text])
 
   const activeCertificateEvidenceIds = useMemo(() => {
     if (!activeCertificate) {
@@ -3459,6 +3420,11 @@ function App() {
     }),
     [activeParagraph, activeSentenceIndex, activeSentenceText],
   )
+  const activeSentenceLinkageFocus = useMemo(
+    () => activeParagraph?.linkageFocus?.find(item => item.sentenceIndex === activeSentenceSelection.index
+      && normalizeSentenceAnchorText(item.sentenceText) === normalizeSentenceAnchorText(activeSentenceSelection.text)),
+    [activeParagraph, activeSentenceSelection],
+  )
 
   function syncActiveSentence(
     paragraph: CertificateParagraph | null | undefined,
@@ -3475,11 +3441,11 @@ function App() {
       return
     }
 
+    setManualPreviewEvidenceId(null)
+    setImageViewerState(null)
     const sentenceLinkIndex = getParagraphLinks(paragraph).findIndex((link) => sentenceAnchorMatches(link, nextSelection))
+    setActiveReferenceIndex(sentenceLinkIndex)
     if (sentenceLinkIndex >= 0) {
-      setActiveReferenceIndex(sentenceLinkIndex)
-      setManualPreviewEvidenceId(null)
-      setImageViewerState(null)
       setVerifyInsightTab('evidence')
       return
     }
@@ -3497,32 +3463,10 @@ function App() {
     if (sentenceCaseReference) {
       setSelectedKnowledgeReferenceId(getReferenceIdentity(sentenceCaseReference))
       setVerifyInsightTab('case')
-    }
-  }
-
-  function handleActivateSentence(sentenceIndex: number, sentenceText: string) {
-    syncActiveSentence(activeParagraph, {
-      sentenceIndex,
-      sentenceText,
-    })
-  }
-
-  function handleStepSentence(step: -1 | 1) {
-    if (!activeSentenceUnits.length) {
       return
     }
-
-    const currentIndex = activeSentenceSelection.index ?? 0
-    const nextIndex = clamp(currentIndex + step, 0, activeSentenceUnits.length - 1)
-    const nextSentence = activeSentenceUnits[nextIndex]
-    if (!nextSentence) {
-      return
-    }
-
-    syncActiveSentence(activeParagraph, {
-      sentenceIndex: nextSentence.index,
-      sentenceText: nextSentence.text,
-    })
+    setSelectedKnowledgeReferenceId(null)
+    setVerifyInsightTab('evidence')
   }
 
   const activeLink = useMemo(() => {
@@ -3530,8 +3474,11 @@ function App() {
       return null
     }
 
-    return activeParagraphLinks[activeReferenceIndex] ?? activeParagraphLinks[0]
-  }, [activeParagraphLinks, activeReferenceIndex])
+    const selectedLink = activeParagraphLinks[activeReferenceIndex]
+    return selectedLink && sentenceAnchorMatches(selectedLink, activeSentenceSelection)
+      ? selectedLink
+      : activeParagraphLinks.find((link) => sentenceAnchorMatches(link, activeSentenceSelection)) ?? null
+  }, [activeParagraphLinks, activeReferenceIndex, activeSentenceSelection])
 
   const activeEvidence = useMemo(() => {
     if (!activeLink) {
@@ -3563,7 +3510,7 @@ function App() {
     return activeEvidence
   }, [activeEvidence, displayCaseEvidences, manualPreviewEvidenceId])
   const previewEvidence = useMemo(() => {
-    if (!isAutoLinkingActiveCertificate || !lockedPreviewEvidenceId) {
+    if (manualPreviewEvidenceId || !isAutoLinkingActiveCertificate || !lockedPreviewEvidenceId) {
       return livePreviewEvidence
     }
 
@@ -3578,6 +3525,7 @@ function App() {
     isAutoLinkingActiveCertificate,
     livePreviewEvidence,
     lockedPreviewEvidenceId,
+    manualPreviewEvidenceId,
   ])
   const livePreviewLink = useMemo(() => {
     if (!manualPreviewEvidenceId) {
@@ -3613,11 +3561,13 @@ function App() {
       return undefined
     }
 
+    const previewWorkspaceAccount = loginAccount || appState?.user.email || undefined
+
     return (
       localPreviewSourceMap[getEvidencePreviewSourceKey(previewEvidence)]
-      ?? getEvidenceSourceUrl(previewEvidence.id)
+      ?? getEvidenceSourceUrl(previewEvidence.id, previewWorkspaceAccount)
     )
-  }, [localPreviewSourceMap, previewEvidence])
+  }, [appState?.user.email, localPreviewSourceMap, loginAccount, previewEvidence])
   useEffect(() => {
     // #region debug-point D:preview-state
     fetch('http://127.0.0.1:7777/event', {
@@ -3713,7 +3663,12 @@ function App() {
   }, [selectedCase, activeCertificate])
 
   const unlinkedParagraphCount = useMemo(() => {
-    return activeCertificate?.paragraphs.filter((item) => getParagraphLinks(item).length === 0).length ?? 0
+    return activeCertificate?.paragraphs.filter((paragraph) => {
+      const links = getParagraphLinks(paragraph)
+      if (!paragraph.linkageFocus) return links.length === 0
+      return paragraph.linkageFocus.some(focus => focus.priority !== 'skip' && focus.evidenceNeeded
+        && !links.some(link => sentenceAnchorMatches(link, { index: focus.sentenceIndex, text: focus.sentenceText })))
+    }).length ?? 0
   }, [activeCertificate])
 
   const recentCases = useMemo(() => {
@@ -3747,7 +3702,7 @@ function App() {
     if (isAutoLinkingActiveCertificate) {
       return {
         tone: 'loading' as const,
-        text: '正在整合当前文书与证据关系，请稍候...',
+        text: autoLinkFeedback?.tone === 'loading' ? autoLinkFeedback.text : '正在读取文书与案件材料',
       }
     }
 
@@ -3779,6 +3734,10 @@ function App() {
       }
     }
 
+    if (activeSentenceLinkageFocus?.priority === 'skip') {
+      return { tone: 'info' as const, text: '本句无需自动关联。' }
+    }
+
     if (activeParagraphLinks.length || activeStatuteReferences.length || activeCaseReferences.length) {
       return {
         tone: 'info' as const,
@@ -3798,6 +3757,7 @@ function App() {
     activeSentenceCaseReferences.length,
     activeSentenceEvidenceLinks.length,
     activeSentenceSelection.index,
+    activeSentenceLinkageFocus,
     activeSentenceStatuteReferences.length,
     activeStatuteReferences.length,
     autoLinkFeedback,
@@ -3806,19 +3766,19 @@ function App() {
 
   const selectedStatuteReference = useMemo(() => {
     return (
-      activeStatuteReferences.find((reference) => getReferenceIdentity(reference) === selectedKnowledgeReferenceId)
-      ?? activeStatuteReferences[0]
+      activeSentenceStatuteReferences.find((reference) => getReferenceIdentity(reference) === selectedKnowledgeReferenceId)
+      ?? activeSentenceStatuteReferences[0]
       ?? null
     )
-  }, [activeStatuteReferences, selectedKnowledgeReferenceId])
+  }, [activeSentenceStatuteReferences, selectedKnowledgeReferenceId])
 
   const selectedCaseReference = useMemo(() => {
     return (
-      activeCaseReferences.find((reference) => getReferenceIdentity(reference) === selectedKnowledgeReferenceId)
-      ?? activeCaseReferences[0]
+      activeSentenceCaseReferences.find((reference) => getReferenceIdentity(reference) === selectedKnowledgeReferenceId)
+      ?? activeSentenceCaseReferences[0]
       ?? null
     )
-  }, [activeCaseReferences, selectedKnowledgeReferenceId])
+  }, [activeSentenceCaseReferences, selectedKnowledgeReferenceId])
 
   const selectedStatuteReferenceBinding = useMemo(
     () => findBestStatuteBindingForReference(appState?.knowledgeStatutes ?? [], selectedStatuteReference),
@@ -3938,12 +3898,14 @@ function App() {
 
   const fallbackRecommendedKnowledgeCases = useMemo(() => filteredKnowledgeCases.slice(0, 3), [filteredKnowledgeCases])
   const recommendedKnowledgeCases = useMemo(
-    () => (remoteRecommendedKnowledgeCases.length ? remoteRecommendedKnowledgeCases : fallbackRecommendedKnowledgeCases).slice(0, 3),
-    [fallbackRecommendedKnowledgeCases, remoteRecommendedKnowledgeCases],
+    () => activeSentenceLinkageFocus && !activeSentenceLinkageFocus.caseNeeded ? []
+      : (remoteRecommendedKnowledgeCases.length ? remoteRecommendedKnowledgeCases : fallbackRecommendedKnowledgeCases).slice(0, 3),
+    [activeSentenceLinkageFocus, fallbackRecommendedKnowledgeCases, remoteRecommendedKnowledgeCases],
   )
   const recommendedKnowledgeStatutes = useMemo(
-    () => (remoteRecommendedKnowledgeStatutes.length ? remoteRecommendedKnowledgeStatutes : filteredKnowledgeStatutes).slice(0, 3),
-    [filteredKnowledgeStatutes, remoteRecommendedKnowledgeStatutes],
+    () => activeSentenceLinkageFocus && !activeSentenceLinkageFocus.statuteNeeded ? []
+      : (remoteRecommendedKnowledgeStatutes.length ? remoteRecommendedKnowledgeStatutes : filteredKnowledgeStatutes).slice(0, 3),
+    [activeSentenceLinkageFocus, filteredKnowledgeStatutes, remoteRecommendedKnowledgeStatutes],
   )
 
   const selectedKnowledgeCase = useMemo(() => {
@@ -4085,8 +4047,6 @@ function App() {
   }, [settingsSelectedArticleId, selectedSettingsStatute])
 
   useEffect(() => {
-    setLinkEvidenceDraft('')
-
     if (!activeParagraphLinks.length) {
       if (activeReferenceIndex !== 0) {
         setActiveReferenceIndex(0)
@@ -4170,12 +4130,13 @@ function App() {
     if (!exists) {
       setManualPreviewEvidenceId(null)
     }
-  }, [displayCaseEvidences, manualPreviewEvidenceId])
+  }, [displayCaseEvidences, manualPreviewEvidenceId, setManualPreviewEvidenceId])
 
   useEffect(() => {
     let cancelled = false
 
-    if (!selectedCase && !activeParagraph && !activeSentenceText && !activeCertificate?.focus) {
+    if ((activeSentenceLinkageFocus && !activeSentenceLinkageFocus.caseNeeded)
+      || (!selectedCase && !activeParagraph && !activeSentenceText && !activeCertificate?.focus)) {
       setRemoteRecommendedKnowledgeCases([])
       return () => {
         cancelled = true
@@ -4205,12 +4166,13 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [activeCertificate?.focus, activeParagraph, activeSentenceText, selectedCase])
+  }, [activeCertificate?.focus, activeParagraph, activeSentenceLinkageFocus, activeSentenceText, selectedCase])
 
   useEffect(() => {
     let cancelled = false
 
-    if (!selectedCase && !activeParagraph && !activeSentenceText && !activeCertificate?.focus) {
+    if ((activeSentenceLinkageFocus && !activeSentenceLinkageFocus.statuteNeeded)
+      || (!selectedCase && !activeParagraph && !activeSentenceText && !activeCertificate?.focus)) {
       setRemoteRecommendedKnowledgeStatutes([])
       return () => {
         cancelled = true
@@ -4240,7 +4202,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [activeCertificate?.focus, activeParagraph, activeSentenceText, selectedCase])
+  }, [activeCertificate?.focus, activeParagraph, activeSentenceLinkageFocus, activeSentenceText, selectedCase])
 
   useEffect(() => {
     if (!selectedKnowledgeCase && filteredKnowledgeCases.length) {
@@ -4301,20 +4263,6 @@ function App() {
   }, [activeTab, isKnowledgeLibraryDialogOpen, settingsTab])
 
   useEffect(() => {
-    if (activeStatuteReferences.length) {
-      setVerifyInsightTab('statute')
-      return
-    }
-
-    if (activeCaseReferences.length) {
-      setVerifyInsightTab('case')
-      return
-    }
-
-    setVerifyInsightTab('evidence')
-  }, [activeCaseReferences.length, activeStatuteReferences.length, activeParagraph?.id])
-
-  useEffect(() => {
     if (verifyInsightTab === 'statute') {
       const nextReference = selectedStatuteReference
       setSelectedKnowledgeReferenceId(nextReference ? getReferenceIdentity(nextReference) : null)
@@ -4335,20 +4283,26 @@ function App() {
       setIsSubmitting(true)
       setErrorMessage('')
       await task()
+      return true
     } catch (error) {
       if (isCloudAuthApiError(error)) {
         handleCloudSessionExpired(error.message)
-        return
+        return false
       }
 
       setErrorMessage(error instanceof Error ? error.message : '操作失败')
       window.alert(error instanceof Error ? error.message : '操作失败')
+      return false
     } finally {
       setIsSubmitting(false)
     }
   }
 
   async function handleLogin() {
+    if (isSubmitting) {
+      return
+    }
+
     if (!loginForm.account.trim()) {
       window.alert('请输入账号中心注册邮箱。')
       return
@@ -4379,6 +4333,10 @@ function App() {
   }
 
   async function handleRegister() {
+    if (isSubmitting) {
+      return
+    }
+
     const email = registerForm.email.trim().toLowerCase()
     if (!registerForm.organizationName.trim()) {
       window.alert('请输入机构名称。')
@@ -4463,7 +4421,10 @@ function App() {
     applyCloudPointSyncState(null)
     persistCloudAuthToken(null)
     setAuthToken(null)
-      setLoginAccount('')
+    setLoginAccount('')
+    // 登录态失效后必须释放所有旧的加载/提交锁，避免回到认证页后无法继续输入。
+    setIsSubmitting(false)
+    setIsLoading(false)
     setAppState(null)
     setSelectedCaseId(null)
     setSelectedCertificateId(null)
@@ -4730,38 +4691,119 @@ function App() {
     setPendingCaseEvidences(buildPendingEvidenceItems(selectedCase.id, sortedFileList))
     setEvidenceImportProgress({
       stage: 'parse',
-      message: `正在解析文件 0/${sortedFileList.length}`,
+      message: `正在理解证据 0/${sortedFileList.length}`,
       completed: 0,
       total: sortedFileList.length,
     })
 
     try {
-      const files: Parameters<typeof api.importEvidences>[0]['files'] = []
+      let latestWorkspace: AppState | null = null
+      let currentBatch: Array<File & { webkitRelativePath?: string }> = []
+      let currentBatchBytes = 0
+      let uploadedCount = 0
+      let uploadedBatchCount = 0
+
+      const flushCurrentBatch = async () => {
+        if (!currentBatch.length) {
+          return
+        }
+
+        uploadedBatchCount += 1
+        setEvidenceImportProgress({
+          stage: 'parse',
+          message: `正在理解第 ${uploadedBatchCount} 批证据（${uploadedCount + 1}-${uploadedCount + currentBatch.length}/${sortedFileList.length}）`,
+          completed: uploadedCount,
+          total: sortedFileList.length,
+        })
+
+        const { assets } = await api.uploadEvidenceSourceFiles(currentBatch)
+        const uploadedAssetMap = new Map<string, {
+          storageKey: string
+          storageUrl: string
+          sourceMimeType?: string
+        }>()
+        assets.forEach((asset) => {
+          uploadedAssetMap.set(
+            normalizeRelativePath(asset.relativePath, asset.fileName).toLowerCase(),
+            {
+              storageKey: asset.storageKey,
+              storageUrl: asset.storageUrl,
+              sourceMimeType: asset.sourceMimeType,
+            },
+          )
+        })
+
+        const files = currentBatch.map((sourceFile) => {
+          const type = getEvidenceType(sourceFile.name.toLowerCase(), sourceFile.type)
+          const relativePath = getRelativePathFromFile(sourceFile)
+          const sourceMimeType = getSourceMimeType(sourceFile.name.toLowerCase(), sourceFile.type, type)
+          const assetKey = normalizeRelativePath(relativePath, sourceFile.name).toLowerCase()
+          const storedAsset = uploadedAssetMap.get(assetKey)
+          if (!storedAsset) {
+            throw new Error(`文件“${sourceFile.name}”接入失败，请重新导入。`)
+          }
+
+          return {
+            fileName: sourceFile.name,
+            relativePath,
+            name: buildNormalizedEvidenceName(sourceFile.name, relativePath),
+            type,
+            ocrText: buildOcrPlaceholder(sourceFile.name, type),
+            storageKey: storedAsset.storageKey,
+            storageUrl: storedAsset.storageUrl,
+            sourceMimeType: storedAsset.sourceMimeType || sourceMimeType,
+            pages: type === 'pdf' ? 1 : 1,
+            anchorHint: type === 'image' ? '图片框选区域' : type === 'pdf' ? '第 1 页' : '段落 1',
+            summaryStatus: 'processing' as const,
+          }
+        })
+
+        const { workspace } = await api.importEvidences({
+          caseId: selectedCase.id,
+          processInBackground: true,
+          files,
+        })
+        latestWorkspace = workspace
+        uploadedCount += currentBatch.length
+        currentBatch = []
+        currentBatchBytes = 0
+
+        applyWorkspace(workspace, {
+          selectedCaseId: selectedCase.id,
+          selectedCertificateId: null,
+          activeParagraphId: null,
+          selectedEvidenceIds,
+        }, {
+          preserveManualPreview: true,
+        })
+
+        setEvidenceImportProgress({
+          stage: 'parse',
+          message: `已识别 ${uploadedCount}/${sortedFileList.length} 个文件，正在持续理解证据`,
+          completed: uploadedCount,
+          total: sortedFileList.length,
+        })
+      }
 
       for (const [index, file] of sortedFileList.entries()) {
-        const type = getEvidenceType(file.name.toLowerCase(), file.type)
-        const relativePath = getRelativePathFromFile(file)
-        const renderedAssets = await buildImportedEvidenceAssets(file, type)
-        const sourceMimeType = getSourceMimeType(file.name.toLowerCase(), file.type, type)
+        if (
+          currentBatch.length
+          && (
+            currentBatch.length >= MAX_EVIDENCE_SOURCE_UPLOAD_BATCH_COUNT
+            || currentBatchBytes + file.size > MAX_EVIDENCE_SOURCE_UPLOAD_BATCH_BYTES
+          )
+        ) {
+          await flushCurrentBatch()
+          await yieldWhenBusy(loopState)
+        }
 
-        files.push({
-          fileName: file.name,
-          relativePath,
-          name: buildNormalizedEvidenceName(file.name, relativePath),
-          type,
-          ocrText: renderedAssets.ocrText,
-          previewDataUrl: renderedAssets.previewDataUrl,
-          sourceDataUrl: renderedAssets.sourceDataUrl,
-          pageImageDataUrls: renderedAssets.pageImageDataUrls,
-          sourceMimeType,
-          pages: renderedAssets.pages,
-          anchorHint: type === 'image' ? '图片框选区域' : '段落 1',
-        })
+        currentBatch.push(file)
+        currentBatchBytes += file.size
 
         if (shouldFlushProgress(loopState, index === sortedFileList.length - 1)) {
           setEvidenceImportProgress({
             stage: 'parse',
-            message: `正在解析文件 ${index + 1}/${sortedFileList.length}`,
+            message: `正在理解证据 ${index + 1}/${sortedFileList.length}`,
             completed: index + 1,
             total: sortedFileList.length,
           })
@@ -4769,21 +4811,35 @@ function App() {
         await yieldWhenBusy(loopState)
       }
 
+      await flushCurrentBatch()
+
       setEvidenceImportProgress(null)
 
-      const { workspace } = await api.importEvidences({
-        caseId: selectedCase.id,
-        files,
-      })
+      if (!latestWorkspace) {
+        return
+      }
 
-      applyWorkspace(workspace, {
+      const importedWorkspace: AppState = latestWorkspace
+
+      applyWorkspace(importedWorkspace, {
         selectedCaseId: selectedCase.id,
         selectedCertificateId: null,
         activeParagraphId: null,
-        selectedEvidenceIds: workspace.evidences
+        selectedEvidenceIds: importedWorkspace.evidences
           .filter((item) => item.caseId === selectedCase.id)
           .map((item) => item.id),
       })
+      setEvidenceImportProgress({
+        stage: 'parse',
+        message: `证据已接入完成，正在持续理解并自动梳理案件记忆`,
+        completed: sortedFileList.length,
+        total: sortedFileList.length,
+      })
+      window.setTimeout(() => {
+        setEvidenceImportProgress((current) =>
+          current?.completed === sortedFileList.length ? null : current,
+        )
+      }, 1600)
       if (entryOnboardingStep === 'link-folder') {
         setEntryOnboardingStep('idle')
       }
@@ -5200,6 +5256,21 @@ function App() {
     event.preventDefault()
   }
 
+  function handleStartStreamlinedSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (window.innerWidth <= 1024) {
+      return
+    }
+
+    streamlinedSidebarResizeRef.current = {
+      startX: event.clientX,
+      startWidth: isStreamlinedSidebarCollapsed
+        ? COLLAPSED_STREAMLINED_SIDEBAR_WIDTH
+        : streamlinedSidebarWidth,
+    }
+    setIsResizingStreamlinedSidebar(true)
+    event.preventDefault()
+  }
+
   function handleStartKnowledgeFilesSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
     if (window.innerWidth <= 960) {
       return
@@ -5213,13 +5284,28 @@ function App() {
     event.preventDefault()
   }
 
+  function handleToggleStreamlinedSidebar() {
+    if (isStreamlinedSidebarCollapsed) {
+      setStreamlinedSidebarWidth((current) => Math.max(current, DEFAULT_STREAMLINED_SIDEBAR_WIDTH))
+      setIsStreamlinedSidebarCollapsed(false)
+      return
+    }
+
+    setIsStreamlinedSidebarCollapsed(true)
+  }
+
+  function handleResetStreamlinedSidebarWidth() {
+    setStreamlinedSidebarWidth(DEFAULT_STREAMLINED_SIDEBAR_WIDTH)
+    setIsStreamlinedSidebarCollapsed(false)
+  }
+
   async function handleGenerateCertificate() {
     if (!selectedCase) {
       return
     }
 
     await runMutation(async () => {
-      const trimmedPrompt = agentPrompt.trim()
+      const trimmedPrompt = agentPromptRef.current.trim()
       const selectedEvidenceCount = selectedEvidenceIds.length
       const selectedEvidenceLabel = selectedEvidenceCount
         ? `（已选 ${selectedEvidenceCount} 份证据）`
@@ -5320,7 +5406,7 @@ function App() {
     }
 
     await runMutation(async () => {
-      const trimmedPrompt = agentPrompt.trim()
+      const trimmedPrompt = agentPromptRef.current.trim()
       if (!trimmedPrompt) {
         throw new Error('请先输入继续追问或改写要求。')
       }
@@ -5681,18 +5767,22 @@ function App() {
 
   async function handleUpdateParagraphById(paragraphId: string, patch: Partial<CertificateParagraph>) {
     if (!activeCertificate) {
-      return
+      return false
     }
 
-    await runMutation(async () => {
+    // Enqueue before awaiting so a following click cannot overtake the blur save.
+    const saving = documentTaskQueueRef.current.run(async () => {
       const { workspace } = await api.updateParagraph(activeCertificate.id, paragraphId, patch)
       applyWorkspace(workspace, {
-        selectedCaseId,
+        selectedCaseId: activeCertificate.caseId,
         selectedCertificateId: activeCertificate.id,
         activeParagraphId: paragraphId,
         selectedEvidenceIds,
       })
     })
+    const saved = await runMutation(() => saving)
+    if (!saved) documentTaskQueueRef.current.recover()
+    return saved
   }
 
   async function handleUpdateParagraph(patch: Partial<CertificateParagraph>) {
@@ -5703,37 +5793,31 @@ function App() {
     await handleUpdateParagraphById(activeParagraph.id, patch)
   }
 
-  async function handleAiReviewActiveParagraph() {
-    if (!activeCertificate || !activeParagraph) {
-      return
-    }
-
-    await runMutation(async () => {
-      const { workspace } = await api.reviewParagraph(activeCertificate.id, activeParagraph.id)
-      applyWorkspace(workspace, {
-        selectedCaseId,
-        selectedCertificateId: activeCertificate.id,
-        activeParagraphId: activeParagraph.id,
-        selectedEvidenceIds,
-      })
-    })
-  }
-
   async function handleAutoLinkCertificate() {
     if (!activeCertificate) {
       handleOpenEvidenceLinking()
       return
     }
+    if (documentAnalysisRunningRef.current) return
+    documentAnalysisRunningRef.current = true
 
-    setAutoLinkFeedback(null)
+    setAutoLinkFeedback({ tone: 'loading', text: '正在读取文书与案件材料' })
     setLockedPreviewEvidenceId(previewEvidence?.id ?? null)
     setAutoLinkingCertificateId(activeCertificate.id)
     try {
-      await runMutation(async () => {
-        const result = await api.autoLinkCertificate(activeCertificate.id)
+      const linking = documentTaskQueueRef.current.run(async () => {
+        let result: Awaited<ReturnType<typeof api.autoLinkCertificate>>
+        try {
+          result = await api.autoLinkCertificate(activeCertificate.id, (text) => {
+            setAutoLinkFeedback({ tone: 'loading', text })
+          })
+        } catch (error) {
+          setAutoLinkFeedback({ tone: 'info', text: '本次联动未完成，请稍后重试。' })
+          throw error
+        }
         const { workspace } = result
         applyWorkspace(workspace, {
-          selectedCaseId,
+          selectedCaseId: activeCertificate.caseId,
           selectedCertificateId: activeCertificate.id,
           activeParagraphId: activeParagraph?.id ?? activeCertificate.paragraphs[0]?.id ?? null,
           selectedEvidenceIds,
@@ -5745,19 +5829,24 @@ function App() {
           totalMatches > 0
             ? {
               tone: 'success',
-              text: `联动完成：${linkedParagraphCount} 段已建立关联，新增证据 ${evidenceLinkCount} 条、法条 ${statuteReferenceCount} 条、案例 ${caseReferenceCount} 条。`,
+              text: `联动完成：已关联 ${linkedParagraphCount} 段关键内容，材料 ${evidenceLinkCount} 条、法条 ${statuteReferenceCount} 条、案例 ${caseReferenceCount} 条。`,
             }
             : {
               tone: 'info',
-              text: '联动已执行完成，但本次没有匹配到新的证据、法条或案例。',
+              text: '核验完成，本次未发现需要新增关联的关键内容。',
             },
         )
       })
-
-      openCaseCenter('review')
-      setPreviewPanelMode('preview')
-      revealInsightPanel()
+      const linked = await runMutation(() => linking)
+      if (linked) {
+        openCaseCenter('review')
+        setPreviewPanelMode('preview')
+        revealInsightPanel()
+      } else {
+        documentTaskQueueRef.current.recover()
+      }
     } finally {
+      documentAnalysisRunningRef.current = false
       setLockedPreviewEvidenceId(null)
       setAutoLinkingCertificateId(null)
     }
@@ -5769,45 +5858,6 @@ function App() {
         ? current.filter((item) => item !== evidenceId)
         : [...current, evidenceId],
     )
-  }
-
-  async function handleBindEvidence(evidenceId: string) {
-    if (!activeParagraph || !activeCertificate || !evidenceId) {
-      return
-    }
-
-    const evidence = caseEvidences.find((item) => item.id === evidenceId)
-    if (!evidence) {
-      return
-    }
-
-    const currentLinks = getParagraphLinks(activeParagraph)
-    const existingIndex = currentLinks.findIndex((link) =>
-      link.evidenceId === evidenceId && sentenceAnchorMatches(link, activeSentenceSelection),
-    )
-
-    if (existingIndex >= 0) {
-      focusParagraph(activeParagraph.id, existingIndex)
-      setLinkEvidenceDraft('')
-      return
-    }
-
-    const nextLink: EvidenceLink = {
-      id: `${activeParagraph.id}-link-${Date.now()}`,
-      evidenceId,
-      locator: locatorDraft.trim() || evidence.anchorHint || '段落 1',
-      quote: evidence.ocrText.replace(/\s+/g, ' ').slice(0, 48) || evidence.summaryText || evidence.name,
-      sentenceIndex: activeSentenceSelection.index ?? undefined,
-      sentenceText: activeSentenceSelection.text || undefined,
-    }
-
-    await handleUpdateParagraph({
-      links: [...currentLinks, nextLink],
-      verified: false,
-    })
-
-    setActiveReferenceIndex(currentLinks.length)
-    setLinkEvidenceDraft('')
   }
 
   async function handleUpdateActiveReference(patch: Partial<EvidenceLink>) {
@@ -5822,21 +5872,6 @@ function App() {
     await handleUpdateParagraph({
       links: nextLinks,
     })
-  }
-
-  async function handleRemoveActiveReference() {
-    if (!activeParagraph || !activeLink) {
-      return
-    }
-
-    const nextLinks = getParagraphLinks(activeParagraph).filter((_, index) => index !== activeReferenceIndex)
-
-    await handleUpdateParagraph({
-      links: nextLinks,
-      verified: false,
-    })
-
-    setActiveReferenceIndex(Math.max(0, activeReferenceIndex - 1))
   }
 
   async function handleBindStatute(article: KnowledgeStatuteArticle, document: KnowledgeStatuteDocument) {
@@ -5993,19 +6028,6 @@ function App() {
     })
   }
 
-  function handleStartInsightSectionResize(event: ReactPointerEvent<HTMLDivElement>) {
-    if (window.innerWidth <= 1280) {
-      return
-    }
-
-    insightSectionResizeRef.current = {
-      startY: event.clientY,
-      startHeight: insightTopHeight,
-    }
-    setIsResizingInsightSection(true)
-    event.preventDefault()
-  }
-
   function updateImageViewerScale(nextScale: number) {
     setImageViewerState((current) => {
       if (!current) {
@@ -6040,7 +6062,10 @@ function App() {
         return <div className="empty-box">请先在左侧选择证据文件，或在中间文书中点选需要核验的段落。</div>
       }
 
-      return <div className="empty-box">当前段落尚未绑定证据，也可以直接从左侧证据列表点击预览。</div>
+      const sentenceFocus = activeParagraph.linkageFocus?.find(item => item.sentenceIndex === activeSentenceSelection.index)
+      return <div className="empty-box">{sentenceFocus?.priority === 'skip'
+        ? '本句无需材料核验。'
+        : '所选句子尚无对应材料，可从证据目录查看原件。'}</div>
     }
 
     const canOpenOriginal = Boolean(previewSource)
@@ -6051,6 +6076,15 @@ function App() {
     const previewLocator = previewLink?.locator || previewEvidence.anchorHint || '未绑定具体段落'
     const isSummarizingCurrentEvidence =
       summarizingEvidenceId === previewEvidence.id || previewEvidence.summaryStatus === 'processing'
+    const previewInsight = [...(appState?.evidenceInsights ?? [])]
+      .filter((item) => item.evidenceId === previewEvidence.id)
+      .sort((a, b) => b.version - a.version)[0]
+    const attentionTerms = getAttentionTerms(
+      !isSummarizingCurrentEvidence && previewEvidence.summaryStatus === 'ready' ? previewInsight : undefined,
+    )
+    const renderPreviewText = (text: string) => (
+      <AttentionText text={text} terms={[...attentionTerms, highlightText].filter(Boolean)} />
+    )
 
     let previewNode: ReactNode = (
       <div className="preview-empty">
@@ -6069,7 +6103,7 @@ function App() {
         </button>
       )
     } else if (sourceType === 'word') {
-      previewNode = <WordPreviewSurface evidence={previewEvidence} sourceUrl={previewSource} />
+      previewNode = <WordPreviewSurface key={previewEvidence.id} evidence={previewEvidence} sourceUrl={previewSource} />
     } else if ((sourceType === 'pdf' || sourceType === 'ppt') && previewSource) {
       previewNode = (
         <iframe
@@ -6088,7 +6122,7 @@ function App() {
           <div className="document-source-paper">
             {summaryLines.map((line, index) => (
               <p key={`${previewEvidence.id}-preview-${index}`}>
-                {renderHighlightedText(line, highlightText)}
+                {renderPreviewText(line)}
               </p>
             ))}
           </div>
@@ -6102,7 +6136,7 @@ function App() {
       ['文件格式', getEvidenceExtension(previewEvidence.fileName)],
       ['源目录', previewEvidence.relativePath ?? previewEvidence.fileName],
       ['定位信息', previewLocator],
-      ['上传时间', formatDateTime(previewEvidence.uploadedAt)],
+      ['导入时间', formatDateTime(previewEvidence.uploadedAt)],
     ]
 
     const previewBody =
@@ -6117,7 +6151,7 @@ function App() {
           <div className="document-source-paper">
             {summaryLines.map((line, index) => (
               <p key={`${previewEvidence.id}-text-${index}`}>
-                {renderHighlightedText(line, highlightText)}
+                {renderPreviewText(line)}
               </p>
             ))}
           </div>
@@ -6140,7 +6174,6 @@ function App() {
             <strong>
               {previewEvidence.number} {previewEvidence.name}
             </strong>
-            <span>{previewEvidence.relativePath ?? previewEvidence.fileName}</span>
           </div>
           <div className="preview-meta-actions">
             <span className="preview-format-badge">{evidenceFormatLabel}</span>
@@ -6154,7 +6187,7 @@ function App() {
             </button>
             <span className="point-cost-hint">
               {previewEvidence.summaryText?.trim()
-                ? '已缓存，下次进入可直接调取；点击按钮才会重新理解并扣分'
+                ? '已理解 · 重新理解将扣分'
                 : `预计扣分 ${getEstimatedActionPoints('evidence_summary')} 积分`}
             </span>
             {canOpenOriginal ? (
@@ -6171,9 +6204,18 @@ function App() {
           </div>
         </div>
 
-        {!isManualEvidencePreview && activeParagraphLinks.length > 1 ? (
+        {!isManualEvidencePreview && previewLink?.reason ? (
+          <div className={`linkage-reason ${previewLink.relation ?? 'support'}`}>
+            <strong>{previewLink.relation === 'contradict' ? '存在矛盾'
+              : previewLink.relation === 'context' ? '待核验线索' : '支撑事实'}</strong>
+            <span>{previewLink.reason}</span>
+          </div>
+        ) : null}
+
+        {!isManualEvidencePreview && activeSentenceEvidenceLinks.length > 1 ? (
           <div className="reference-switcher">
-            {activeParagraphLinks.map((link, index) => {
+            {activeSentenceEvidenceLinks.map((link) => {
+              const index = activeParagraphLinks.indexOf(link)
               const evidence = caseEvidences.find((item) => item.id === link.evidenceId)
 
               return (
@@ -6216,6 +6258,12 @@ function App() {
           </div>
           {previewBody}
         </div>
+        <EvidenceAttention
+          key={previewEvidence.id}
+          evidence={previewEvidence}
+          insight={previewInsight}
+          processing={isSummarizingCurrentEvidence}
+        />
       </div>
     )
   }
@@ -6838,12 +6886,7 @@ function App() {
                   <strong>{isRewriteMode ? '继续追问 / 改写要求' : '起草要求'}</strong>
                   <span className="point-cost-hint">预计扣分 {estimatedDraftPoints} 积分</span>
                 </div>
-                <textarea
-                  className="agent-prompt-input agent-dock-prompt-input"
-                  value={agentPrompt}
-                  onChange={(event) => setAgentPrompt(event.target.value)}
-                  placeholder=""
-                />
+                <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} />
                 <div className="agent-composer-actions">
                   <button
                     className="ghost-button"
@@ -6924,6 +6967,9 @@ function App() {
                 </button>
               </div>
             </div>
+            {selectedStatuteReference.reason ? (
+              <div className="linkage-reason"><strong>关联争议</strong><span>{selectedStatuteReference.reason}</span></div>
+            ) : null}
             <div className="knowledge-detail-block">
               <strong>{selectedStatuteReferenceBinding.document.title} {selectedStatuteReferenceBinding.article.articleNumber}</strong>
               <p>{statutePreviewText}</p>
@@ -7054,6 +7100,9 @@ function App() {
               <strong>当前案例预览</strong>
               <span>{getKnowledgeCaseSourceLabel(selectedCaseReferenceBinding.entry.sourceType)}</span>
             </div>
+            {selectedCaseReference.reason ? (
+              <div className="linkage-reason"><strong>关联争议</strong><span>{selectedCaseReference.reason}</span></div>
+            ) : null}
             <div className="knowledge-detail-block">
               <strong>{selectedCaseReferenceBinding.entry.title}</strong>
               <p>{selectedCaseReferenceBinding.excerpt.content}</p>
@@ -8068,64 +8117,33 @@ function App() {
             </div>
           ))}
         </div>
-        <div className="word-toolbar-side" aria-live="polite">
+        <div className="word-toolbar-side">
           <div className="word-toolbar-side-main">
             <div className="word-toolbar-group compact">
               <button
                 className="word-tool evidence-link-button"
                 type="button"
                 onClick={() => void handleAutoLinkCertificate()}
-                disabled={!activeCertificate || isSubmitting}
+                disabled={!activeCertificate || isSubmitting || isAutoLinkingActiveCertificate}
               >
                 {autoLinkingCertificateId === activeCertificate?.id ? '联动中...' : '证据联动'}
               </button>
             </div>
-            <div className="toolbar-sentence-shell">
-              <div className="toolbar-sentence-head">
-                <span className="toolbar-paragraph-status">
-                  {activeParagraphOrder ? `当前编辑：第 ${activeParagraphOrder} 段` : '请先选择段落'}
-                </span>
-                {activeSentenceUnits.length ? (
-                  <span className="toolbar-sentence-counter">
-                    当前句 {activeSentenceSelection.index != null ? activeSentenceSelection.index + 1 : 1}/{activeSentenceUnits.length}
-                  </span>
-                ) : null}
-                <div className="toolbar-sentence-actions">
-                  <button
-                    className="word-tool label-tool"
-                    type="button"
-                    onClick={() => handleStepSentence(-1)}
-                    disabled={!activeSentenceUnits.length || (activeSentenceSelection.index ?? 0) <= 0}
-                  >
-                    上一句
-                  </button>
-                  <button
-                    className="word-tool label-tool"
-                    type="button"
-                    onClick={() => handleStepSentence(1)}
-                    disabled={!activeSentenceUnits.length || (activeSentenceSelection.index ?? 0) >= activeSentenceUnits.length - 1}
-                  >
-                    下一句
-                  </button>
-                </div>
-              </div>
-              {activeSentenceUnits.length ? (
-                <button
-                  className="toolbar-sentence-current"
-                  type="button"
-                  onClick={() => handleActivateSentence(activeSentenceSelection.index ?? 0, activeSentenceSelection.text)}
-                  title={activeSentenceSelection.text}
-                >
-                  {activeSentenceSelection.text || '当前句定位中...'}
-                </button>
-              ) : (
-                <div className="toolbar-sentence-empty">当前段落暂未拆分出可导航句子</div>
-              )}
-            </div>
+            <span className="toolbar-paragraph-status">
+              {activeParagraphOrder ? `当前编辑：第 ${activeParagraphOrder} 段` : '请先选择段落'}
+            </span>
           </div>
           <div className="word-toolbar-meta">
-            <span className={`auto-link-feedback ${linkageStatusMessage.tone}`}>
-              {linkageStatusMessage.text}
+            <span className={`auto-link-feedback ${linkageStatusMessage.tone}`} role="status" aria-live="polite" aria-atomic="true">
+              {isAutoLinkingActiveCertificate ? <span className="linkage-progress-spinner" aria-hidden="true" /> : null}
+              <span className="linkage-progress-viewport">
+                <span
+                  key={linkageStatusMessage.text}
+                  className={isAutoLinkingActiveCertificate ? 'linkage-progress-text is-rolling' : 'linkage-progress-text'}
+                >
+                  {linkageStatusMessage.text}
+                </span>
+              </span>
             </span>
           </div>
         </div>
@@ -8168,7 +8186,11 @@ function App() {
     }
 
     if (!activeCertificate) {
-      return <div className="empty-box">暂无质证书</div>
+      return (
+        <section className="word-editor-shell">
+          <div className="word-canvas word-canvas-empty" />
+        </section>
+      )
     }
 
     return (
@@ -8224,32 +8246,29 @@ function App() {
                     key={paragraph.id}
                     className={`word-paragraph ${paragraph.id === activeParagraph?.id ? 'active' : ''} ${paragraph.verified ? 'verified' : ''}`}
                     onClick={() => {
-                      focusParagraph(paragraph.id)
-                      syncActiveSentence(paragraph, getParagraphLinks(paragraph)[0], { syncInsight: false })
+                      if (paragraph.id !== activeParagraph?.id) {
+                        focusParagraph(paragraph.id)
+                      }
                     }}
                   >
                     <div className="word-paragraph-layout">
                       <ParagraphRichEditor
                         paragraph={paragraph}
+                        editable={!isAutoLinkingActiveCertificate}
                         active={paragraph.id === activeParagraph?.id}
                         activeSentenceIndex={paragraph.id === activeParagraph?.id ? activeSentenceSelection.index : null}
                         inlineReferences={paragraphKnowledgeReferences}
                         onActivate={() => {
-                          focusParagraph(paragraph.id)
-                          syncActiveSentence(paragraph, getParagraphLinks(paragraph)[0], { syncInsight: false })
+                          setActiveParagraphId(paragraph.id)
                         }}
-                        onActivateSentence={(sentenceIndex, sentenceText) => {
-                          if (paragraph.id !== activeParagraph?.id) {
-                            focusParagraph(paragraph.id)
-                          }
+                        onActivateSentence={(sentenceIndex, sentenceText, userInitiated) => {
+                          setActiveParagraphId(paragraph.id)
                           syncActiveSentence(paragraph, {
                             sentenceIndex,
                             sentenceText,
-                          })
+                          }, { syncInsight: Boolean(userInitiated) || !manualPreviewEvidenceIdRef.current })
                         }}
-                        onCommit={(patch) => {
-                          void handleUpdateParagraphById(paragraph.id, patch)
-                        }}
+                        onCommit={(patch) => handleUpdateParagraphById(paragraph.id, patch)}
                         onRegisterEditor={(editor) => {
                           paragraphEditorsRef.current[paragraph.id] = editor
                         }}
@@ -8271,15 +8290,16 @@ function App() {
                               return (
                                 <button
                                   key={`comment-${getLinkKey(link, linkIndex)}`}
-                                  className={`paragraph-comment-chip ${isActiveEvidenceReference ? 'active' : ''}`}
+                                  className={`paragraph-comment-chip ${link.relation ?? 'support'} ${isActiveEvidenceReference ? 'active' : ''}`}
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation()
                                     handlePreviewEvidenceReference(paragraph.id, linkIndex)
                                   }}
-                                  title={evidence ? `${evidence.number} ${evidence.name}` : `证据 ${linkIndex + 1}`}
+                                  title={[evidence ? `${evidence.number} ${evidence.name}` : `材料 ${linkIndex + 1}`, link.reason].filter(Boolean).join('：')}
                                 >
                                   {evidence ? `证${evidence.number}` : `证${linkIndex + 1}`}
+                                  {link.relation === 'contradict' ? ' · 矛盾' : link.relation === 'context' ? ' · 线索' : ''}
                                 </button>
                               )
                             })}
@@ -8411,6 +8431,7 @@ function App() {
                 fill="currentColor"
               />
             </svg>
+            <span>退出登录</span>
           </button>
         </div>
       </div>
@@ -8899,12 +8920,13 @@ function App() {
             <button
               className="ghost-button streamlined-sidebar-toggle-button"
               type="button"
-              onClick={() => setIsStreamlinedSidebarCollapsed((current) => !current)}
+              onClick={handleToggleStreamlinedSidebar}
               aria-expanded={!isStreamlinedSidebarCollapsed}
-              aria-label={isStreamlinedSidebarCollapsed ? '展开左侧栏' : '折叠左侧栏'}
-              title={isStreamlinedSidebarCollapsed ? '展开左侧栏' : '折叠左侧栏'}
+              aria-label={isStreamlinedSidebarCollapsed ? '展开证据目录' : '收起证据目录'}
+              title={isStreamlinedSidebarCollapsed ? '展开证据目录' : '收起证据目录'}
             >
-              <span aria-hidden="true">{isStreamlinedSidebarCollapsed ? '>' : '<'}</span>
+              <SidebarToggleIcon collapsed={isStreamlinedSidebarCollapsed} />
+              <span>{isStreamlinedSidebarCollapsed ? '展开' : '收起目录'}</span>
             </button>
           </div>
 
@@ -8975,18 +8997,21 @@ function App() {
                   <span className="streamlined-evidence-summary" title={linkedFolderSummary}>
                     {linkedFolderSummary}
                   </span>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => void handleLinkFolder()}
-                    disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress)}
-                  >
-                    {evidenceImportProgress
-                      ? evidenceImportProgress.stage === 'scan'
-                        ? '正在扫描...'
-                        : '正在解析...'
-                      : '链接文件夹'}
-                  </button>
+                  <div className="folder-link-trigger">
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => void handleLinkFolder()}
+                      disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress)}
+                    >
+                      {evidenceImportProgress
+                        ? evidenceImportProgress.stage === 'scan'
+                          ? '正在扫描...'
+                          : '正在理解...'
+                        : '链接文件夹'}
+                    </button>
+                    {renderFolderLinkGuidePopup()}
+                  </div>
                 </div>
                 {!selectedCase && shouldShowEmptyCaseOnboarding ? (
                   <div className="entry-onboarding-inline-card">
@@ -8997,27 +9022,13 @@ function App() {
                     </button>
                   </div>
                 ) : null}
-                {shouldShowFolderLinkOnboarding ? (
-                  <div className="entry-onboarding-inline-card entry-onboarding-inline-card-accent" role="status">
-                    <strong>下一步：链接本地文件夹</strong>
-                    <p>案件已创建。点击右侧“链接文件夹”，选择电脑里的案件材料目录，系统会按目录把证据接入当前案件。</p>
-                    <div className="entry-onboarding-inline-actions">
-                      <button className="primary-button" type="button" onClick={() => void handleLinkFolder()} disabled={isSubmitting || Boolean(evidenceImportProgress)}>
-                        立即链接
-                      </button>
-                      <button className="ghost-button" type="button" onClick={() => setEntryOnboardingStep('idle')} disabled={isSubmitting}>
-                        稍后处理
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
                 {evidenceImportProgress ? (
                   <div className="evidence-progress-card">
                     <div className="evidence-progress-head">
                       <strong>
                         {evidenceImportProgress.stage === 'scan'
                           ? '扫描目录'
-                          : '解析文件'}
+                          : '理解证据'}
                       </strong>
                       <span>
                         {evidenceImportProgress.total > 0
@@ -9169,23 +9180,6 @@ function App() {
 
     return (
       <>
-        {shouldShowFolderLinkOnboarding ? (
-          <section className="panel pro-card case-entry-guide-banner">
-            <div>
-              <span className="eyebrow">下一步</span>
-              <h2>请先链接本地文件夹</h2>
-              <p>案件已经建立完成。把电脑里的案件材料目录接进来后，证据整理、起草和核验流程才会完整展开。</p>
-            </div>
-            <div className="case-entry-guide-actions">
-              <button className="primary-button" type="button" onClick={() => void handleLinkFolder()} disabled={isSubmitting || Boolean(evidenceImportProgress)}>
-                链接本地文件夹
-              </button>
-              <button className="ghost-button" type="button" onClick={() => setEntryOnboardingStep('idle')} disabled={isSubmitting}>
-                稍后处理
-              </button>
-            </div>
-          </section>
-        ) : null}
         <section className="stats-grid">
           <article className="stat-card">
             <span>当前案件证据</span>
@@ -9265,7 +9259,7 @@ function App() {
             <div className="architecture-summary">
               <article>
                 <strong>证据整理</strong>
-                <p>{caseEvidences.length} 份材料已进入案件库，可继续上传、改名与清洗摘要。</p>
+                <p>{caseEvidences.length} 份材料已进入案件库，可继续导入、改名与清洗摘要。</p>
               </article>
               <article>
                 <strong>起草进展</strong>
@@ -9325,11 +9319,11 @@ function App() {
             </div>
             <div className="upload-actions">
               <label className="upload-button">
-                上传文件
+                导入文件
                 <input type="file" multiple onChange={(event) => void handleUpload(event)} />
               </label>
               <label className="upload-button">
-                上传文件夹
+                导入文件夹
                 <input
                   type="file"
                   multiple
@@ -9415,7 +9409,7 @@ function App() {
           <ul className="plain-list">
             <li>先勾选拟纳入本版质证书的证据材料，再进入质证书起草。</li>
             <li>证据名称与 OCR 摘要可在此直接修订，减少后续起草偏差。</li>
-            <li>文件夹上传会保留原始目录结构，方便按案卷组织管理。</li>
+            <li>文件夹导入会保留原始目录结构，方便按案卷组织管理。</li>
           </ul>
           <div className="tab-row sidebar-action-row">
             <button className="primary-button" type="button" onClick={() => openCaseCenter('draft')}>
@@ -9532,175 +9526,93 @@ function App() {
       }
 
       return (
-        <section
-          className={`streamlined-workbench ${isResizingWorkbench ? 'is-resizing' : ''}`}
-          ref={workbenchRef}
-          style={{ '--streamlined-insight-width': `${insightPanelWidth}px` } as CSSProperties}
-        >
-          <article className="panel pro-card streamlined-document-panel">
-            {shouldShowFolderLinkOnboarding ? (
-              <div className="case-entry-guide-banner case-entry-guide-banner-inline">
-                <div>
-                  <span className="eyebrow">下一步</span>
-                  <h2>请先链接本地文件夹</h2>
-                  <p>案件已经建立完成。把电脑里的案件材料目录接进来后，当前工作区就能直接开始整理证据与生成文书。</p>
-                </div>
-                <div className="case-entry-guide-actions">
-                  <button className="primary-button" type="button" onClick={() => void handleLinkFolder()} disabled={isSubmitting || Boolean(evidenceImportProgress)}>
-                    链接本地文件夹
-                  </button>
-                  <button className="ghost-button" type="button" onClick={() => setEntryOnboardingStep('idle')} disabled={isSubmitting}>
-                    稍后处理
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <div className="panel-header">
-              <div className="panel-header-title-group">
-                <div>
-                  <span className="eyebrow">AI 文书</span>
-                  <h2>{activeCertificate?.title ?? '请先链接本地文件夹并生成文书'}</h2>
-                </div>
-                {selectedCase ? <span className={`status-chip ${selectedCase.status}`}>{getStatusLabel(selectedCase.status)}</span> : null}
-              </div>
-              <div className="panel-header-actions">
-                <input
-                  id={certificateUploadInputId}
-                  ref={certificateUploadRef}
-                  className="visually-hidden-file-input"
-                  type="file"
-                  accept=".docx,.doc,.rtf,.txt,.md,.wps"
-                  onChange={(event) => void handleCertificateUploadInput(event)}
-                />
-                <label
-                  className={`header-action-button ${!selectedCase || isSubmitting ? 'disabled' : ''}`}
-                  htmlFor={!selectedCase || isSubmitting ? undefined : certificateUploadInputId}
-                  title="上传文书"
-                >
-                  <span className="icon">↑</span> 上传文书
-                </label>
-                
-                <button 
-                  className="header-action-button primary" 
-                  type="button" 
-                  onClick={() => activeCertificate && void exportCertificateToWord(activeCertificate, selectedCase?.name ?? '')}
-                  disabled={!activeCertificate}
-                  title="下载为 Word 文档"
-                >
-                  <span className="icon">↓</span> 下载文书
-                </button>
-              </div>
-            </div>
-            {renderCertificateEditor()}
-          </article>
-
-          <div
-            aria-label="调整文书与原文核验区域宽度"
-            aria-orientation="vertical"
-            className="streamlined-workbench-resizer"
-            onDoubleClick={() => setInsightPanelWidth(DEFAULT_INSIGHT_PANEL_WIDTH)}
-            onPointerDown={handleStartWorkbenchResize}
-            role="separator"
-            title="拖动调整右侧两列宽度"
-          />
-
-          <aside
-            className={`panel pro-card streamlined-insight-panel ${isResizingInsightSection ? 'is-section-resizing' : ''}`}
-            ref={insightPanelRef}
-            style={{ '--streamlined-insight-top-height': `${insightTopHeight}px` } as CSSProperties}
+        <>
+          <section
+            className={`streamlined-workbench ${isResizingWorkbench ? 'is-resizing' : ''}`}
+            ref={workbenchRef}
+            style={{ '--streamlined-insight-width': `${insightPanelWidth}px` } as CSSProperties}
           >
-            <div className="panel-header" ref={insightPanelHeaderRef}>
-              <div>
-                <span className="eyebrow">原文核验</span>
-               
-              </div>
-              <div className="tab-row knowledge-tab-row">
-                {[
-                  ['evidence', '证据原件'],
-                  ['statute', '法律依据'],
-                  ['case', '案例参照'],
-                  ['memory', '案件记忆'],
-                ].map(([key, label]) => (
-                  <button
-                    key={key}
-                    className={verifyInsightTab === key ? 'active' : ''}
-                    type="button"
-                    onClick={() => setVerifyInsightTab(key as VerifyInsightTab)}
+            <article className="panel pro-card streamlined-document-panel">
+              <div className="panel-header">
+                <div className="panel-header-title-group">
+                  <div>
+                    <span className="eyebrow">AI 文书</span>
+                    {activeCertificate?.title ? <h2>{activeCertificate.title}</h2> : null}
+                  </div>
+                  {selectedCase && activeCertificate ? <span className={`status-chip ${selectedCase.status}`}>{getStatusLabel(selectedCase.status)}</span> : null}
+                </div>
+                <div className="panel-header-actions">
+                  <input
+                    id={certificateUploadInputId}
+                    ref={certificateUploadRef}
+                    className="visually-hidden-file-input"
+                    type="file"
+                    accept=".docx,.doc,.rtf,.txt,.md,.wps"
+                    onChange={(event) => void handleCertificateUploadInput(event)}
+                  />
+                  <label
+                    className={`header-action-button ${!selectedCase || isSubmitting ? 'disabled' : ''}`}
+                    htmlFor={!selectedCase || isSubmitting ? undefined : certificateUploadInputId}
+                    title="上传文书"
                   >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    <span className="icon">↑</span> 上传文书
+                  </label>
 
-            <div className="streamlined-insight-content" ref={evidenceColumnRef}>
-              {renderVerifyInsightPanel()}
-            </div>
+                  <button
+                    className="header-action-button primary"
+                    type="button"
+                    onClick={() => activeCertificate && void exportCertificateToWord(activeCertificate, selectedCase?.name ?? '')}
+                    disabled={!activeCertificate}
+                    title="下载为 Word 文档"
+                  >
+                    <span className="icon">↓</span> 下载文书
+                  </button>
+                </div>
+              </div>
+              {renderCertificateEditor()}
+            </article>
 
             <div
-              aria-label="调整右侧上下分区高度"
-              aria-orientation="horizontal"
-              className="streamlined-insight-section-resizer"
-              onDoubleClick={() => setInsightTopHeight(DEFAULT_INSIGHT_TOP_HEIGHT)}
-              onPointerDown={handleStartInsightSectionResize}
+              aria-label="调整文书与原文核验区域宽度"
+              aria-orientation="vertical"
+              className="streamlined-workbench-resizer"
+              onDoubleClick={() => setInsightPanelWidth(DEFAULT_INSIGHT_PANEL_WIDTH)}
+              onPointerDown={handleStartWorkbenchResize}
               role="separator"
-              title="拖动调整预览区与绑定区高度"
+              title="拖动调整右侧两列宽度"
             />
 
-            <div className="binder-panel streamlined-binder-panel">
-              <label className="field-block">
-                快速绑定证据
-                <select
-                  className="streamlined-case-select"
-                  value={linkEvidenceDraft}
-                  onChange={(event) => {
-                    const evidenceId = event.target.value
-                    setLinkEvidenceDraft(evidenceId)
-                    void handleBindEvidence(evidenceId)
-                  }}
-                >
-                  <option value="">选择证据后立即绑定到当前句</option>
-                  {caseEvidences.map((evidence) => (
-                    <option key={evidence.id} value={evidence.id}>
-                      {evidence.number} {evidence.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <aside className="panel pro-card streamlined-insight-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="eyebrow">原文核验</span>
 
-              <div className="inline-actions">
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={() => void handleRemoveActiveReference()}
-                  disabled={!activeLink}
-                >
-                  删除当前证据引用
-                </button>
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={() => {
-                    void handleUpdateParagraph({ verified: !(activeParagraph?.verified ?? false) })
-                  }}
-                  disabled={!activeParagraph}
-                >
-                  {activeParagraph?.verified ? '标记为待复核' : '标记为已核验'}
-                </button>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={() => {
-                    void handleAiReviewActiveParagraph()
-                  }}
-                  disabled={!activeParagraph || isSubmitting}
-                >
-                  AI复核当前段落
-                </button>
+                </div>
+                <div className="tab-row knowledge-tab-row">
+                  {[
+                    ['evidence', '证据原件'],
+                    ['statute', '法律依据'],
+                    ['case', '案例参照'],
+                    ['memory', '案件记忆'],
+                  ].map(([key, label]) => (
+                    <button
+                      key={key}
+                      className={verifyInsightTab === key ? 'active' : ''}
+                      type="button"
+                      onClick={() => setVerifyInsightTab(key as VerifyInsightTab)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </aside>
-        </section>
+
+              <div className="streamlined-insight-content" ref={evidenceColumnRef}>
+                {renderVerifyInsightPanel()}
+              </div>
+            </aside>
+          </section>
+        </>
       )
     }
 
@@ -9739,25 +9651,6 @@ function App() {
             {renderVerifyInsightPanel()}
 
             <div className="binder-panel">
-              <label className="field-block">
-                添加证据引用
-                <select
-                  value={linkEvidenceDraft}
-                  onChange={(event) => {
-                    const evidenceId = event.target.value
-                    setLinkEvidenceDraft(evidenceId)
-                    void handleBindEvidence(evidenceId)
-                  }}
-                >
-                  <option value="">请选择证据后添加</option>
-                  {caseEvidences.map((evidence) => (
-                    <option key={evidence.id} value={evidence.id}>
-                      {evidence.number} {evidence.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               <label className="field-block">
                 定位信息
                 <input
@@ -9799,30 +9692,6 @@ function App() {
                 </span>
               </div>
 
-              <div className="inline-actions">
-                <button className="ghost-button" type="button" onClick={() => void handleRemoveActiveReference()}>
-                  删除当前证据引用
-                </button>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={() => {
-                    void handleAiReviewActiveParagraph()
-                  }}
-                  disabled={!activeParagraph || isSubmitting}
-                >
-                  AI复核当前段落
-                </button>
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={() => {
-                    void handleUpdateParagraph({ verified: !(activeParagraph?.verified ?? false) })
-                  }}
-                >
-                  {activeParagraph?.verified ? '标记为待复核' : '标记为已核验'}
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -9894,6 +9763,7 @@ function App() {
                 type="button"
                 onClick={() => {
                   setAuthMode('login')
+                  setIsSubmitting(false)
                   setErrorMessage('')
                 }}
               >
@@ -9904,6 +9774,7 @@ function App() {
                 type="button"
                 onClick={() => {
                   setAuthMode('register')
+                  setIsSubmitting(false)
                   setErrorMessage('')
                 }}
               >
@@ -9917,6 +9788,7 @@ function App() {
                   注册邮箱
                   <input
                     autoFocus
+                    ref={loginEmailInputRef}
                     value={loginForm.account}
                     onChange={(event) =>
                       setLoginForm((current) => ({ ...current, account: event.target.value }))
@@ -9957,6 +9829,7 @@ function App() {
                   机构名称
                   <input
                     autoFocus
+                    ref={registerOrganizationInputRef}
                     value={registerForm.organizationName}
                     onChange={(event) =>
                       setRegisterForm((current) => ({ ...current, organizationName: event.target.value }))
@@ -10067,9 +9940,27 @@ function App() {
   }
 
   if (streamlinedMode) {
+    const streamlinedShellStyle = {
+      '--streamlined-sidebar-width': `${isStreamlinedSidebarCollapsed ? COLLAPSED_STREAMLINED_SIDEBAR_WIDTH : streamlinedSidebarWidth}px`,
+      '--streamlined-shell-resizer-width': `${STREAMLINED_SIDEBAR_RESIZER_WIDTH}px`,
+    } as CSSProperties
+
     return (
-      <div className={`app-shell pro-shell streamlined-shell ${isStreamlinedSidebarCollapsed ? 'streamlined-shell-sidebar-collapsed' : ''}`}>
+      <div
+        ref={streamlinedShellRef}
+        className={`app-shell pro-shell streamlined-shell ${isStreamlinedSidebarCollapsed ? 'streamlined-shell-sidebar-collapsed' : ''} ${isResizingStreamlinedSidebar ? 'is-sidebar-resizing' : ''}`}
+        style={streamlinedShellStyle}
+      >
         {renderCaseCenterSidebar()}
+        <div
+          className="streamlined-shell-resizer"
+          onPointerDown={handleStartStreamlinedSidebarResize}
+          onDoubleClick={handleResetStreamlinedSidebarWidth}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整证据目录宽度"
+          tabIndex={0}
+        />
 
         <main className="main-content streamlined-main">
           {errorMessage ? (

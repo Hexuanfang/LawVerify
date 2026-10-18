@@ -13,15 +13,28 @@ import type {
   RoleType,
 } from './types'
 
+function getDevServiceHost() {
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    const hostname = window.location.hostname
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return hostname
+    }
+  }
+
+  return '127.0.0.1'
+}
+
+const DEV_SERVICE_HOST = getDevServiceHost()
+
 const API_BASE_URL = (
   (import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL?.trim() : '')
-  || (import.meta.env.DEV ? 'http://127.0.0.1:8787' : '')
+  || (import.meta.env.DEV ? `http://${DEV_SERVICE_HOST}:8787` : '')
 ).replace(/\/$/, '')
 
 const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
 const ACCOUNT_CENTER_BASE_URL = (
   (import.meta.env.DEV ? import.meta.env.VITE_ACCOUNT_CENTER_URL?.trim() : '')
-  || (import.meta.env.DEV ? 'http://127.0.0.1:4273' : OFFICIAL_PLATFORM_BASE_URL)
+  || (import.meta.env.DEV ? `http://${DEV_SERVICE_HOST}:4273` : OFFICIAL_PLATFORM_BASE_URL)
 ).replace(/\/$/, '')
 
 const CLOUD_API_BASE_URL = (
@@ -95,12 +108,36 @@ function shouldUseLocalCloudProxy() {
   return !API_BASE_URL && isLocalOriginUrl(pageOrigin)
 }
 
-export function getEvidenceSourceUrl(evidenceId: string) {
-  return `${API_BASE_URL}/api/evidences/${evidenceId}/source`
+export function getEvidenceSourceUrl(evidenceId: string, workspaceAccount?: string | null) {
+  const normalizedAccount = workspaceAccount?.trim().toLowerCase()
+    || (typeof window !== 'undefined'
+      ? sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY)?.trim().toLowerCase()
+      : '')
+  const baseUrl = `${API_BASE_URL}/api/evidences/${evidenceId}/source`
+
+  if (!normalizedAccount) {
+    return baseUrl
+  }
+
+  const params = new URLSearchParams({
+    workspaceAccount: normalizedAccount,
+  })
+
+  return `${baseUrl}?${params.toString()}`
 }
 
 interface WorkspaceResponse {
   workspace: AppState
+}
+
+interface EvidenceSourceUploadResponse {
+  assets: Array<{
+    relativePath: string
+    fileName: string
+    storageKey: string
+    storageUrl: string
+    sourceMimeType?: string
+  }>
 }
 
 interface LoginResponse extends WorkspaceResponse {
@@ -153,10 +190,11 @@ interface CertificateStreamDonePayload extends WorkspaceResponse {
   agentReply?: string
 }
 
-type CertificateStreamHandlers = {
+type CertificateStreamHandlers<T = CertificateStreamDonePayload> = {
   onMeta?: (event: CertificateStreamMetaEvent) => void
   onParagraph?: (event: CertificateStreamParagraphEvent) => void
-  onDone: (payload: CertificateStreamDonePayload) => void
+  onProgress?: (event: { text: string }) => void
+  onDone: (payload: T) => void
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -338,7 +376,7 @@ export async function fetchWithWorkspaceAccount(input: string | URL, init?: Requ
   })
 }
 
-async function streamRequest(path: string, init: RequestInit, handlers: CertificateStreamHandlers) {
+async function streamRequest<T = CertificateStreamDonePayload>(path: string, init: RequestInit, handlers: CertificateStreamHandlers<T>) {
   const headers = new Headers(init.headers ?? {})
   if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
@@ -348,6 +386,8 @@ async function streamRequest(path: string, init: RequestInit, handlers: Certific
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
+  }).catch(() => {
+    throw new Error('暂时无法连接服务，请检查连接后重试。')
   })
 
   if (!response.ok) {
@@ -362,6 +402,7 @@ async function streamRequest(path: string, init: RequestInit, handlers: Certific
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let receivedDone = false
 
   const handleEventBlock = (block: string) => {
     const lines = block.split(/\r?\n/)
@@ -385,6 +426,13 @@ async function streamRequest(path: string, init: RequestInit, handlers: Certific
       | CertificateStreamParagraphEvent
       | CertificateStreamDonePayload
       | { message?: string }
+      | { text: string }
+
+    if (eventName === 'progress') {
+      const progress = payload as { text?: unknown }
+      if (typeof progress.text === 'string') handlers.onProgress?.({ text: progress.text })
+      return
+    }
 
     if (eventName === 'meta') {
       handlers.onMeta?.(payload as CertificateStreamMetaEvent)
@@ -401,25 +449,35 @@ async function streamRequest(path: string, init: RequestInit, handlers: Certific
     }
 
     if (eventName === 'done') {
-      handlers.onDone(payload as CertificateStreamDonePayload)
+      receivedDone = true
+      handlers.onDone(payload as T)
     }
   }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+  try {
+    while (true) {
+      const { done, value } = await reader.read().catch(() => {
+        throw new Error('处理连接已中断，请稍后重试。')
+      })
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
 
-    let separatorIndex = buffer.indexOf('\n\n')
-    while (separatorIndex >= 0) {
-      const block = buffer.slice(0, separatorIndex)
-      buffer = buffer.slice(separatorIndex + 2)
-      handleEventBlock(block)
-      separatorIndex = buffer.indexOf('\n\n')
-    }
+      let separator = /\r?\n\r?\n/.exec(buffer)
+      while (separator) {
+        const block = buffer.slice(0, separator.index)
+        buffer = buffer.slice(separator.index + separator[0].length)
+        handleEventBlock(block)
+        separator = /\r?\n\r?\n/.exec(buffer)
+      }
 
-    if (done) {
-      break
+      if (done) {
+        break
+      }
     }
+    if (buffer.trim()) handleEventBlock(buffer)
+    if (!receivedDone) throw new Error('处理连接已中断，请稍后重试。')
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
   }
 }
 
@@ -718,6 +776,7 @@ export const api = {
   },
   importEvidences(payload: {
     caseId: string
+    processInBackground?: boolean
     files: Array<{
       fileName: string
       relativePath?: string
@@ -726,6 +785,8 @@ export const api = {
       ocrText: string
       previewDataUrl?: string
       sourceDataUrl?: string
+      storageKey?: string
+      storageUrl?: string
       pageImageDataUrls?: string[]
       sourceMimeType?: string
       pages?: number
@@ -742,6 +803,24 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
+  uploadEvidenceSourceFiles(files: Array<File & { webkitRelativePath?: string }>) {
+    const formData = new FormData()
+    const manifest = files.map((file) => ({
+      relativePath: file.webkitRelativePath || file.name,
+      fileName: file.name,
+      sourceMimeType: file.type,
+    }))
+
+    files.forEach((file) => {
+      formData.append('files', file, file.name)
+    })
+    formData.append('manifest', JSON.stringify(manifest))
+
+    return request<EvidenceSourceUploadResponse>('/api/evidences/assets/upload', {
+      method: 'POST',
+      body: formData,
+    })
+  },
   replaceEvidences(payload: {
     caseId: string
     files: Array<{
@@ -752,6 +831,8 @@ export const api = {
       ocrText: string
       previewDataUrl?: string
       sourceDataUrl?: string
+      storageKey?: string
+      storageUrl?: string
       pageImageDataUrls?: string[]
       sourceMimeType?: string
       pages?: number
@@ -881,18 +962,22 @@ export const api = {
       },
     )
   },
-  autoLinkCertificate(certificateId: string) {
-    return request<WorkspaceResponse & {
+  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void) {
+    type LinkageResult = WorkspaceResponse & {
       linkedParagraphCount: number
       evidenceLinkCount: number
       statuteReferenceCount: number
       caseReferenceCount: number
-    }>(
-      `/api/certificates/${certificateId}/auto-link`,
-      {
-        method: 'POST',
-      },
-    )
+    }
+    let result: LinkageResult | undefined
+    await streamRequest<LinkageResult>(`/api/certificates/${certificateId}/auto-link/stream`, {
+      method: 'POST',
+    }, {
+      onProgress: (event) => onProgress?.(event.text),
+      onDone: (payload) => { result = payload },
+    })
+    if (!result) throw new Error('证据联动未完成，请稍后重试。')
+    return result
   },
   reviewParagraph(certificateId: string, paragraphId: string) {
     return request<WorkspaceResponse & { reviewedCount: number }>(

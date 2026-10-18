@@ -8,6 +8,8 @@
     "migrate": "tsx src/scripts/migrate.ts",
     "sync:legal-sources": "tsx src/scripts/sync-legal-sources.ts",
     "build": "tsc -p tsconfig.json",
+    "test:linkage": "node --import tsx --test scripts/test-semantic-linkage.mjs",
+    "test:workspace": "node --import tsx --test scripts/test-workspace-sqlite.mjs",
     "start": "node dist/index.js",
     "start:collabora-proxy": "node dist/collabora-proxy.js"
   },
@@ -24,6 +26,7 @@
     "jsonwebtoken": "^9.0.3",
     "mammoth": "^1.12.3",
     "multer": "^2.4.0",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.23.0",
     "zod": "^4.6.5"
   },

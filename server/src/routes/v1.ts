@@ -119,7 +119,11 @@ function getRequestOrigin(request: Request) {
 
 export function createV1Router() {
   const router = Router()
-  const resolveWorkspaceAccount = (request: Request) => request.header('x-workspace-account')?.trim().toLowerCase() ?? null
+  const resolveWorkspaceAccount = (request: Request) =>
+    request.header('x-workspace-account')?.trim().toLowerCase()
+    ?? (typeof request.query.workspaceAccount === 'string'
+      ? request.query.workspaceAccount.trim().toLowerCase()
+      : null)
   const startEventStream = (response: express.Response) => {
     response.status(200)
     response.setHeader('Content-Type', 'text/event-stream; charset=utf-8')

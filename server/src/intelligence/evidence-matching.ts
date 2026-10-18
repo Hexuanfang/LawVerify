@@ -9,6 +9,7 @@ import type {
   ClaimUnit,
   ClaimUnitStatus,
 } from '../domain.js'
+import { getLinkageSentences, normalizeLinkageText } from './linkage-policy.js'
 
 const NEGATION_KEYWORDS = ['未', '没有', '并未', '拒绝', '否认', '未予', '不存在', '不能', '无法']
 const UNCERTAINTY_KEYWORDS = ['可能', '疑似', '待核实', '尚需', '暂未', '尚未', '建议', '进一步', '核对']
@@ -75,13 +76,14 @@ function buildEvidenceLocator(evidence: Evidence) {
 }
 
 function splitClaimSentences(text: string) {
-  const segments = text
-    .replace(/\r\n/g, '\n')
-    .split(/(?<=[。！？；;])\s*|\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
+  return getLinkageSentences(text).map(item => item.sentenceText)
+}
 
-  return segments.length ? segments : [text.trim()].filter(Boolean)
+function linkMatchesClaim(link: EvidenceLink, sentenceIndex: number, sentenceText: string) {
+  if (typeof link.sentenceIndex === 'number') return link.sentenceIndex === sentenceIndex
+  if (link.sentenceText) return normalizeLinkageText(link.sentenceText) === normalizeLinkageText(sentenceText)
+  // Legacy paragraph-wide manual links retain their original behavior.
+  return true
 }
 
 function inferClaimStatus(hasLinks: boolean): ClaimUnitStatus {
@@ -282,7 +284,7 @@ export function buildEvidenceFragments(evidences: Evidence[]): EvidenceFragment[
 export function buildClaimUnits(certificates: Certificate[]): ClaimUnit[] {
   return certificates.flatMap((certificate) =>
     certificate.paragraphs.flatMap((paragraph) => {
-      const hasLinks = Boolean(paragraph.links?.length || paragraph.link)
+      const links = paragraph.links?.length ? paragraph.links : paragraph.link ? [paragraph.link] : []
       return splitClaimSentences(paragraph.text).map((sentence, index) => ({
         id: `${paragraph.id}-claim-${index + 1}`,
         caseId: certificate.caseId,
@@ -293,7 +295,7 @@ export function buildClaimUnits(certificates: Certificate[]): ClaimUnit[] {
         normalizedText: sentence.replace(/\s+/g, ' ').trim(),
         sourceParagraphText: paragraph.text,
         labels: tokenizeKeywords(sentence, 8),
-        status: inferClaimStatus(hasLinks),
+        status: inferClaimStatus(links.some(link => linkMatchesClaim(link, index, sentence))),
       }))
     }),
   )
@@ -463,11 +465,12 @@ export function buildClaimEvidenceMatches(
     certificate.paragraphs.flatMap((paragraph) => {
       const links = paragraph.links?.length ? paragraph.links : paragraph.link ? [paragraph.link] : []
       const claimUnitsForParagraph = claimUnitsByParagraph.get(paragraph.id) ?? []
-      const linkedEvidenceIds = new Set(links.map((link) => link.evidenceId))
       const existingMatchIds = new Set<string>()
 
       return claimUnitsForParagraph.flatMap((claim) => {
-        const manualMatches = links.flatMap((link, index) => {
+        const sentenceLinks = links.filter(link => linkMatchesClaim(link, claim.sentenceIndex, claim.text))
+        const linkedEvidenceIds = new Set(sentenceLinks.map(link => link.evidenceId))
+        const manualMatches = sentenceLinks.flatMap((link, index) => {
           const fragment = selectBestFragment(link)
           if (!fragment) {
             return []
@@ -482,17 +485,20 @@ export function buildClaimEvidenceMatches(
             claimUnitId: claim.id,
             evidenceId: link.evidenceId,
             evidenceFragmentId: fragment.id,
-            relation: 'support' as const,
+            relation: link.relation === 'context' ? 'partial' as const : link.relation ?? 'support' as const,
             score: paragraph.verified ? 0.98 : 0.88,
-            reason: paragraph.verified ? '当前段落已人工核验并绑定证据。' : '当前段落已人工绑定证据，待进一步核验。',
+            reason: link.reason || (paragraph.verified ? '该句已人工核验并绑定材料。' : '该句已绑定材料，待进一步核验。'),
             quote: link.quote,
             locator: link.locator || fragment.locator,
-            source: 'manual' as const,
+            source: link.note === 'system:auto-evidence-linked' ? 'model' as const : 'manual' as const,
             verified: paragraph.verified,
           }
         })
 
-        const heuristicMatches = buildHeuristicMatches(claim, linkedEvidenceIds, existingMatchIds)
+        const focus = paragraph.linkageFocus?.find(item => item.sentenceIndex === claim.sentenceIndex
+          && normalizeLinkageText(item.sentenceText) === normalizeLinkageText(claim.text))
+        const heuristicMatches = focus && (!focus.evidenceNeeded || focus.priority === 'skip')
+          ? [] : buildHeuristicMatches(claim, linkedEvidenceIds, existingMatchIds)
         return [...manualMatches, ...heuristicMatches]
       })
     }),

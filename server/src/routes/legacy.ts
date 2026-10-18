@@ -1,8 +1,10 @@
 import { Router, type Request, type Response } from 'express'
+import multer from 'multer'
 import { z } from 'zod'
 import { env } from '../config/env.js'
 import { sendLegacyError } from '../core/api-response.js'
 import { AppError } from '../core/app-error.js'
+import { storeObject } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import {
   bootstrap,
@@ -53,7 +55,12 @@ const createCaseSchema = z.object({
 
 export function createLegacyRouter() {
   const router = Router()
-  const resolveWorkspaceAccount = (request: Request) => request.header('x-workspace-account')?.trim().toLowerCase() ?? null
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } })
+  const resolveWorkspaceAccount = (request: Request) =>
+    request.header('x-workspace-account')?.trim().toLowerCase()
+    ?? (typeof request.query.workspaceAccount === 'string'
+      ? request.query.workspaceAccount.trim().toLowerCase()
+      : null)
 
   // #region debug-point A-B-C-D:route-reporting
   const reportLegacyDebug = (hypothesisId: string, msg: string, data: Record<string, unknown> = {}) => {
@@ -268,6 +275,31 @@ export function createLegacyRouter() {
     sendWorkspacePayload(response, result)
   })
 
+  router.post('/evidences/assets/upload', upload.array('files', 200), async (request, response) => {
+    const files = Array.isArray(request.files) ? request.files : []
+    const manifest = typeof request.body?.manifest === 'string'
+      ? JSON.parse(request.body.manifest) as Array<{ relativePath?: string; fileName?: string; sourceMimeType?: string }>
+      : []
+
+    const assets = await Promise.all(files.map(async (file, index) => {
+      const manifestItem = manifest[index] ?? {}
+      const stored = await storeObject(file, {
+        bucket: 'evidence',
+        fileName: manifestItem.fileName?.trim() || file.originalname,
+      })
+
+      return {
+        relativePath: manifestItem.relativePath?.trim() || file.originalname,
+        fileName: manifestItem.fileName?.trim() || file.originalname,
+        storageKey: stored.key,
+        storageUrl: stored.url,
+        sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
+      }
+    }))
+
+    response.json({ assets })
+  })
+
   router.post('/evidences/replace', async (request, response) => {
     const result = await replaceCaseEvidences(request.body)
     sendWorkspacePayload(response, result)
@@ -292,6 +324,7 @@ export function createLegacyRouter() {
       reportLegacyDebug('D', 'source-route-enter', {
         requestId: request.headers['x-request-id'] ?? null,
         evidenceId: request.params.evidenceId,
+        workspaceAccount: resolveWorkspaceAccount(request),
         accept: request.headers.accept ?? null,
         secFetchDest: request.headers['sec-fetch-dest'] ?? null,
       })
@@ -419,6 +452,39 @@ export function createLegacyRouter() {
       request.body ?? {},
     )
     sendWorkspacePayload(response, result)
+  })
+
+  router.post('/certificates/:certificateId/auto-link/stream', async (request, response) => {
+    startEventStream(response)
+    const heartbeat = setInterval(() => {
+      if (!response.destroyed) {
+        response.write(': heartbeat\n\n')
+        response.flush?.()
+      }
+    }, 15000)
+    const stopHeartbeat = () => clearInterval(heartbeat)
+    response.once('close', stopHeartbeat)
+    try {
+      const result = await autoLinkCertificate(request.params.certificateId, (text) => {
+        if (!response.destroyed) sendStreamEvent(response, 'progress', { text })
+      })
+      if (!response.destroyed) {
+        sendStreamEvent(response, 'done', {
+          ...result,
+          workspace: sanitizeWorkspaceForClient(result.workspace),
+        })
+      }
+    } catch (error) {
+      if (!response.destroyed) {
+        sendStreamEvent(response, 'error', {
+          message: error instanceof Error ? error.message : '证据联动未完成，请稍后重试。',
+        })
+      }
+    } finally {
+      stopHeartbeat()
+      response.off('close', stopHeartbeat)
+      response.end()
+    }
   })
 
   router.post('/certificates/:certificateId/auto-link', async (request, response) => {

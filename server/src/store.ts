@@ -1,11 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { CertificateParagraph, EvidenceLink, ParagraphReference, WorkspaceState } from './domain.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { listKnowledgeFilesForWorkspace } from './commercial/knowledge-file-service.js'
 import { getWorkspaceDataDir } from './config/paths.js'
 import { shouldUseCommercialKnowledgeStore } from './knowledge-mode.js'
+import { inheritWorkspaceSnapshot, WorkspaceSqliteStore } from './infrastructure/workspace-sqlite.js'
 import {
   buildClaimEvidenceMatches,
   buildClaimUnits,
@@ -15,8 +16,6 @@ import { buildInitialState } from './seed.js'
 
 const dataDir = getWorkspaceDataDir()
 const stateFile = path.join(dataDir, 'workspace.json')
-const stateFileBackup = path.join(dataDir, 'workspace.backup.json')
-const stateFileTemp = path.join(dataDir, 'workspace.json.tmp')
 const workspaceContextStorage = new AsyncLocalStorage<{ account: string | null }>()
 const STATUTE_PLACEHOLDER_SNIPPETS = [
   '官方原文已定位',
@@ -28,11 +27,6 @@ interface WorkspacePaths {
   dataDir: string
   stateFile: string
   stateFileBackup: string
-  stateFileTemp: string
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function normalizeWorkspaceAccount(account?: string | null) {
@@ -61,8 +55,7 @@ function resolveWorkspacePaths(account = getCurrentWorkspaceAccount()): Workspac
       account: null,
       dataDir,
       stateFile,
-      stateFileBackup,
-      stateFileTemp,
+      stateFileBackup: path.join(dataDir, 'workspace.backup.json'),
     }
   }
 
@@ -72,7 +65,6 @@ function resolveWorkspacePaths(account = getCurrentWorkspaceAccount()): Workspac
     dataDir: workspaceDir,
     stateFile: path.join(workspaceDir, 'workspace.json'),
     stateFileBackup: path.join(workspaceDir, 'workspace.backup.json'),
-    stateFileTemp: path.join(workspaceDir, 'workspace.json.tmp'),
   }
 }
 
@@ -86,53 +78,6 @@ function createSeededWorkspaceForAccount(account: string) {
       email: account,
     },
   })
-}
-
-async function tryMigrateLegacyWorkspaceForAccount(account: string, paths: WorkspacePaths) {
-  try {
-    const raw = await readFile(stateFile, 'utf8')
-    const legacyWorkspace = normalizeWorkspace(JSON.parse(raw) as WorkspaceState)
-    const legacyEmail = normalizeWorkspaceAccount(legacyWorkspace.user.email)
-    if (legacyEmail !== account) {
-      return null
-    }
-
-    await mkdir(paths.dataDir, { recursive: true })
-    const serialized = JSON.stringify(legacyWorkspace, null, 2)
-    await writeFile(paths.stateFile, serialized, 'utf8')
-    await writeFile(paths.stateFileBackup, serialized, 'utf8')
-    return legacyWorkspace
-  } catch {
-    return null
-  }
-}
-
-async function replaceStateFileWithRetry(serialized: string, paths: WorkspacePaths) {
-  const retryableCodes = new Set(['EPERM', 'EACCES', 'EBUSY'])
-  let lastError: unknown
-
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    try {
-      await rename(paths.stateFileTemp, paths.stateFile)
-      return
-    } catch (error) {
-      const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
-      if (!retryableCodes.has(errorCode) || attempt === 3) {
-        lastError = error
-        break
-      }
-
-      await delay(80 * (attempt + 1))
-    }
-  }
-
-  try {
-    await writeFile(paths.stateFile, serialized, 'utf8')
-    await rm(paths.stateFileTemp, { force: true })
-    return
-  } catch {
-    throw lastError instanceof Error ? lastError : new Error('工作区写入失败。')
-  }
 }
 
 function escapeHtml(value: string) {
@@ -165,6 +110,7 @@ function normalizeParagraphLinks(paragraph: CertificateParagraph): CertificatePa
       : []
 
   const links: EvidenceLink[] = baseLinks.map((link, index) => ({
+    ...link,
     id: link.id ?? `${paragraph.id}-link-${index + 1}`,
     evidenceId: link.evidenceId,
     locator: link.locator,
@@ -339,7 +285,7 @@ function normalizeWorkspace(state: WorkspaceState): WorkspaceState {
   const evidences = (normalizedState.evidences ?? []).map((evidence) => ({
     ...evidence,
     relativePath: evidence.relativePath ?? evidence.fileName,
-    sourceDataUrl: evidence.sourceDataUrl ?? evidence.previewDataUrl,
+    sourceDataUrl: evidence.sourceDataUrl ?? (evidence.storageKey ? undefined : evidence.previewDataUrl),
     pageImageDataUrls: evidence.pageImageDataUrls ?? [],
     sourceMimeType:
       evidence.sourceMimeType ??
@@ -392,7 +338,7 @@ function normalizeWorkspace(state: WorkspaceState): WorkspaceState {
 
 export async function readWorkspace(): Promise<WorkspaceState> {
   const paths = resolveWorkspacePaths()
-  await mkdir(paths.dataDir, { recursive: true })
+  const store = new WorkspaceSqliteStore(paths.dataDir)
 
   const hydrateWorkspace = async (normalized: WorkspaceState) => {
     if (!shouldUseCommercialKnowledgeStore() || !isDatabaseEnabled()) {
@@ -411,8 +357,8 @@ export async function readWorkspace(): Promise<WorkspaceState> {
     }
   }
 
-  const readPersistedWorkspace = async (filePath: string) => {
-    const raw = await readFile(filePath, 'utf8')
+  const readLegacyWorkspace = (filePath: string) => {
+    const raw = readFileSync(filePath, 'utf8')
     const normalized = normalizeWorkspace(JSON.parse(raw) as WorkspaceState)
 
     if (!paths.account) {
@@ -429,44 +375,54 @@ export async function readWorkspace(): Promise<WorkspaceState> {
     })
   }
 
-  try {
-    return await hydrateWorkspace(await readPersistedWorkspace(paths.stateFile))
-  } catch (error) {
-    const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
-
-    if (errorCode === 'ENOENT') {
-      if (paths.account) {
-        const migrated = await tryMigrateLegacyWorkspaceForAccount(paths.account, paths)
-        if (migrated) {
-          return await hydrateWorkspace(migrated)
+  let migrationSource: string | undefined
+  const persisted = store.read(() => {
+    let hasLegacyData = false
+    let lastError: unknown
+    for (const file of [paths.stateFile, paths.stateFileBackup]) {
+      try {
+        const migrated = readLegacyWorkspace(file)
+        migrationSource = file
+        return migrated
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          hasLegacyData = true
+          lastError = error
         }
       }
-
-      const seeded = paths.account ? createSeededWorkspaceForAccount(paths.account) : buildInitialState()
-      await writeWorkspace(seeded)
-      return await hydrateWorkspace(seeded)
     }
-
-    try {
-      const recovered = await readPersistedWorkspace(paths.stateFileBackup)
-      await writeWorkspace(recovered)
-      return await hydrateWorkspace(recovered)
-    } catch {
-      try {
-        await rm(paths.stateFileTemp, { force: true })
-      } catch {
-        // no-op
+    if (hasLegacyData) {
+      throw new Error('旧工作区数据无法迁移，已阻止自动重置。请保留 workspace.json 及备份并检查数据完整性。', { cause: lastError })
+    }
+    if (paths.account) {
+      // Preserve the pre-account-isolation workspace only for its original owner.
+      let legacyError: unknown
+      for (const file of [stateFile, path.join(dataDir, 'workspace.backup.json')]) {
+        try {
+          const legacy = normalizeWorkspace(JSON.parse(readFileSync(file, 'utf8')) as WorkspaceState)
+          if (normalizeWorkspaceAccount(legacy.user.email) === paths.account) {
+            migrationSource = file
+            return legacy
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            legacyError = error
+          }
+        }
       }
-
-      throw new Error('本地工作区数据读取失败，已阻止自动重置。请检查数据目录中的 workspace.json 是否损坏。')
+      if (legacyError) {
+        throw new Error('旧工作区数据无法读取，已阻止自动创建空工作区。请检查 workspace.json 及备份。', { cause: legacyError })
+      }
     }
-  }
+    return paths.account ? createSeededWorkspaceForAccount(paths.account) : normalizeWorkspace(buildInitialState())
+  }, () => migrationSource)
+  const normalized = inheritWorkspaceSnapshot(persisted, normalizeWorkspace(persisted))
+  return inheritWorkspaceSnapshot(normalized, await hydrateWorkspace(normalized))
 }
 
 export async function writeWorkspace(state: WorkspaceState) {
   const paths = resolveWorkspacePaths()
-  await mkdir(paths.dataDir, { recursive: true })
-  const normalized = normalizeWorkspace(paths.account
+  const normalized = inheritWorkspaceSnapshot(state, normalizeWorkspace(paths.account
     ? {
       ...state,
       user: {
@@ -475,26 +431,10 @@ export async function writeWorkspace(state: WorkspaceState) {
         id: state.user.id || createWorkspaceUserId(paths.account),
       },
     }
-    : state)
-  const serialized = JSON.stringify(normalized, null, 2)
-
-  try {
-    await copyFile(paths.stateFile, paths.stateFileBackup)
-  } catch (error) {
-    const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
-    if (errorCode !== 'ENOENT') {
-      throw error
-    }
-  }
-
-  await writeFile(paths.stateFileTemp, serialized, 'utf8')
-  await replaceStateFileWithRetry(serialized, paths)
-
-  try {
-    await writeFile(paths.stateFileBackup, serialized, 'utf8')
-  } catch {
-    // 备份写入失败不影响主文件保存，但保留主写入成功。
-  }
+    : state))
+  new WorkspaceSqliteStore(paths.dataDir).save(normalized)
+  Object.assign(state, normalized)
+  inheritWorkspaceSnapshot(normalized, state)
 }
 
 export function runWithWorkspaceAccount<T>(account: string | null | undefined, callback: () => T) {

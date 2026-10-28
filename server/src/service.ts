@@ -5056,7 +5056,14 @@ export async function confirmCasePosition(caseId: string, value: unknown, expect
   return { workspace }
 }
 
-export async function caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question') {
+export async function caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question',
+  input: import('./intelligence/assistant-options.js').AssistantOptions = {}) {
+  const { assistantOptionsSchema, assistantInstructions } = await import('./intelligence/assistant-options.js')
+  const { getAssistantCapabilities } = await import('./integrations/llm-service.js')
+  const options = assistantOptionsSchema.parse(input)
+  if (options.model && !(await getAssistantCapabilities()).models.some(m => m.id === options.model)) {
+    throw new Error('所选模型不可用，请重新选择。')
+  }
   const workspace = await readWorkspace()
   const folder = workspace.cases.find(c => c.id === caseId)
   if (!folder) throw new Error('案件不存在。')
@@ -5067,7 +5074,7 @@ export async function caseAgentMessage(caseId: string, message: string, intent: 
     messages: [
       { role: 'system', content: `${CASE_AGENT_RULES}\n${intent === 'position'
         ? '仅将本次用户说明整理为待确认的代理立场JSON：{"reply":"确认提示或需要补充的问题","proposal":{"party":"当事人姓名","role":"plaintiff/defendant/third_party/applicant/respondent/other","goals":["目标"],"admissions":["认可事项"],"disputes":["争议"],"boundaries":["约束"]}}。未说明代理谁或目标时proposal为null并追问，不可从材料推定代理身份。可以结合已确认立场理解用户明确的调整。'
-        : '回答本次办案问题，使用专业法律口径，重点给出主张、证据、缺口和风险。返回JSON：{"reply":"回答内容"}。不要擅自切换代理方或改变已确认立场；涉及调整时提示使用代理设置确认。引用材料时写系统证据编号，不把未经核验的主张当作事实。'}` },
+        : `回答本次办案问题，使用专业法律口径，重点给出主张、证据、缺口和风险。返回JSON：{"reply":"回答内容"}。不要擅自切换代理方或改变已确认立场；涉及调整时提示使用代理设置确认。引用材料时写系统证据编号，不把未经核验的主张当作事实。\n${assistantInstructions(options)}`}` },
       { role: 'user', content: JSON.stringify({
         message, confirmedPosition: folder.agent?.position,
         memory: memory ? buildCaseMemoryPromptContext({ ...memory, agentContext: folder.agent }) : null,
@@ -5075,7 +5082,7 @@ export async function caseAgentMessage(caseId: string, message: string, intent: 
         evidenceCatalog: workspace.evidences.filter(e => e.caseId === caseId).map(e => ({ id: e.id, number: e.number, name: e.name })),
         history: (folder.agent?.messages ?? []).slice(-8),
       }) },
-    ], maxTokens: 3500, temperature: 0.1, responseFormat: 'json_object',
+    ], model: options.model, maxTokens: 3500, temperature: 0.1, responseFormat: 'json_object',
   })
   const parsed = tryParseLlmJsonObject<{ reply?: string; proposal?: PositionDraft }>(completion.content)
   if (!parsed?.reply || typeof parsed.reply !== 'string') throw new Error('案件助手未返回完整内容，请重试。')

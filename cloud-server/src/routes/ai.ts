@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, raw } from 'express'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { MIMEType } from 'node:util'
@@ -27,7 +27,14 @@ const chatSchema = z.object({
   max_tokens: z.number().int().min(1).max(12000).default(3000),
   response_format: z.object({ type: z.enum(['json_object', 'text']) }).optional(),
   stream: z.boolean().default(false),
+  model: z.string().trim().min(1).max(200).optional(),
 })
+
+function chatModels() {
+  return config.LLM_BASE_URL && config.LLM_API_KEY
+    ? [...new Set([config.LLM_MODEL, ...(config.LLM_CHAT_MODELS ?? '').split(',')]
+      .map(s => s?.trim()).filter((s): s is string => Boolean(s)))] : []
+}
 
 async function upstream(url: string, key: string, body: unknown, extra: Record<string, string> = {}) {
   if (!/^https:\/\//.test(url) && !/^http:\/\/(?:127\.0\.0\.1|localhost)(?:[:/])/.test(url)) {
@@ -102,12 +109,44 @@ aiRouter.get('/status', (_request, response) => response.json({
   cases: { yuandian: Boolean(config.YUANDIAN_API_KEY), wk: Boolean(config.WK_API_KEY), pkulaw: Boolean(config.PKULAW_API_KEY) },
 }))
 
+aiRouter.get('/assistant/capabilities', (_request, response) => response.json({
+  models: chatModels().map(id => ({ id, label: id })),
+  voice: Boolean(config.ASR_BASE_URL && config.ASR_API_KEY && config.ASR_MODEL),
+}))
+
+aiRouter.post('/audio/transcriptions', raw({ type: ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'], limit: '8mb' }), async (request, response) => {
+  if (!Buffer.isBuffer(request.body) || !request.body.length) throw new AppError('语音文件无效。', 400, 'INVALID_AUDIO')
+  if (!config.ASR_BASE_URL || !config.ASR_API_KEY || !config.ASR_MODEL) throw new AppError('语音输入尚未启用。', 503, 'ASR_NOT_CONFIGURED')
+  const url = `${config.ASR_BASE_URL.replace(/\/$/, '')}/audio/transcriptions`
+  if (!/^https:\/\//.test(url) && !/^http:\/\/(?:127\.0\.0\.1|localhost)(?:[:/])/.test(url)) {
+    throw new AppError('语音服务地址必须使用 HTTPS。', 503, 'ASR_CONFIG_INVALID')
+  }
+  await billedAiRequest(request.actor!, 'document_parse', async () => {
+    const form = new FormData()
+    const mime = request.get('content-type')?.split(';')[0] || 'audio/webm'
+    form.set('file', new Blob([new Uint8Array(request.body)], { type: mime }), mime === 'audio/mp4' ? 'speech.m4a' : 'speech.webm')
+    form.set('model', config.ASR_MODEL!)
+    form.set('language', 'zh')
+    const result = await fetch(url, {
+      method: 'POST', headers: { Authorization: `Bearer ${config.ASR_API_KEY}` }, body: form,
+      signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS), redirect: 'error',
+    })
+    if (!result.ok) throw new AppError('语音识别失败，请重试。', 502, 'ASR_FAILED')
+    const data = await result.json() as { text?: string }
+    if (!data.text?.trim()) throw new AppError('未识别到语音，请重试。', 502, 'ASR_EMPTY')
+    response.json({ text: data.text.trim().slice(0, 6000) })
+  }, z.string().uuid().parse(request.header('x-ai-request-id')))
+})
+
 aiRouter.post('/chat/completions', async (request, response) => {
   const parsed = chatSchema.parse(request.body)
   const vision = parsed.mode === 'vision'
   const base = vision ? config.LLM_VISION_BASE_URL || config.LLM_BASE_URL : config.LLM_BASE_URL
   const key = vision ? config.LLM_VISION_API_KEY || config.LLM_API_KEY : config.LLM_API_KEY
-  const model = vision ? config.LLM_VISION_MODEL || config.LLM_MODEL : config.LLM_MODEL
+  if (parsed.model && (vision || !chatModels().includes(parsed.model))) {
+    throw new AppError('所选模型不可用。', 400, 'AI_MODEL_NOT_ALLOWED')
+  }
+  const model = vision ? config.LLM_VISION_MODEL || config.LLM_MODEL : parsed.model || config.LLM_MODEL
   if (!base || !key || !model) throw new AppError('智能分析服务尚未配置。', 503, 'AI_NOT_CONFIGURED')
   await billedAiRequest(request.actor!, 'evidence_summary', async () => {
     const { mode: _mode, ...payload } = parsed

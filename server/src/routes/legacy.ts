@@ -9,6 +9,8 @@ import { storeObject } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
+import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel } from '../integrations/llm-service.js'
+import { assistantOptionsSchema } from '../intelligence/assistant-options.js'
 import { subscribeWorkspaceChanges } from '../infrastructure/workspace-events.js'
 import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import {
@@ -216,6 +218,11 @@ export function createLegacyRouter() {
     void proxyCloudRequest(request, response)
   })
 
+  router.use('/certificates', async (request, _response, next) => {
+    if (request.method !== 'POST' || !/^\/(?:generate(?:\/stream)?|[^/]+\/rewrite(?:\/stream)?)\/?$/.test(request.path)) return next()
+    try { await withAssistantModel(request.body?.model, () => next()) } catch (error) { next(error) }
+  })
+
   router.post('/auth/login', async (request, response) => {
     try {
       const payload = loginSchema.parse(request.body)
@@ -308,8 +315,20 @@ export function createLegacyRouter() {
     const payload = z.object({
       message: z.string().trim().min(1).max(6000),
       intent: z.enum(['position', 'question']),
+      options: assistantOptionsSchema.optional(),
     }).parse(request.body)
-    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent))
+    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent, payload.options))
+  })
+
+  router.get('/assistant/capabilities', async (_request, response) => {
+    response.json(await getAssistantCapabilities())
+  })
+  const voiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 0 } })
+  router.post('/assistant/transcriptions', reserveUpload, voiceUpload.single('file'), async (request, response) => {
+    if (!request.file || !['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'].includes(request.file.mimetype)) {
+      throw new AppError('请提供有效的语音文件。', 400, 'INVALID_AUDIO')
+    }
+    response.json(await transcribeAssistantAudio(request.file.buffer, request.file.mimetype))
   })
 
   router.put('/cases/:caseId/agent/position', async (request, response) => {

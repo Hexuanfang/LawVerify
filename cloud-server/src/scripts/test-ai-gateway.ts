@@ -29,6 +29,11 @@ globalThis.fetch = async (input, init) => {
   upstreamCalls += 1
   const headers = new Headers(init?.headers)
   assert.equal(headers.get('authorization'), 'Bearer test-secret')
+  if (String(input).endsWith('/audio/transcriptions')) {
+    assert.ok(init?.body instanceof FormData)
+    assert.equal(init.body.get('model'), 'test-speech')
+    return Response.json({ text: '我代理被告。' })
+  }
   const body = JSON.parse(String(init?.body))
   if (failed) return new Response('upstream failed', { status: 503 })
   if (String(input).endsWith('/mcp')) return new Response('{"jsonrpc":"2.0","id":1,"result":{}}',
@@ -38,7 +43,7 @@ globalThis.fetch = async (input, init) => {
   })
   if (body.stream) return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\r\n\r\ndata: [DONE]\r\n\r\n',
     { headers: { 'content-type': 'text/event-stream' } })
-  assert.equal(body.model, 'test-model', 'client cannot override server model')
+  assert.ok(['test-model', 'approved-model'].includes(body.model), 'only approved models reach provider')
   return Response.json({ choices: [{ message: { content: 'ok' } }] })
 }
 let server: ReturnType<ReturnType<typeof createApp>['listen']> | undefined
@@ -90,8 +95,23 @@ try {
       method: 'POST', headers: { Authorization: `Bearer ${token}`, 'x-ai-request-id': id, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-  const chat = { messages: [{ role: 'user', content: 'test' }], model: 'attacker-model' }
+  const chat = { messages: [{ role: 'user', content: 'test' }] }
   assert.equal((await request('chat/completions', chat, '')).status, 401)
+  const beforeRejected = upstreamCalls
+  assert.equal((await request('chat/completions', { ...chat, model: 'attacker-model' })).status, 400)
+  assert.equal(upstreamCalls, beforeRejected, 'unapproved models must not reach provider')
+  config.LLM_CHAT_MODELS = 'approved-model'
+  assert.equal((await request('chat/completions', { ...chat, model: 'approved-model' })).status, 200)
+  const capabilitiesUrl = `http://127.0.0.1:${port}/api/ai/assistant/capabilities`
+  const capabilities = await originalFetch(capabilitiesUrl, { headers: { Authorization: `Bearer ${session.token}` } })
+  assert.deepEqual((await capabilities.json() as { models: Array<{ id: string }> }).models.map(m => m.id), ['test-model', 'approved-model'])
+  Object.assign(config, { ASR_BASE_URL: 'https://model.test.invalid/v1', ASR_API_KEY: 'test-secret', ASR_MODEL: 'test-speech' })
+  const speech = await originalFetch(`http://127.0.0.1:${port}/api/ai/audio/transcriptions`, {
+    method: 'POST', headers: { Authorization: `Bearer ${session.token}`, 'x-ai-request-id': randomUUID(), 'Content-Type': 'audio/webm' },
+    body: Buffer.from('test-audio'),
+  })
+  assert.equal(speech.status, 200, await speech.clone().text())
+  assert.deepEqual(await speech.json(), { text: '我代理被告。' })
   const id = randomUUID()
   const ok = await request('chat/completions', chat, session.token, id)
   assert.equal(ok.status, 200, await ok.clone().text())

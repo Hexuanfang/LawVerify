@@ -13,6 +13,7 @@ import { AttentionText, EvidenceAttention } from './EvidenceAttention'
 import { AgentPromptInput, type AgentPromptInputHandle } from './AgentPromptInput'
 import { IdeActivityBar, type IdeNavigationTarget } from './IdeActivityBar'
 import { CaseAgentPanel } from './CaseAgentPanel'
+import { AssistantPicker, VoiceInputButton } from './AssistantControls'
 import { CaseDirectorySync, syncDesktopDirectory, stopCaseDirectorySync, resumeCaseDirectorySync } from './CaseDirectorySync'
 import { getAttentionTerms } from './evidence-attention'
 import { createDocumentTaskQueue } from './document-task-queue'
@@ -2235,6 +2236,16 @@ function App() {
   const [errorMessage, setErrorMessage] = useState('')
   const [entryOnboardingStep, setEntryOnboardingStep] = useState<EntryOnboardingStep>('idle')
   const [agentMode, setAgentMode] = useState<'case' | 'document'>('case')
+  const [documentModel, setDocumentModel] = useState<string>()
+  const [assistantModels, setAssistantModels] = useState<Array<{ id: string; label: string }>>([])
+  const [documentVoiceBusy, setDocumentVoiceBusy] = useState(false)
+  useEffect(() => {
+    if (agentMode !== 'document') return
+    let active = true
+    void api.assistantCapabilities().then(result => { if (active) setAssistantModels(result.models) })
+      .catch(error => { if (active) setErrorMessage(error instanceof Error ? error.message : '无法获取可用模型。') })
+    return () => { active = false }
+  }, [agentMode])
   const [evidenceImportProgress, setEvidenceImportProgress] = useState<EvidenceImportProgress | null>(null)
   const [evidenceImportResult, setEvidenceImportResult] = useState<{ caseId: string; message: string } | null>(null)
   const [directoryImportRetry, setDirectoryImportRetry] = useState<{ caseId: string; directory: CaseDirectoryManifest; message: string } | null>(null)
@@ -5709,6 +5720,7 @@ function App() {
           resourceId: selectedCase.id,
           note: `整文生成：${selectedCase.name}${selectedEvidenceLabel}`,
         }, () => api.generateCertificateStream({
+          model: documentModel,
           caseId: selectedCase.id,
           evidenceIds: selectedEvidenceIds,
           role: selectedCase.agent?.position?.role === 'defendant' ? 'defendant' : DEFAULT_GENERATION_ROLE,
@@ -5811,6 +5823,7 @@ function App() {
           resourceId: activeCertificate.id,
           note: `整文改写：${activeCertificate.title}`,
         }, () => api.rewriteCertificateStream({
+          model: documentModel,
           certificateId: activeCertificate.id,
           evidenceIds: rewriteEvidenceIds,
           prompt: trimmedPrompt,
@@ -7260,7 +7273,7 @@ function App() {
   function renderAgentDock(inline = false): ReactNode {
     const isRewriteMode = Boolean(activeCertificate)
     const availableEvidenceCount = (selectedEvidenceIds.length ? selectedEvidenceIds : activeCertificateEvidenceIds).length
-    const canSubmit = Boolean(selectedCase && availableEvidenceCount && !isSubmitting)
+    const canSubmit = Boolean(selectedCase && availableEvidenceCount && !isSubmitting && !documentVoiceBusy)
     const estimatedDraftPoints = getEstimatedActionPoints('pleading_full')
 
     return (
@@ -7297,9 +7310,11 @@ function App() {
             </div>}
 
             <div className="agent-dock-body">
-              <div className="agent-dock-mode-switch" role="group" aria-label="助手模式">
-                <button aria-pressed={agentMode === 'case'} type="button" onClick={() => setAgentMode('case')}>案件沟通</button>
-                <button aria-pressed={agentMode === 'document'} type="button" onClick={() => setAgentMode('document')}>文书起草</button>
+              <div className="assistant-mode-row">
+                <AssistantPicker label={agentMode === 'case' ? '案件沟通' : '文书起草'} title="助手工作模式"
+                  items={[{ id: 'case', label: '案件沟通', description: '分析案情、证据与诉讼策略' }, { id: 'document', label: '文书起草', description: '结合本案证据起草与改写' }]}
+                  value={agentMode} disabled={isSubmitting || documentVoiceBusy}
+                  onSelect={id => setAgentMode(id as 'case' | 'document')} />
               </div>
               {agentMode === 'case' ? selectedCase && appState ? <CaseAgentPanel
                 key={`${loginAccount}:${selectedCase.id}`} folder={selectedCase} workspace={appState}
@@ -7321,7 +7336,7 @@ function App() {
               ) : null}
 
               {agentMode === 'document' ? <div className="agent-input-shell agent-dock-input-shell">
-                <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} disabled={isSubmitting}
+                <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} disabled={isSubmitting || documentVoiceBusy}
                   placeholder={isRewriteMode ? '输入需要调整的内容或改写要求…' : '描述文书类型与起草要求…'} />
                 <div className="agent-dock-submit-area">
                   <div className="agent-dock-composer-meta">
@@ -7329,11 +7344,16 @@ function App() {
                     <span className="agent-dock-cost">预计 <b>{estimatedDraftPoints}</b> 积分</span>
                   </div>
                   <div className="agent-composer-actions">
+                    <AssistantPicker label={documentModel || '默认模型'} title="选择模型"
+                      items={[{ id: '', label: '默认模型' }, ...assistantModels]} value={documentModel ?? ''}
+                      disabled={isSubmitting || documentVoiceBusy} onSelect={id => setDocumentModel(id || undefined)} />
+                    <VoiceInputButton disabled={isSubmitting} onBusy={setDocumentVoiceBusy} onError={setErrorMessage}
+                      onText={text => setAgentPrompt(`${agentPromptRef.current}${agentPromptRef.current ? '\n' : ''}${text}`.slice(0, 6000))} />
                     <button
                       className="agent-dock-clear"
                       type="button"
                       onClick={() => setAgentPrompt('')}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || documentVoiceBusy}
                     >
                       清空
                     </button>

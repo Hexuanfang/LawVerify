@@ -899,9 +899,18 @@ export const api = {
       method: 'POST',
     })
   },
-  caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question') {
+  assistantCapabilities() {
+    return request<{ models: Array<{ id: string; label: string }>; voice: boolean }>('/api/assistant/capabilities')
+  },
+  transcribeAssistantAudio(audio: Blob, signal?: AbortSignal) {
+    const form = new FormData()
+    form.set('file', audio, audio.type === 'audio/mp4' ? 'speech.m4a' : 'speech.webm')
+    return request<{ text: string }>('/api/assistant/transcriptions', { method: 'POST', body: form, signal })
+  },
+  caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question',
+    options?: import('./AssistantControls').AssistantSelection) {
     return request<WorkspaceResponse & { reply: string; proposal?: CasePositionDraft; positionVersion: number }>(
-      `/api/cases/${caseId}/agent/message`, { method: 'POST', body: JSON.stringify({ message, intent }) },
+      `/api/cases/${caseId}/agent/message`, { method: 'POST', body: JSON.stringify({ message, intent, options }) },
     )
   },
   confirmCasePosition(caseId: string, position: CasePositionDraft, expectedVersion: number) {
@@ -1049,6 +1058,7 @@ export const api = {
     })
   },
   generateCertificate(payload: {
+    model?: string
     caseId: string
     evidenceIds: string[]
     role: RoleType
@@ -1067,6 +1077,7 @@ export const api = {
     )
   },
   generateCertificateStream(payload: {
+    model?: string
     caseId: string
     evidenceIds: string[]
     role: RoleType
@@ -1079,6 +1090,7 @@ export const api = {
     }, handlers)
   },
   rewriteCertificate(payload: {
+    model?: string
     certificateId: string
     evidenceIds: string[]
     prompt: string
@@ -1091,6 +1103,7 @@ export const api = {
       {
         method: 'POST',
         body: JSON.stringify({
+          model: payload.model,
           evidenceIds: payload.evidenceIds,
           prompt: payload.prompt,
         }),
@@ -1098,6 +1111,7 @@ export const api = {
     )
   },
   rewriteCertificateStream(payload: {
+    model?: string
     certificateId: string
     evidenceIds: string[]
     prompt: string
@@ -1105,6 +1119,7 @@ export const api = {
     return streamRequest(`/api/certificates/${payload.certificateId}/rewrite/stream`, {
       method: 'POST',
       body: JSON.stringify({
+        model: payload.model,
         evidenceIds: payload.evidenceIds,
         prompt: payload.prompt,
       }),

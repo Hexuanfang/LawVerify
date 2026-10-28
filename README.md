@@ -1,53 +1,16 @@
-<p align="center">
-  <a href="https://lawagent.zhijing.fun/">
-    <img src="docs/lawverify-mark.svg" width="88" height="88" alt="LawVerify 品牌标记">
-  </a>
-</p>
+# LawVerify
 
-<h1 align="center">LawVerify</h1>
+[English](README.en.md) | 简体中文
 
-<p align="center">
-  <strong>让每一句主张，都有据可查。</strong>
-</p>
+**让每一句主张，都有据可查。**
 
-<p align="center">
-  面向律师的案件分析、证据联动与文书核验工作台。<br>
-  理解原件，梳理争议，围绕代理目标组织主张与举证思路。<br>
-  从案件记忆到文书写作，从具体陈述到逐句核验，让事实与依据始终相伴。
-</p>
+### 面向律师的案件分析、证据联动与文书核验工作台
 
-<p align="center">
-  <a href="https://lawagent.zhijing.fun/download"><img src="https://img.shields.io/badge/Windows-DOWNLOAD-2945DF?style=for-the-badge" alt="下载 Windows 客户端"></a>
-  <a href="https://lawagent.zhijing.fun/download"><img src="https://img.shields.io/badge/macOS-APPLE%20SILICON-202227?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="下载 Apple 芯片 Mac 客户端"></a>
-  <a href="https://lawagent.zhijing.fun/download"><img src="https://img.shields.io/badge/macOS-INTEL-65666F?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="下载 Intel Mac 客户端"></a>
-</p>
-
-<p align="center">
-  <a href="https://lawagent.zhijing.fun/">官网</a> ·
-  <a href="https://lawagent.zhijing.fun/download">下载中心</a> ·
-  <a href="#产品特色">产品特色</a> ·
-  <a href="#典型工作流">办案场景</a> ·
-  <a href="#开发环境">开发指南</a> ·
-  <a href="README.en.md">English</a>
-</p>
-
-<p align="center">
-  <a href="app/package.json"><img src="https://img.shields.io/badge/source-v0.1.52-2945DF?style=flat-square" alt="当前源码版本 v0.1.52"></a>
-  <a href="https://github.com/Hexuanfang/LawVerify/stargazers"><img src="https://img.shields.io/github/stars/Hexuanfang/LawVerify?style=flat-square&amp;color=2945DF" alt="GitHub Stars"></a>
-  <a href="https://github.com/Hexuanfang/LawVerify/commits/main"><img src="https://img.shields.io/github/last-commit/Hexuanfang/LawVerify/main?style=flat-square&amp;color=65666F" alt="最近一次 main 分支提交"></a>
-</p>
-
-<p align="center">
-  <a href="#1-句级联动从找到相关材料走向核对具体主张"><img src="https://img.shields.io/badge/证据联动-句级核验-2945DF?style=flat-square" alt="证据联动：句级核验"></a>
-  <a href="#2-案件记忆保留律师真正关心的案情结构"><img src="https://img.shields.io/badge/案件记忆-持续复用-6554C0?style=flat-square" alt="案件记忆：持续复用"></a>
-  <a href="#3-案件助手围绕代理目标组织主张与举证思路"><img src="https://img.shields.io/badge/案件助手-主张与举证-357A5B?style=flat-square" alt="案件助手：主张与举证"></a>
-</p>
-
----
-
-LawVerify 将分散的案件材料转化为可持续使用的案件记忆，把代理立场、争议焦点、证据原件、法律条文与案例参照放在同一办案工作流中。
+LawVerify 将分散的案件材料转化为可持续使用的案件记忆，把代理立场、争议焦点、证据原件、法律条文与案例参照放在同一办案工作流中。律师可以从理解材料出发，形成主张与举证思路，撰写文书，再逐句核对事实和依据。
 
 产品的核心不止于生成一份文书，更在于帮助律师回答：**这句话由什么材料支持？证明到什么程度？还有哪些矛盾和缺口？**
+
+[访问官网](https://lawagent.zhijing.fun/) · [下载客户端](https://lawagent.zhijing.fun/download) · [查看开发指南](#开发环境)
 
 ## 产品特色
 

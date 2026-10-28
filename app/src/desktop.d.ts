@@ -21,6 +21,9 @@ declare global {
       platform: string
       arch?: string
       channel: string
+      requestAccount?: (payload: {
+        path: string; method: string; headers: Record<string, string>; body?: string
+      }) => Promise<{ status: number; body: string; code?: string }>
       reportDiagnostic?: (payload: { event: string; duration?: number; count?: number }) => void
       getServiceStatus?: () => Promise<{ state: string }>
       onServiceStatus?: (listener: (payload: { state: string }) => void) => () => void

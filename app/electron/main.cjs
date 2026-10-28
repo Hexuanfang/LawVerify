@@ -1,4 +1,4 @@
-const { app, BrowserWindow, crashReporter, dialog, ipcMain, shell, utilityProcess } = require('electron')
+const { app, BrowserWindow, crashReporter, dialog, ipcMain, session, shell, utilityProcess } = require('electron')
 const { spawn } = require('node:child_process')
 const net = require('node:net')
 const fs = require('node:fs')
@@ -8,6 +8,7 @@ const { getUpdateFileName, validateUpdateFileName } = require('./update-platform
 const { createHash } = require('node:crypto')
 const { ServiceSupervisor } = require('./service-supervisor.cjs')
 const { createStabilityLog } = require('./stability-log.cjs')
+const { ACCOUNT_REQUEST_CHANNEL, createAccountRequestHandler } = require('./account-network.cjs')
 
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
@@ -58,9 +59,7 @@ let desktopServer
 let desktopServerUrl
 let desktopServerPromise
 
-// 渲染进程只与本机内置服务通信（云端请求由内置服务转发），禁用系统代理，
-// 避免用户机器上的 VPN/代理工具拦截 Chromium 请求导致“无法连接账户服务”。
-app.commandLine.appendSwitch('no-proxy-server')
+// Keep local material requests direct without disabling the cloud account's system proxy.
 
 if (!isDev && process.platform === 'win32') {
   // Some Windows packaged builds can lose keyboard focus/hit-testing in Chromium.
@@ -594,7 +593,21 @@ if (!gotSingleInstanceLock) {
     focusWindowContents(existingWindow)
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await session.defaultSession.setProxy({ mode: 'direct' })
+    const accountSession = session.fromPartition('persist:lawverify-account')
+    await accountSession.setProxy({ mode: 'system' })
+    ipcMain.handle(ACCOUNT_REQUEST_CHANNEL, createAccountRequestHandler({
+      fetch: (url, init) => accountSession.fetch(url, init),
+      report: logStability,
+      isTrustedSender: event => {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window || window.isDestroyed() || event.senderFrame !== event.sender.mainFrame) return false
+        try {
+          return new URL(event.senderFrame.url).origin === (isDev ? 'http://127.0.0.1:5173' : desktopServerUrl)
+        } catch { return false }
+      },
+    }))
     crashReporter.start({ uploadToServer: false, compress: true })
     registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow })
     ipcMain.handle('lawverify:get-service-status', () => serviceStatus)
@@ -623,6 +636,7 @@ app.on('before-quit', () => {
   quitting = true
   ipcMain.removeHandler(OPEN_EXTERNAL_CHANNEL)
   ipcMain.removeHandler(START_APP_UPDATE_CHANNEL)
+  ipcMain.removeHandler(ACCOUNT_REQUEST_CHANNEL)
   ipcMain.removeHandler('lawverify:get-service-status')
   if (desktopServer) {
     desktopServer.stop()

@@ -30,6 +30,7 @@
                     "test:stability":  "node --test electron/test-service-supervisor.cjs \u0026\u0026 node electron/run-stability-tests.mjs",
                     "test:desktop-service":  "node electron/run-electron-test.cjs test-desktop-service.cjs",
                     "test:layout":  "node electron/run-electron-test.cjs test-ide-layout.cjs",
+                    "test:account":  "node --test electron/test-account-network.cjs \u0026\u0026 node electron/run-electron-test.cjs test-account-proxy.cjs",
                     "lint":  "oxlint",
                     "preview":  "vite preview",
                     "desktop":  "electron electron/main.cjs"

@@ -3,11 +3,13 @@ const { contextBridge, ipcRenderer } = require('electron')
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
 const APP_UPDATE_STATUS_CHANNEL = 'lawverify:app-update-status'
+const ACCOUNT_REQUEST_CHANNEL = 'lawverify:account-request'
 
 contextBridge.exposeInMainWorld('lawVerifyDesktop', {
   platform: process.platform,
   arch: process.arch,
   channel: 'electron',
+  requestAccount: (payload) => ipcRenderer.invoke(ACCOUNT_REQUEST_CHANNEL, payload),
   reportDiagnostic: (payload) => ipcRenderer.send('lawverify:renderer-diagnostic', payload),
   getServiceStatus: () => ipcRenderer.invoke('lawverify:get-service-status'),
   onServiceStatus: (listener) => {

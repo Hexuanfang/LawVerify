@@ -323,6 +323,32 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
       : `当前无法连接平台账户服务：${CLOUD_API_BASE_URL}。${raw ? `详情：${raw}` : ''}`
   }
 
+  if (!import.meta.env.DEV && window.lawVerifyDesktop?.requestAccount) {
+    if (init?.signal?.aborted) throw init.signal.reason
+    let result: { status: number; body: string; code?: string }
+    try {
+      result = await window.lawVerifyDesktop.requestAccount({
+        path, method: init?.method ?? 'GET', headers: Object.fromEntries(headers.entries()),
+        body: typeof init?.body === 'string' ? init.body : undefined,
+      })
+    } catch {
+      throw new CloudApiError('当前无法连接 LawVerify 账户服务，请检查网络或代理设置后重试。', 0, 'ACCOUNT_NETWORK_ERROR')
+    }
+    if (result.status === 0) {
+      throw new CloudApiError('当前无法连接 LawVerify 账户服务，请检查网络或代理设置后重试。', 0, result.code || 'ACCOUNT_NETWORK_ERROR')
+    }
+    let payload: unknown
+    try { payload = JSON.parse(result.body) } catch {
+      throw new CloudApiError(cloudErrorMessage(result.status, '账户服务返回异常，请稍后重试。'), result.status, 'ACCOUNT_RESPONSE_INVALID')
+    }
+    if (result.status < 200 || result.status >= 300) {
+      const errorBody = payload as ErrorResponseBody
+      throw new CloudApiError(cloudErrorMessage(result.status, errorBody?.message ?? errorBody?.error?.message),
+        result.status, errorBody?.code ?? errorBody?.error?.code ?? 'CLOUD_API_ERROR')
+    }
+    return payload as T
+  }
+
   if (shouldUseLocalCloudProxy()) {
     const nextHeaders = Object.fromEntries(headers.entries())
     if (CLOUD_API_BASE_URL) {

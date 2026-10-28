@@ -1094,10 +1094,15 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
           <h3>{latestRelease ? `LawVerify ${latestRelease.version}` : '暂无可下载版本'}</h3>
           <p className="muted">
             {latestRelease
-              ? `${platformLabel}${latestRelease.channel === 'stable' ? ' 稳定版' : ''}，包体 ${latestRelease.sizeLabel}。`
+              ? `${platformLabel}${latestRelease.channel === 'stable' ? ' 稳定版' : latestRelease.channel === 'test' ? ' 未签名测试版' : ''}，包体 ${latestRelease.sizeLabel}。`
               : `${platformLabel} 安装包暂未开放下载。`}
           </p>
           {latestRelease ? <a className="primary-button" href={latestRelease.downloadUrl}>下载最新版本</a> : null}
+          {latestRelease?.channel === 'test' ? <p className="muted">
+            {latestRelease.platform === 'darwin'
+              ? '未进行 Apple Developer ID 签名及公证，首次打开可能需要在系统设置的“隐私与安全性”中允许。'
+              : '未进行代码签名，Windows 可能显示未知发布者或 SmartScreen 提示。'}
+          </p> : null}
           {latestRelease && /^[a-f0-9]{64}$/i.test(latestRelease.sha256) ? (
             <details className="download-checksum">
               <summary>安装包完整性校验</summary>
@@ -1123,7 +1128,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
                 <strong>LawVerify {latestRelease.version} <span className="eyebrow" style={{ marginLeft: '8px' }}>最新</span></strong>
                 <span>{platformLabel}</span>
                 <span>{latestRelease.sizeLabel}</span>
-                <span>{latestRelease.channel === 'test' ? 'DMG 安装包' : latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}</span>
+                <span>{latestRelease.channel === 'test' ? '未签名测试版' : latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}</span>
                 <a className="primary-button" href={latestRelease.downloadUrl}>立即下载</a>
               </div>
               {historicalReleases.length > 0 ? (
@@ -1140,7 +1145,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
                       <strong>LawVerify {release.version}</strong>
                       <span>{platformLabel}</span>
                       <span>{release.sizeLabel}</span>
-                      <span>{release.channel === 'test' ? 'DMG 安装包' : release.channel === 'stable' ? '稳定版' : release.channel}</span>
+                      <span>{release.channel === 'test' ? '未签名测试版' : release.channel === 'stable' ? '稳定版' : release.channel}</span>
                       <a className="ghost-button" href={release.downloadUrl}>下载</a>
                     </div>
                   )) : null}

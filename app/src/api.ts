@@ -1,5 +1,7 @@
+import { cloudErrorMessage } from './cloud-errors'
 import type {
   AppState,
+  CasePositionDraft,
   CertificateParagraph,
   CollaboraSession,
   EvidenceType,
@@ -53,6 +55,8 @@ function applyWorkspaceAccountHeader(headers: Headers) {
   if (workspaceAccount && !headers.has('x-workspace-account')) {
     headers.set('x-workspace-account', workspaceAccount)
   }
+  const token = typeof window !== 'undefined' ? localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY) : null
+  if (token) headers.set('x-case-agent-token', token)
 }
 
 function isLocalOriginUrl(url: string) {
@@ -135,6 +139,7 @@ interface EvidenceSourceUploadResponse {
     relativePath: string
     fileName: string
     storageKey: string
+    contentHash: string
     storageUrl: string
     sourceMimeType?: string
   }>
@@ -206,8 +211,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   applyWorkspaceAccountHeader(headers)
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers,
     ...init,
+    headers,
+  }).catch(() => {
+    throw new Error('暂时无法连接本地材料服务，请关闭并重新打开 LawVerify 后重试。已导入的材料会保留。')
   })
 
   if (!response.ok) {
@@ -311,7 +318,7 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
       }
 
       throw new CloudApiError(
-        errorBody?.message ?? errorBody?.error?.message ?? '云端请求失败',
+        cloudErrorMessage(proxiedResponse.status, errorBody?.message ?? errorBody?.error?.message),
         proxiedResponse.status,
         errorBody?.code ?? errorBody?.error?.code ?? 'CLOUD_API_ERROR',
       )
@@ -343,7 +350,7 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
     }
 
     throw new CloudApiError(
-      errorBody?.message ?? errorBody?.error?.message ?? '云端请求失败',
+      cloudErrorMessage(response.status, errorBody?.message ?? errorBody?.error?.message),
       response.status,
       errorBody?.code ?? errorBody?.error?.code ?? 'CLOUD_API_ERROR',
     )
@@ -355,7 +362,7 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
 async function requestCloudEnvelope<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = await requestCloud<{ success: boolean; data: T; error?: { message?: string } }>(path, init)
   if (!payload.success) {
-    throw new CloudApiError(payload.error?.message ?? '云端请求失败')
+    throw new CloudApiError(cloudErrorMessage(0, payload.error?.message))
   }
 
   return payload.data
@@ -669,7 +676,12 @@ export const api = {
     }>('/api/account/point-ledger')
   },
   getLatestPublicRelease() {
-    return requestCloudEnvelope<ReleaseItem | null>('/api/web/releases/latest')
+    const desktop = window.lawVerifyDesktop
+    const query = new URLSearchParams({
+      platform: desktop?.platform ?? 'win32',
+      arch: desktop?.arch ?? 'x64',
+    })
+    return requestCloudEnvelope<ReleaseItem | null>(`/api/web/releases/latest?${query}`)
   },
   submitCloudFeedback(payload: {
     feedbackType: 'bug' | 'suggestion' | 'experience' | 'other'
@@ -769,6 +781,21 @@ export const api = {
       method: 'POST',
     })
   },
+  caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question') {
+    return request<WorkspaceResponse & { reply: string; proposal?: CasePositionDraft; positionVersion: number }>(
+      `/api/cases/${caseId}/agent/message`, { method: 'POST', body: JSON.stringify({ message, intent }) },
+    )
+  },
+  confirmCasePosition(caseId: string, position: CasePositionDraft, expectedVersion: number) {
+    return request<WorkspaceResponse>(`/api/cases/${caseId}/agent/position`, {
+      method: 'PUT', body: JSON.stringify({ position, expectedVersion }),
+    })
+  },
+  retryCaseAgent(caseId: string, autoAnalyze?: boolean) {
+    return request<WorkspaceResponse>(`/api/cases/${caseId}/agent/retry`, {
+      method: 'POST', body: JSON.stringify({ autoAnalyze }),
+    })
+  },
   deleteCase(caseId: string) {
     return request<WorkspaceResponse>(`/api/cases/${caseId}`, {
       method: 'DELETE',
@@ -777,9 +804,12 @@ export const api = {
   importEvidences(payload: {
     caseId: string
     processInBackground?: boolean
+    deferUnderstanding?: boolean
     files: Array<{
       fileName: string
       relativePath?: string
+      contentHash?: string
+      directoryId?: string
       name: string
       type: EvidenceType
       ocrText: string
@@ -820,6 +850,37 @@ export const api = {
       method: 'POST',
       body: formData,
     })
+  },
+  syncDirectoryEvidences(payload: {
+    caseId: string
+    processInBackground: boolean
+    deferUnderstanding?: boolean
+    files: Array<{
+      fileName: string
+      relativePath: string
+      contentHash?: string
+      sourceFingerprint?: string
+      storageKey?: string
+      storageUrl?: string
+      sourceMimeType?: string
+      directoryId: string
+      name: string
+      type: EvidenceType
+      ocrText: string
+    }>
+  }) {
+    return request<{ imported: number }>('/api/evidences/import?response=compact', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  deleteDirectoryEvidence(evidenceId: string) {
+    return request<{ deleted: boolean }>(`/api/evidences/${evidenceId}?response=compact`, {
+      method: 'DELETE',
+    })
+  },
+  clearCaseDirectoryEvidences(caseId: string) {
+    return request<WorkspaceResponse>(`/api/cases/${caseId}/directory-evidences`, { method: 'DELETE' })
   },
   replaceEvidences(payload: {
     caseId: string

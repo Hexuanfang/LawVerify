@@ -1,4 +1,5 @@
 import { env } from '../config/env.js'
+import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
 
 interface OpenAiEmbeddingResponse {
   data?: Array<{
@@ -20,7 +21,7 @@ function resolveEmbeddingApiKey() {
 }
 
 export function isEmbeddingConfigured() {
-  return Boolean(resolveEmbeddingBaseUrl() && env.EMBEDDING_MODEL?.trim())
+  return isCloudAiEnabled() || Boolean(resolveEmbeddingBaseUrl() && env.EMBEDDING_MODEL?.trim())
 }
 
 export function getEmbeddingRuntimeStatus() {
@@ -49,7 +50,7 @@ async function requestEmbeddings(input: string[]) {
     headers.Authorization = `Bearer ${apiKey}`
   }
 
-  const response = await fetch(`${normalizeBaseUrl(resolveEmbeddingBaseUrl())}/embeddings`, {
+  const response = isCloudAiEnabled() ? await cloudAiFetch('embeddings', { input }) : await fetch(`${normalizeBaseUrl(resolveEmbeddingBaseUrl())}/embeddings`, {
     method: 'POST',
     headers,
     body: JSON.stringify({

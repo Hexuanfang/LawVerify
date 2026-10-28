@@ -1,17 +1,24 @@
 import { Router, type Request, type Response } from 'express'
 import multer from 'multer'
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { env } from '../config/env.js'
 import { sendLegacyError } from '../core/api-response.js'
 import { AppError } from '../core/app-error.js'
 import { storeObject } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
+import { rememberCaseAgentCredential } from '../case-agent-billing.js'
+import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
 import {
   bootstrap,
+  caseAgentMessage,
+  confirmCasePosition,
+  retryCaseAgent,
   createCase,
   createCloudWorkspaceSession,
   deleteCase,
   deleteEvidence,
+  clearCaseDirectoryEvidences,
   generateCertificate,
   importCertificate,
   importEvidences,
@@ -170,7 +177,11 @@ export function createLegacyRouter() {
   })
 
   router.use((request, _response, next) => {
-    runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => next())
+    runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => {
+      rememberCaseAgentCredential(request.header('x-case-agent-token'))
+      rememberCloudAiToken(request.header('x-case-agent-token'))
+      next()
+    })
   })
 
   router.use('/cloud', (request, response) => {
@@ -265,13 +276,39 @@ export function createLegacyRouter() {
     sendWorkspacePayload(response, result)
   })
 
+  router.post('/cases/:caseId/agent/message', async (request, response) => {
+    const payload = z.object({
+      message: z.string().trim().min(1).max(6000),
+      intent: z.enum(['position', 'question']),
+    }).parse(request.body)
+    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent))
+  })
+
+  router.put('/cases/:caseId/agent/position', async (request, response) => {
+    const payload = z.object({ position: z.unknown(), expectedVersion: z.number().int().nonnegative() }).parse(request.body)
+    sendWorkspacePayload(response, await confirmCasePosition(request.params.caseId, payload.position, payload.expectedVersion))
+  })
+
+  router.post('/cases/:caseId/agent/retry', async (request, response) => {
+    const payload = z.object({ autoAnalyze: z.boolean().optional() }).parse(request.body ?? {})
+    sendWorkspacePayload(response, await retryCaseAgent(request.params.caseId, payload.autoAnalyze))
+  })
+
   router.delete('/cases/:caseId', async (request, response) => {
     const result = await deleteCase(request.params.caseId)
     sendWorkspacePayload(response, result)
   })
 
+  router.delete('/cases/:caseId/directory-evidences', async (request, response) => {
+    sendWorkspacePayload(response, await clearCaseDirectoryEvidences(request.params.caseId))
+  })
+
   router.post('/evidences/import', async (request, response) => {
     const result = await importEvidences(request.body)
+    if (request.query.response === 'compact') {
+      response.json({ imported: result.created.length })
+      return
+    }
     sendWorkspacePayload(response, result)
   })
 
@@ -294,6 +331,7 @@ export function createLegacyRouter() {
         storageKey: stored.key,
         storageUrl: stored.url,
         sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
+        contentHash: createHash('sha256').update(file.buffer).digest('hex'),
       }
     }))
 
@@ -358,6 +396,10 @@ export function createLegacyRouter() {
 
   router.delete('/evidences/:evidenceId', async (request, response) => {
     const result = await deleteEvidence(request.params.evidenceId)
+    if (request.query.response === 'compact') {
+      response.json({ deleted: true })
+      return
+    }
     sendWorkspacePayload(response, result)
   })
 

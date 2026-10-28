@@ -182,11 +182,12 @@ export function getPaymentProviderStatuses(): BillingProvider[] {
 }
 
 function createDevelopmentGatewayOrder(channel: PaymentChannel, input: CreateRechargeGatewayOrderInput): CreatedGatewayOrder {
-  const paymentUrl = `${config.CLOUD_PUBLIC_BASE_URL}/dev-pay/${channel}/${encodeURIComponent(input.outTradeNo)}`
+  const paymentUrl = new URL('/console/billing', config.CLOUD_PUBLIC_BASE_URL)
+  paymentUrl.searchParams.set('orderNo', input.outTradeNo)
   return {
     providerOrderId: `dev-${channel}-${input.outTradeNo}`,
-    qrCodeContent: paymentUrl,
-    paymentUrl,
+    qrCodeContent: paymentUrl.toString(),
+    paymentUrl: paymentUrl.toString(),
     providerMessage: '开发环境模拟支付，需手动点击完成支付。',
     expiresAt: new Date(Date.now() + 1000 * 60 * 30).toISOString(),
   }

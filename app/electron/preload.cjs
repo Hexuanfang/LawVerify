@@ -6,7 +6,18 @@ const APP_UPDATE_STATUS_CHANNEL = 'lawverify:app-update-status'
 
 contextBridge.exposeInMainWorld('lawVerifyDesktop', {
   platform: process.platform,
+  arch: process.arch,
   channel: 'electron',
+  linkCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-link', payload),
+  onCaseDirectoryBatch: (listener) => {
+    if (typeof listener !== 'function') return () => {}
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('lawverify:case-directories-batch', handler)
+    return () => ipcRenderer.removeListener('lawverify:case-directories-batch', handler)
+  },
+  scanCaseDirectories: (payload) => ipcRenderer.invoke('lawverify:case-directories-scan', payload),
+  clearCaseDirectories: (payload) => ipcRenderer.invoke('lawverify:case-directories-clear', payload),
+  readCaseDirectoryFile: (payload) => ipcRenderer.invoke('lawverify:case-directories-read', payload),
   openExternal: (url) => ipcRenderer.invoke(OPEN_EXTERNAL_CHANNEL, url),
   startAppUpdate: (payload) => ipcRenderer.invoke(START_APP_UPDATE_CHANNEL, payload),
   onAppUpdateStatus: (listener) => {

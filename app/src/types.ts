@@ -56,6 +56,8 @@ export interface PaymentProviderStatus {
 export interface ReleaseItem {
   id: string
   version: string
+  platform?: 'win32' | 'darwin'
+  arch?: 'x64' | 'arm64'
   channel: string
   sizeLabel: string
   publishedAt: string
@@ -94,6 +96,10 @@ export interface Evidence {
   type: EvidenceType
   fileName: string
   relativePath?: string
+  contentHash?: string
+  sourceFingerprint?: string
+  directoryId?: string
+  sourceNumber?: string
   uploadedAt: string
   ocrText: string
   previewDataUrl?: string
@@ -294,6 +300,43 @@ export interface CaseFolder {
   description: string
   createdAt: string
   status: 'draft' | 'in_review' | 'ready'
+  agent?: CaseAgentState
+}
+
+export interface CasePositionDraft {
+  party: string
+  role: 'plaintiff' | 'defendant' | 'third_party' | 'applicant' | 'respondent' | 'other'
+  goals: string[]
+  admissions: string[]
+  disputes: string[]
+  boundaries: string[]
+}
+
+export interface CaseAgentState {
+  autoAnalyze?: boolean
+  position?: CasePositionDraft & { version: number; confirmedAt: string }
+  task?: { revision: number; status: 'queued' | 'processing' | 'ready' | 'failed'; stage: string; error?: string; evidenceIds?: string[] }
+  messages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }>
+  strategy?: {
+    inputKey: string
+    positionVersion: number
+    memoryVersion: number
+    summary: string
+    nextSteps: string[]
+    warnings: string[]
+    claims: Array<{
+      id: string
+      claim: string
+      requirements: string[]
+      burden: string
+      supportEvidenceIds: string[]
+      adverseEvidenceIds: string[]
+      gaps: string[]
+      counterargument: string
+      response: string
+      status: 'supported' | 'needs_evidence' | 'alternative'
+    }>
+  }
 }
 
 export interface KnowledgeCaseExcerpt {
@@ -391,6 +434,7 @@ export interface KnowledgeFileRecord {
 }
 
 export interface AppState {
+  aiBillingMode?: 'cloud' | 'client'
   user: UserAccount
   cases: CaseFolder[]
   evidences: Evidence[]

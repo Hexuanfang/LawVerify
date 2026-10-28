@@ -1,4 +1,5 @@
 import { env } from '../config/env.js'
+import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
 
 export interface LlmChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -47,7 +48,28 @@ function normalizeBaseUrl(baseUrl: string) {
 }
 
 export function isLlmConfigured() {
-  return Boolean(env.LLM_BASE_URL && env.LLM_API_KEY && env.LLM_MODEL)
+  return isCloudAiEnabled() || Boolean(env.LLM_BASE_URL && env.LLM_API_KEY && env.LLM_MODEL)
+}
+
+async function requestChat(options: ChatCompletionOptions, stream: boolean) {
+  const payload = {
+    messages: options.messages, temperature: options.temperature ?? 0.1,
+    max_tokens: options.maxTokens ?? 3000, stream,
+    response_format: options.responseFormat === 'json_object' ? { type: 'json_object' } : undefined,
+  }
+  if (isCloudAiEnabled()) return cloudAiFetch('chat/completions', {
+    ...payload, mode: options.messages.some(m => Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')) ? 'vision' : 'text',
+  })
+  const baseUrl = options.baseUrl || env.LLM_BASE_URL
+  const apiKey = options.apiKey || env.LLM_API_KEY
+  const model = options.model || env.LLM_MODEL
+  if (!baseUrl || !apiKey || !model) throw new Error('LLM 请求缺少 baseUrl、apiKey 或 model。')
+  const response = await fetch(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ ...payload, model }), signal: AbortSignal.timeout(env.LLM_TIMEOUT_MS),
+  })
+  if (!response.ok) throw new Error('智能分析服务暂不可用，请稍后重试。')
+  return response
 }
 
 export function getLlmRuntimeStatus() {
@@ -63,38 +85,7 @@ export function getLlmRuntimeStatus() {
 }
 
 export async function createChatCompletion(options: ChatCompletionOptions) {
-  const baseUrl = options.baseUrl || env.LLM_BASE_URL
-  const apiKey = options.apiKey || env.LLM_API_KEY
-  const model = options.model || env.LLM_MODEL
-
-  if (!baseUrl || !apiKey || !model) {
-    throw new Error('LLM 请求缺少 baseUrl、apiKey 或 model。')
-  }
-
-  const response = await fetch(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: options.messages,
-      temperature: options.temperature ?? 0.1,
-      max_tokens: options.maxTokens,
-      response_format:
-        options.responseFormat === 'json_object'
-          ? { type: 'json_object' }
-          : undefined,
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(env.LLM_TIMEOUT_MS),
-  })
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`LLM 调用失败（${response.status}）：${detail || response.statusText}`)
-  }
+  const response = await requestChat(options, false)
 
   const payload = await response.json() as OpenAiCompatibleResponse
   const content = payload.choices?.[0]?.message?.content?.trim()
@@ -111,38 +102,7 @@ export async function createChatCompletion(options: ChatCompletionOptions) {
 }
 
 export async function* createChatCompletionStream(options: ChatCompletionOptions): AsyncGenerator<string> {
-  const baseUrl = options.baseUrl || env.LLM_BASE_URL
-  const apiKey = options.apiKey || env.LLM_API_KEY
-  const model = options.model || env.LLM_MODEL
-
-  if (!baseUrl || !apiKey || !model) {
-    throw new Error('LLM 请求缺少 baseUrl、apiKey 或 model。')
-  }
-
-  const response = await fetch(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: options.messages,
-      temperature: options.temperature ?? 0.1,
-      max_tokens: options.maxTokens,
-      response_format:
-        options.responseFormat === 'json_object'
-          ? { type: 'json_object' }
-          : undefined,
-      stream: true,
-    }),
-    signal: AbortSignal.timeout(env.LLM_TIMEOUT_MS),
-  })
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`LLM 调用失败（${response.status}）：${detail || response.statusText}`)
-  }
+  const response = await requestChat(options, true)
 
   if (!response.body) {
     throw new Error('LLM 未返回可读取的流式响应。')
@@ -156,10 +116,11 @@ export async function* createChatCompletionStream(options: ChatCompletionOptions
     const { done, value } = await reader.read()
     buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
 
-    let separatorIndex = buffer.indexOf('\n\n')
-    while (separatorIndex >= 0) {
+    let separator = /\r?\n\r?\n/.exec(buffer)
+    while (separator) {
+      const separatorIndex = separator.index
       const eventBlock = buffer.slice(0, separatorIndex)
-      buffer = buffer.slice(separatorIndex + 2)
+      buffer = buffer.slice(separatorIndex + separator[0].length)
 
       const payload = eventBlock
         .split(/\r?\n/)
@@ -179,11 +140,11 @@ export async function* createChatCompletionStream(options: ChatCompletionOptions
         }
       }
 
-      separatorIndex = buffer.indexOf('\n\n')
+      separator = /\r?\n\r?\n/.exec(buffer)
     }
 
     if (done) {
-      break
+      throw new Error('分析输出中断，请重试。')
     }
   }
 }

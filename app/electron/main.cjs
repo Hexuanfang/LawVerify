@@ -5,6 +5,9 @@ const net = require('node:net')
 const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
+const { registerCaseDirectories } = require('./case-directories.cjs')
+const { getUpdateFileName, validateUpdateFileName } = require('./update-platform.cjs')
+const { createHash } = require('node:crypto')
 
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
@@ -56,7 +59,7 @@ let desktopServerPromise
 // 避免用户机器上的 VPN/代理工具拦截 Chromium 请求导致“无法连接账户服务”。
 app.commandLine.appendSwitch('no-proxy-server')
 
-if (!isDev) {
+if (!isDev && process.platform === 'win32') {
   // Some Windows packaged builds can lose keyboard focus/hit-testing in Chromium.
   // Software rendering is slower, but much more stable for login/input interactions.
   app.disableHardwareAcceleration()
@@ -243,8 +246,8 @@ function getFileNameFromContentDisposition(headerValue) {
 
 function resolveUpdateDownloadTarget(version, response) {
   const responseFileName = getFileNameFromContentDisposition(response.headers.get('content-disposition'))
-  const fallbackFileName = `LawVerify-Setup-${String(version || app.getVersion()).trim() || app.getVersion()}.exe`
-  const normalizedFileName = sanitizeFileName(responseFileName || fallbackFileName) || fallbackFileName
+  const fallbackFileName = getUpdateFileName(String(version || app.getVersion()).trim() || app.getVersion())
+  const normalizedFileName = validateUpdateFileName(sanitizeFileName(responseFileName || fallbackFileName) || fallbackFileName)
   const updatesDir = path.join(app.getPath('temp'), 'LawVerify', 'updates')
   fs.mkdirSync(updatesDir, { recursive: true })
   return {
@@ -253,7 +256,7 @@ function resolveUpdateDownloadTarget(version, response) {
   }
 }
 
-async function downloadUpdateInstaller(downloadUrl, version) {
+async function downloadUpdateInstaller(downloadUrl, version, expectedSha256) {
   const response = await fetch(downloadUrl, { redirect: 'follow' })
   if (!response.ok || !response.body) {
     throw new Error(`更新安装包下载失败（${response.status || 'unknown'}）。`)
@@ -262,6 +265,7 @@ async function downloadUpdateInstaller(downloadUrl, version) {
   const { targetPath, tempPath } = resolveUpdateDownloadTarget(version, response)
   const totalBytes = Number(response.headers.get('content-length') || '0')
   const writer = fs.createWriteStream(tempPath)
+  const hash = createHash('sha256')
 
   try {
     const reader = response.body.getReader()
@@ -274,6 +278,7 @@ async function downloadUpdateInstaller(downloadUrl, version) {
       }
 
       const chunk = Buffer.from(value)
+      hash.update(chunk)
       await new Promise((resolve, reject) => {
         writer.write(chunk, (error) => {
           if (error) {
@@ -308,6 +313,9 @@ async function downloadUpdateInstaller(downloadUrl, version) {
       })
     })
 
+    if (expectedSha256 && hash.digest('hex') !== expectedSha256.toLowerCase()) {
+      throw new Error('安装包完整性校验失败，请重新下载更新。')
+    }
     if (fs.existsSync(targetPath)) {
       fs.rmSync(targetPath, { force: true })
     }
@@ -322,7 +330,13 @@ async function downloadUpdateInstaller(downloadUrl, version) {
   }
 }
 
-function launchInstallerAndQuit(installerPath) {
+async function launchInstallerAndQuit(installerPath) {
+  if (process.platform === 'darwin') {
+    const error = await shell.openPath(installerPath)
+    if (error) throw new Error('无法打开更新安装包，请从官网下载后安装。')
+    app.quit()
+    return
+  }
   const child = spawn(installerPath, [], {
     detached: true,
     stdio: 'ignore',
@@ -334,6 +348,7 @@ function launchInstallerAndQuit(installerPath) {
 async function handleStartAppUpdate(_event, payload) {
   const version = String(payload?.version || '').trim()
   const downloadUrl = String(payload?.downloadUrl || '').trim()
+  const sha256 = String(payload?.sha256 || '').trim()
 
   if (!version) {
     throw new Error('缺少更新版本号。')
@@ -341,6 +356,9 @@ async function handleStartAppUpdate(_event, payload) {
 
   if (!isValidHttpUrl(downloadUrl)) {
     throw new Error('更新下载地址无效。')
+  }
+  if (!/^[a-f0-9]{64}$/i.test(sha256)) {
+    throw new Error('缺少有效的安装包校验值，请从官网下载最新版本。')
   }
 
   if (appUpdateTask) {
@@ -355,14 +373,16 @@ async function handleStartAppUpdate(_event, payload) {
       message: `正在准备下载 v${version} 更新安装包…`,
     })
 
-    const installerPath = await downloadUpdateInstaller(downloadUrl, version)
+    const installerPath = await downloadUpdateInstaller(downloadUrl, version, sha256)
     broadcastAppUpdateStatus({
       status: 'ready',
       version,
       progress: 100,
-      message: `v${version} 更新安装包已准备完成，正在启动安装程序…`,
+      message: process.platform === 'darwin'
+        ? `v${version} 已下载，请将 LawVerify 拖入“应用程序”替换旧版。`
+        : `v${version} 更新安装包已准备完成，正在启动安装程序…`,
     })
-    launchInstallerAndQuit(installerPath)
+    await launchInstallerAndQuit(installerPath)
     return { ok: true }
   })()
     .catch((error) => {
@@ -558,6 +578,7 @@ if (!gotSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow })
     ipcMain.handle(OPEN_EXTERNAL_CHANNEL, handleOpenExternal)
     ipcMain.handle(START_APP_UPDATE_CHANNEL, handleStartAppUpdate)
     void bootApplication()

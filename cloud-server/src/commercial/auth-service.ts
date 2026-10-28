@@ -47,8 +47,23 @@ export function verifyToken(token: string) {
   return jwt.verify(token, config.JWT_SECRET) as AuthClaims
 }
 
-function buildSessionReplacedError() {
-  return new AppError('当前账号已在另一台设备登录，本设备已下线，请重新登录。', 401, 'SESSION_REPLACED')
+async function persistSession(userId: string, sessionId: string, token: string) {
+  const decoded = jwt.decode(token) as { exp: number }
+  const expiresAt = new Date(decoded.exp * 1000).toISOString()
+  if (!isDatabaseEnabled()) {
+    await updateDevStore(store => {
+      const user = store.users.find(item => item.id === userId)
+      if (!user) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+      const legacyId = user.currentSessionId
+      user.sessions ??= legacyId ? [{ id: legacyId, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() }] : []
+      user.sessions = user.sessions.filter(item => !item.revokedAt && Date.parse(item.expiresAt) > Date.now())
+      user.sessions.push({ id: sessionId, expiresAt })
+      user.currentSessionId = null
+    })
+    return
+  }
+  await query('INSERT INTO account_sessions (id, user_id, expires_at) VALUES ($1, $2, $3)',
+    [sessionId, userId, expiresAt])
 }
 
 export async function registerAccount(input: RegisterAccountInput) {
@@ -220,10 +235,7 @@ export async function registerAccount(input: RegisterAccountInput) {
     sessionId,
   })
 
-  await query(
-    'UPDATE users SET current_session_id = $1, updated_at = NOW() WHERE id = $2',
-    [sessionId, user.id],
-  )
+  await persistSession(user.id, sessionId, token)
 
   return {
     token,
@@ -331,12 +343,7 @@ export async function loginAccount(input: LoginAccountInput) {
       sessionId,
     })
 
-    await updateDevStore(async (draft) => {
-      const currentUser = draft.users.find((item) => item.id === user.id)
-      if (currentUser) {
-        currentUser.currentSessionId = sessionId
-      }
-    })
+    await persistSession(user.id, sessionId, token)
 
     return {
       token,
@@ -402,10 +409,7 @@ export async function loginAccount(input: LoginAccountInput) {
     sessionId,
   })
 
-  await query(
-    'UPDATE users SET current_session_id = $1, updated_at = NOW() WHERE id = $2',
-    [sessionId, account.user_id],
-  )
+  await persistSession(account.user_id, sessionId, token)
 
   await recordAuditEvent({
     organizationId: account.organization_id,
@@ -516,34 +520,26 @@ export async function assertSessionIsActive(claims: AuthClaims) {
       throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
     }
 
-    if (!user.currentSessionId) {
-      throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
-    }
-
-    if (user.currentSessionId !== claims.sessionId) {
-      throw buildSessionReplacedError()
+    const session = user.sessions?.find(item => item.id === claims.sessionId)
+    if (!(session && !session.revokedAt && Date.parse(session.expiresAt) > Date.now())
+      && !(user.sessions === undefined && user.currentSessionId === claims.sessionId)) {
+      throw new AppError('登录状态已失效，请重新登录。', 401, 'INVALID_SESSION')
     }
 
     return
   }
 
-  const result = await query<{ current_session_id: string | null }>(
-    'SELECT current_session_id FROM users WHERE id = $1 AND status = $2 LIMIT 1',
-    [claims.sub, 'active'],
+  const result = await query(
+    `SELECT s.id FROM account_sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.id = $1 AND s.user_id = $2 AND u.status = 'active'
+       AND s.revoked_at IS NULL AND s.expires_at > NOW()`,
+    [claims.sessionId, claims.sub],
   )
 
   if (!result.rowCount) {
     throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
   }
 
-  const currentSessionId = result.rows[0].current_session_id
-  if (!currentSessionId) {
-    throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
-  }
-
-  if (currentSessionId !== claims.sessionId) {
-    throw buildSessionReplacedError()
-  }
 }
 
 export async function logoutAccount(claims: AuthClaims | AuthenticatedActor) {
@@ -555,15 +551,17 @@ export async function logoutAccount(claims: AuthClaims | AuthenticatedActor) {
       if (user && user.currentSessionId === claims.sessionId) {
         user.currentSessionId = null
       }
+      const session = user?.sessions?.find(item => item.id === claims.sessionId)
+      if (session) session.revokedAt = new Date().toISOString()
     })
     return { ok: true }
   }
 
   await query(
     `
-      UPDATE users
-      SET current_session_id = NULL, updated_at = NOW()
-      WHERE id = $1 AND current_session_id = $2
+      UPDATE account_sessions
+      SET revoked_at = NOW()
+      WHERE user_id = $1 AND id = $2 AND revoked_at IS NULL
     `,
     [userId, claims.sessionId],
   )

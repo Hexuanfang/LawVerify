@@ -15,6 +15,7 @@ import { clientRouter } from './routes/client.js'
 import { invoicesRouter } from './routes/invoices.js'
 import { siteRouter } from './routes/site.js'
 import { adminRouter } from './routes/admin.js'
+import { aiRouter } from './routes/ai.js'
 
 export function createApp() {
   const app = express()
@@ -35,6 +36,7 @@ export function createApp() {
     },
     credentials: true,
   }))
+  app.use('/api/ai', express.json({ limit: '25mb' }))
   app.use(express.json({ limit: config.JSON_LIMIT, verify: captureRawBody }))
   app.use(express.urlencoded({ extended: false, verify: captureRawBody }))
 
@@ -47,6 +49,7 @@ export function createApp() {
   })
 
   app.use('/api/web', siteRouter)
+  app.use('/api/ai', aiRouter)
   app.use('/api/account', accountRouter)
   app.use('/api/billing', billingRouter)
   app.use('/api/invoices', invoicesRouter)
@@ -62,10 +65,15 @@ export function createApp() {
     })
   })
 
-  app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+  app.use((error: unknown, request: Request, response: Response, _next: NextFunction) => {
+    if (response.headersSent) { response.destroy(); return }
     const appError = error instanceof AppError
       ? error
       : new AppError(error instanceof Error ? error.message : 'Unexpected server error.', 500, 'INTERNAL_ERROR')
+    console.error('Request failed:', request.method, request.path, appError.statusCode, appError.code,
+      error instanceof Error ? error.name : 'UnknownError')
+    // An upstream response may have left an invalid media type on this response.
+    response.setHeader('Content-Type', 'application/json; charset=utf-8')
     response.status(appError.statusCode).json({
       success: false,
       error: {

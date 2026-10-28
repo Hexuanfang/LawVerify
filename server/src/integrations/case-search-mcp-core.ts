@@ -1,4 +1,5 @@
 import type { KnowledgeCase, KnowledgeCaseExcerpt } from '../domain.js'
+import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
 
 type JsonRpcRequest = {
   jsonrpc: '2.0'
@@ -369,7 +370,7 @@ function resolveMcpUrl(config: CaseSearchMcpProviderConfig) {
 
 async function postRpc<T>(config: CaseSearchMcpProviderConfig, request: JsonRpcRequest) {
   const mcpUrl = resolveMcpUrl(config)
-  if (!mcpUrl || !config.apiKey?.trim()) {
+  if (!isCloudAiEnabled() && (!mcpUrl || !config.apiKey?.trim())) {
     throw new Error(`${config.providerName} MCP 未配置。`)
   }
 
@@ -384,7 +385,8 @@ async function postRpc<T>(config: CaseSearchMcpProviderConfig, request: JsonRpcR
     headers['Mcp-Session-Id'] = sessionId
   }
 
-  const response = await fetch(mcpUrl, {
+  const response = isCloudAiEnabled() ? await cloudAiFetch(`mcp/${config.providerId}`, request,
+    sessionId ? { 'Mcp-Session-Id': sessionId } : {}) : await fetch(mcpUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify(request),
@@ -510,10 +512,10 @@ function buildToolArguments(tool: McpToolDescriptor, config: CaseSearchMcpProvid
 export function createCaseSearchMcpClient(config: CaseSearchMcpProviderConfig) {
   return {
     isConfigured() {
-      return Boolean(config.apiKey?.trim() && resolveMcpUrl(config))
+      return isCloudAiEnabled() || Boolean(config.apiKey?.trim() && resolveMcpUrl(config))
     },
     async searchCases(query: string, limit = 5) {
-      if (!query.trim() || !config.apiKey?.trim() || !resolveMcpUrl(config)) {
+      if (!query.trim() || (!isCloudAiEnabled() && (!config.apiKey?.trim() || !resolveMcpUrl(config)))) {
         return [] as KnowledgeCase[]
       }
 

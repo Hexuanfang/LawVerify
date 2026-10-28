@@ -12,6 +12,7 @@ type DevStoreUser = {
   passwordHash: string
   name: string
   currentSessionId?: string | null
+  sessions?: Array<{ id: string; expiresAt: string; revokedAt?: string }>
   status: 'active'
 }
 

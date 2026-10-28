@@ -7,9 +7,11 @@ export type AgentPromptInputHandle = {
 type AgentPromptInputProps = {
   ref: Ref<AgentPromptInputHandle>
   draftRef: RefObject<string>
+  placeholder?: string
+  disabled?: boolean
 }
 
-export function AgentPromptInput({ ref, draftRef }: AgentPromptInputProps) {
+export function AgentPromptInput({ ref, draftRef, placeholder, disabled }: AgentPromptInputProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useLayoutEffect(() => {
@@ -32,12 +34,13 @@ export function AgentPromptInput({ ref, draftRef }: AgentPromptInputProps) {
       ref={inputRef}
       className="agent-prompt-input agent-dock-prompt-input"
       aria-label="起草或改写要求"
+      disabled={disabled}
       defaultValue=""
       onChange={(event) => {
         // Keep the draft available on collapse without rerendering the workbench.
         draftRef.current = event.target.value
       }}
-      placeholder=""
+      placeholder={placeholder}
     />
   )
 }

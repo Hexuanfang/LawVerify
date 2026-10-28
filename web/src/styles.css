@@ -430,6 +430,27 @@ button:disabled {
   background: rgba(255, 255, 255, 0.92);
 }
 
+.download-checksum {
+  min-width: 0;
+}
+
+.download-checksum summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.download-checksum summary:hover,
+.download-checksum summary:focus-visible {
+  color: #2563eb;
+}
+
+.download-checksum code {
+  display: block;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .download-step-list {
   display: grid;
   gap: 12px;

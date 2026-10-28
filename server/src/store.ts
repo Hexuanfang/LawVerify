@@ -45,7 +45,7 @@ function createWorkspaceUserId(account: string) {
   return `user-${createWorkspaceAccountSlug(account)}`
 }
 
-function getCurrentWorkspaceAccount() {
+export function getCurrentWorkspaceAccount() {
   return workspaceContextStorage.getStore()?.account ?? null
 }
 

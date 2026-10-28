@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import type { PoolClient } from 'pg'
 
 import type { AuthenticatedActor } from './commercial/types.js'
 import { AppError } from './core/app-error.js'
 import { createGatewayRechargeOrder, getPaymentProviderStatuses, queryGatewayRechargeOrder } from './integrations/payment.js'
 import { readDevStore, updateDevStore } from './infrastructure/dev-store.js'
-import { isDatabaseEnabled, query } from './infrastructure/postgres.js'
+import { getPool, isDatabaseEnabled, query } from './infrastructure/postgres.js'
 import { accountSummary, billingOrders, billingPackages, usageSummary } from './mock-data.js'
 import type { BillingOrder, BillingPackage, PointLedgerEntry, UsageMetric } from './types.js'
 
@@ -247,7 +248,7 @@ async function findStoredOrder(identity: BillingIdentity, orderId: string) {
         paid_at
       FROM payment_orders
       WHERE workspace_user_id = $1
-        AND (id = $2 OR out_trade_no = $2)
+        AND (id::text = $2 OR out_trade_no = $2)
       ORDER BY created_at DESC
       LIMIT 1
     `,
@@ -317,8 +318,8 @@ async function findStoredOrderByTradeNo(outTradeNo: string) {
   }
 }
 
-async function upsertStoredOrder(identity: BillingIdentity, order: BillingOrder, rechargePackage: BillingPackage) {
-  const result = await query<PaymentOrderRow>(
+async function upsertStoredOrder(identity: BillingIdentity, order: BillingOrder, rechargePackage: BillingPackage, client?: PoolClient) {
+  const result = await (client ?? getPool()).query<PaymentOrderRow>(
     `
       INSERT INTO payment_orders (
         id,
@@ -360,16 +361,16 @@ async function upsertStoredOrder(identity: BillingIdentity, order: BillingOrder,
         amount_fen = EXCLUDED.amount_fen,
         points = EXCLUDED.points,
         out_trade_no = EXCLUDED.out_trade_no,
-        status = EXCLUDED.status,
+        status = CASE WHEN payment_orders.status = 'paid' THEN 'paid' ELSE EXCLUDED.status END,
         qr_code_content = EXCLUDED.qr_code_content,
         payment_url = EXCLUDED.payment_url,
         provider_order_id = EXCLUDED.provider_order_id,
         provider_message = EXCLUDED.provider_message,
-        point_log_id = EXCLUDED.point_log_id,
+        point_log_id = COALESCE(payment_orders.point_log_id, EXCLUDED.point_log_id),
         provider_payload = EXCLUDED.provider_payload,
         updated_at = EXCLUDED.updated_at,
         expires_at = EXCLUDED.expires_at,
-        paid_at = EXCLUDED.paid_at
+        paid_at = COALESCE(payment_orders.paid_at, EXCLUDED.paid_at)
       RETURNING
         id,
         package_id,
@@ -442,12 +443,17 @@ async function upsertDevStoredOrder(identity: BillingIdentity, order: BillingOrd
   })
 }
 
-async function ensureStoredPointLedger(identity: BillingIdentity, order: BillingOrder) {
+async function ensureStoredPointLedger(identity: BillingIdentity, order: BillingOrder, client: PoolClient) {
   if (!identity.organizationId || !identity.commercialUserId) {
     return null
   }
 
-  const result = await query<{ id: string | null }>(
+  await client.query(
+    `INSERT INTO point_accounts (organization_id, user_id, balance_points)
+     VALUES ($1, $2, 0) ON CONFLICT (organization_id, user_id) DO NOTHING`,
+    [identity.organizationId, identity.commercialUserId],
+  )
+  const result = await client.query<{ id: string }>(
     `
       WITH inserted AS (
         INSERT INTO point_ledger_entries (
@@ -466,11 +472,6 @@ async function ensureStoredPointLedger(identity: BillingIdentity, order: Billing
         VALUES ($1, $2, $3, $4, $5, $6, 'recharge', $7, $8, $9::jsonb, $10)
         ON CONFLICT (order_id, entry_type) DO NOTHING
         RETURNING id, change_points
-      ),
-      ensured_account AS (
-        INSERT INTO point_accounts (organization_id, user_id, balance_points, updated_at)
-        VALUES ($1, $2, 0, NOW())
-        ON CONFLICT (organization_id, user_id) DO NOTHING
       ),
       bumped AS (
         UPDATE point_accounts
@@ -503,7 +504,39 @@ async function ensureStoredPointLedger(identity: BillingIdentity, order: Billing
     ],
   )
 
-  return result.rows[0]?.id ?? null
+  if (result.rows[0]?.id) return result.rows[0].id
+  const existing = await client.query<{ id: string }>(
+    `SELECT id FROM point_ledger_entries WHERE order_id = $1 AND entry_type = 'recharge'`,
+    [order.id],
+  )
+  return existing.rows[0]?.id ?? null
+}
+
+async function settleStoredPaidOrder(identity: BillingIdentity, order: BillingOrder) {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    // Serialize callbacks, polling and simulated payment for the same order.
+    const locked = await client.query<PaymentOrderRow>(
+      'SELECT * FROM payment_orders WHERE id = $1 AND workspace_user_id = $2 FOR UPDATE',
+      [order.id, identity.workspaceUserId],
+    )
+    if (!locked.rows[0]) throw new AppError('订单不存在。', 404, 'ORDER_NOT_FOUND')
+    const stored = mapPaymentOrderRow(locked.rows[0])
+    const pointLogId = await ensureStoredPointLedger(identity, order, client)
+    if (!pointLogId) throw new AppError('积分到账失败，请稍后重试。', 500, 'BILLING_POINTS_FAILED')
+    const paid = await upsertStoredOrder(identity, {
+      ...order, status: 'paid', pointLogId,
+      paidAt: stored.paidAt ?? order.paidAt ?? new Date().toISOString(),
+    }, getRechargePackage(order.packageId), client)
+    await client.query('COMMIT')
+    return paid
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 async function ensureDevPointLedger(identity: BillingIdentity, order: BillingOrder) {
@@ -599,12 +632,8 @@ async function markRechargeOrderPaidByTradeNo(input: PaymentCallbackInput) {
     updatedAt: new Date().toISOString(),
   }
 
-  if (order.status === 'paid' && !order.pointLogId) {
-    const pointLogId = await ensureStoredPointLedger(stored.identity, order)
-    order = {
-      ...order,
-      pointLogId: pointLogId ?? undefined,
-    }
+  if (order.status === 'paid') {
+    return settleStoredPaidOrder(stored.identity, order)
   }
 
   return upsertStoredOrder(stored.identity, order, rechargePackage)
@@ -825,7 +854,7 @@ export async function getRechargePaymentOrder(actor: AuthenticatedActor | undefi
     if (order.status === 'paid' && !order.pointLogId) {
       if (actor) {
         const pointLogId = isDatabaseEnabled()
-          ? await ensureStoredPointLedger(identity, order)
+          ? (await settleStoredPaidOrder(identity, order)).pointLogId
           : await ensureDevPointLedger(identity, order)
         order = {
           ...order,
@@ -1091,7 +1120,7 @@ export async function completeRechargePaymentOrderForDevelopment(
   const paidAt = new Date().toISOString()
   const rechargePackage = getRechargePackage(order.packageId)
 
-  if (order.status === 'paid') {
+  if (order.status === 'paid' && order.pointLogId) {
     return result
   }
 
@@ -1105,9 +1134,13 @@ export async function completeRechargePaymentOrderForDevelopment(
       paidAt,
       updatedAt: paidAt,
     }
-    const pointLogId = isDatabaseEnabled()
-      ? await ensureStoredPointLedger(identity, nextOrder)
-      : await ensureDevPointLedger(identity, nextOrder)
+    if (!order.providerOrderId?.startsWith(`dev-${order.channel}-`)) {
+      throw new AppError('该订单不是模拟支付订单。', 400, 'BILLING_NOT_SIMULATED')
+    }
+    if (isDatabaseEnabled()) {
+      return { order: await settleStoredPaidOrder(identity, nextOrder) }
+    }
+    const pointLogId = await ensureDevPointLedger(identity, nextOrder)
 
     if (!pointLogId && identity.organizationId && identity.commercialUserId) {
       throw new AppError('模拟支付已完成，但积分账本写入失败。', 500, 'BILLING_DEV_COMPLETE_POINTS_FAILED')

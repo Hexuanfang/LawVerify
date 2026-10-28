@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:proxy": "node --test --test-timeout=15000 test-api-proxy.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

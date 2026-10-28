@@ -12,6 +12,7 @@ import { authenticate, requirePermission } from '../middleware/authenticate.js'
 import { storeObject } from '../infrastructure/object-storage.js'
 import { isDatabaseEnabled } from '../infrastructure/postgres.js'
 import { runWithWorkspaceAccount } from '../store.js'
+import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
 import {
   getCollaboraSession,
   getWopiFileInfo,
@@ -141,7 +142,10 @@ export function createV1Router() {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } })
 
   router.use((request, _response, next) => {
-    runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => next())
+    runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => {
+      rememberCloudAiToken(request.header('x-case-agent-token'))
+      next()
+    })
   })
 
   router.get('/system/health', (_request, response) => {

@@ -58,12 +58,15 @@ interface BillingProvider {
 interface ReleaseItem {
   id: string
   version: string
+  platform?: 'win32' | 'darwin'
+  arch?: 'x64' | 'arm64'
   channel: string
   sizeLabel: string
   publishedAt: string
   sha256: string
   notes: string[]
   downloadUrl: string
+  checksumUrl?: string
 }
 
 interface BillingOrder {
@@ -77,6 +80,7 @@ interface BillingOrder {
   status: 'pending' | 'paid' | 'closed' | 'failed'
   qrCodeContent: string
   paymentUrl?: string
+  providerOrderId?: string
   createdAt: string
   paidAt?: string
 }
@@ -643,13 +647,11 @@ function MarketingHero({
 function HomePage({
   plans,
   packages,
-  latestRelease,
 }: {
   plans: SitePlan[]
   packages: BillingPackage[]
-  latestRelease: ReleaseItem | null
 }) {
-  const downloadHref = latestRelease?.downloadUrl || '/download'
+  const downloadHref = '/download'
   const pointPackages = packages.filter(isPointPackage)
   const highlightedPlans = plans.slice(0, 3)
   const strategicSignals = [
@@ -680,7 +682,7 @@ function HomePage({
         title="为律师办案打造的证据质证工作台，把专业产出、账户中心与商业闭环放进同一套成熟产品里"
         description="通过桌面端完成案件、证据、质证书和核验作业，通过官网登录账户中心完成套餐购买、订单查看、发票申请与客户端下载。"
         primaryHref={downloadHref}
-        primaryLabel="下载 Windows 客户端"
+        primaryLabel="下载客户端"
         secondaryHref="/console/billing"
         secondaryLabel="进入账户中心"
         badges={['连续文稿体验', '桌面端 + 云端协同', '真实支付与开票闭环']}
@@ -898,7 +900,7 @@ function PricingPage({
         primaryHref="/console/billing"
         primaryLabel="进入账户中心"
         secondaryHref="/download"
-        secondaryLabel="下载 Windows 客户端"
+        secondaryLabel="下载客户端"
         badges={['先体验后升级', '月度套餐 + 积分包', '支持企业开票与统一结算']}
         metrics={[
           { label: '决策方式', value: '先试再买', detail: '免费版先进入完整工作流，再决定是否升级。' },
@@ -1034,16 +1036,35 @@ function PricingPage({
 
 function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
   const [showAll, setShowAll] = useState(false)
-  const latestRelease = releases[0]
-  const historicalReleases = releases.slice(1)
+  const [target, setTarget] = useState(() => /Macintosh|MacIntel/i.test(navigator.userAgent + navigator.platform)
+    ? 'darwin-arm64' : 'win32-x64')
+  const targets = [
+    { value: 'win32-x64', label: 'Windows' },
+    { value: 'darwin-arm64', label: 'Mac · Apple 芯片' },
+    { value: 'darwin-x64', label: 'Mac · Intel' },
+  ]
+  const selectedReleases = releases.filter((release) => `${release.platform ?? 'win32'}-${release.arch ?? 'x64'}` === target)
+  const latestRelease = selectedReleases[0]
+  const historicalReleases = selectedReleases.slice(1)
+  const platformLabel = targets.find((item) => item.value === target)?.label ?? 'Windows'
   const installationFlow = [
-    '下载安装包并完成本地安装',
+    target.startsWith('darwin') ? '打开 DMG，将 LawVerify 拖入“应用程序”' : '下载安装包并完成本地安装',
     '使用官网账户登录客户端',
     '按需购买套餐或积分并开始使用',
   ]
 
   return (
     <div className="public-page-stack">
+      <div className="hero-actions" aria-label="选择下载版本">
+        {targets.map((item) => (
+          <button key={item.value} type="button"
+            className={target === item.value ? 'primary-button' : 'ghost-button'}
+            aria-pressed={target === item.value}
+            onClick={() => { setTarget(item.value); setShowAll(false) }}>
+            {item.label}
+          </button>
+        ))}
+      </div>
       <section className="card site-section-surface download-release-shell">
         <article className="download-highlight-card">
           <span className="eyebrow">安装流程</span>
@@ -1062,10 +1083,18 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
           <h3>{latestRelease ? `LawVerify ${latestRelease.version}` : '暂无可下载版本'}</h3>
           <p className="muted">
             {latestRelease
-              ? `当前推荐下载 ${latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}，包体 ${latestRelease.sizeLabel}。`
-              : '请先在 app/release 目录生成安装包，再通过下载中心分发。'}
+              ? `${platformLabel} ${latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}，包体 ${latestRelease.sizeLabel}。`
+              : `${platformLabel} 安装包暂未开放下载。`}
           </p>
           {latestRelease ? <a className="primary-button" href={latestRelease.downloadUrl}>下载最新版本</a> : null}
+          {latestRelease && /^[a-f0-9]{64}$/i.test(latestRelease.sha256) ? (
+            <details className="download-checksum">
+              <summary>安装包完整性校验</summary>
+              <p className="muted">下载完成后再运行安装包。校验值不一致时，请重新下载。</p>
+              <code>{latestRelease.sha256}</code>
+              {latestRelease.checksumUrl ? <a className="ghost-button" href={latestRelease.checksumUrl}>下载 SHA256 校验文件</a> : null}
+            </details>
+          ) : null}
         </article>
       </section>
 
@@ -1073,15 +1102,15 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
         <div className="section-head">
           <div>
             <h3>版本列表</h3>
-            <span className="muted">统一分发 Windows 安装包与更新日志。</span>
+            <span className="muted">{platformLabel}</span>
           </div>
         </div>
         <div className="table-like">
-          {releases.length ? (
+          {selectedReleases.length ? (
             <>
               <div key={latestRelease.id} className="table-row detailed">
                 <strong>LawVerify {latestRelease.version} <span className="eyebrow" style={{ marginLeft: '8px' }}>最新</span></strong>
-                <span>Windows x64</span>
+                <span>{platformLabel}</span>
                 <span>{latestRelease.sizeLabel}</span>
                 <span>{latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}</span>
                 <a className="primary-button" href={latestRelease.downloadUrl}>立即下载</a>
@@ -1098,7 +1127,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
                   {showAll ? historicalReleases.map((release) => (
                     <div key={release.id} className="table-row detailed" style={{ opacity: 0.78 }}>
                       <strong>LawVerify {release.version}</strong>
-                      <span>Windows x64</span>
+                      <span>{platformLabel}</span>
                       <span>{release.sizeLabel}</span>
                       <span>{release.channel === 'stable' ? '稳定版' : release.channel}</span>
                       <a className="ghost-button" href={release.downloadUrl}>下载</a>
@@ -1113,7 +1142,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
               <span>-</span>
               <span>-</span>
               <span>-</span>
-              <span>请先在 `app/release` 目录生成安装包</span>
+              <span>请稍后查看</span>
             </div>
           )}
         </div>
@@ -1122,8 +1151,8 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
   )
 }
 
-function ProductPage({ latestRelease }: { latestRelease: ReleaseItem | null }) {
-  const downloadHref = latestRelease?.downloadUrl || '/download'
+function ProductPage() {
+  const downloadHref = '/download'
   const productPillars = [
     {
       title: '证据理解与质证生成',
@@ -1172,7 +1201,7 @@ function ProductPage({ latestRelease }: { latestRelease: ReleaseItem | null }) {
         title="文书生成、证据核验、法条核对、案例参照放到统一工作台，让操作更简单高效"
         description="围绕律师真实办案链路，把常用能力集中在同一个工作界面中，减少来回切换，让材料整理、生成、核验和参照都更顺手。"
         primaryHref={downloadHref}
-        primaryLabel="下载 Windows 客户端"
+        primaryLabel="下载客户端"
         secondaryHref="/console/billing"
         secondaryLabel="进入账户中心"
         badges={['连续文稿体验', '引用联动', '知识库与案例参照协同']}
@@ -1264,7 +1293,7 @@ function DocsPage() {
   const docEntries = [
     {
       title: '客户端下载与安装',
-      description: '查看 Windows 安装包与下载入口。',
+      description: '查看 Windows 与 Mac 安装包。',
       href: '/download',
       cta: '前往下载中心',
     },
@@ -2505,9 +2534,10 @@ function BillingPage({
   onCreateOrder: (packageId: string) => Promise<void>
   onCompleteDevelopmentOrder: (orderId: string) => Promise<void>
 }) {
-  const pendingOrder = data.orders.find((order) => order.status === 'pending')
-  const pendingProvider = pendingOrder ? data.providers.find((item) => item.id === pendingOrder.channel) : null
-  const isDevelopmentPendingOrder = Boolean(pendingOrder && pendingProvider?.reason?.includes('开发环境模拟支付'))
+  const requestedOrderNo = new URLSearchParams(window.location.search).get('orderNo')
+  const pendingOrder = data.orders.find(order => order.status === 'pending' && order.orderNo === requestedOrderNo)
+    ?? data.orders.find(order => order.status === 'pending')
+  const isDevelopmentPendingOrder = Boolean(pendingOrder?.providerOrderId?.startsWith(`dev-${pendingOrder.channel}-`))
   const paymentLink = pendingOrder?.paymentUrl || pendingOrder?.qrCodeContent || ''
   const subscriptionPackages = data.packages.filter((item) => !isPointPackage(item))
   const pointPackages = data.packages.filter(isPointPackage)
@@ -2609,7 +2639,9 @@ function BillingPage({
           <div className="pending-order pending-order-stack payment-order-panel">
             <div className="payment-qr-panel">
               <PaymentQrPreview value={paymentLink} />
-              <span className="muted">请使用{formatChannel(pendingOrder.channel)}扫码完成支付</span>
+              <span className="muted">{isDevelopmentPendingOrder
+                ? '模拟订单，请点击模拟完成支付'
+                : `请使用${formatChannel(pendingOrder.channel)}扫码完成支付`}</span>
             </div>
             <div className="payment-order-details">
               <div>
@@ -3018,14 +3050,14 @@ function Content({
   }
 
   if (route === '/product') {
-    return <ProductPage latestRelease={data.releases[0] ?? null} />
+    return <ProductPage />
   }
 
   if (route === '/docs') {
     return <DocsPage />
   }
 
-  return <HomePage plans={data.plans} packages={data.packages} latestRelease={data.releases[0] ?? null} />
+  return <HomePage plans={data.plans} packages={data.packages} />
 }
 
 export default function App() {
@@ -3151,6 +3183,40 @@ export default function App() {
 
     return () => {
       cancelled = true
+    }
+  }, [authToken])
+
+  useEffect(() => {
+    if (!authToken) return
+    let cancelled = false
+    let refreshing = false
+    const refresh = async () => {
+      if (cancelled || refreshing || document.visibilityState !== 'visible') return
+      refreshing = true
+      try {
+        const [account, pointLedger] = await Promise.all([
+          api.getAccountSummary(), api.getPointLedger(),
+        ])
+        if (!cancelled) {
+          setData(current => ({
+            ...current, account, pointLedger: pointLedger.items,
+          }))
+        }
+      } catch (error) {
+        console.error('Failed to refresh account balance.', error)
+      } finally {
+        refreshing = false
+      }
+    }
+    const onFocus = () => { void refresh() }
+    const timer = window.setInterval(onFocus, 15000)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
     }
   }, [authToken])
 

@@ -10,6 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "test:linkage": "node --import tsx --test scripts/test-semantic-linkage.mjs",
     "test:workspace": "node --import tsx --test scripts/test-workspace-sqlite.mjs",
+    "test:agent": "node --import tsx --test scripts/test-case-agent.mjs && node --test ../app/electron/test-case-directories.cjs",
+    "test:cloud-ai": "node --import tsx --test scripts/test-cloud-ai.mjs",
     "start": "node dist/index.js",
     "start:collabora-proxy": "node dist/collabora-proxy.js"
   },

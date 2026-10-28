@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { proxyApiRequest } from './api-proxy.mjs'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const distRoot = path.join(currentDir, 'dist')
@@ -34,19 +35,6 @@ const mimeTypes = new Map([
   ['.woff2', 'font/woff2'],
 ])
 
-const hopByHopHeaders = new Set([
-  'connection',
-  'content-length',
-  'host',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'transfer-encoding',
-  'upgrade',
-])
-
 function sendText(response, statusCode, message) {
   response.writeHead(statusCode, {
     'Content-Type': 'text/plain; charset=utf-8',
@@ -58,41 +46,6 @@ function normalizeRequestPath(urlPath) {
   const cleanPath = decodeURIComponent(urlPath.split('?')[0] || '/')
   const normalized = path.normalize(cleanPath).replace(/^(\.\.[/\\])+/, '')
   return normalized.startsWith(path.sep) ? normalized.slice(1) : normalized
-}
-
-async function proxyApiRequest(request, response) {
-  const upstreamUrl = `${apiBase}${request.url}`
-  const headers = {}
-  for (const [key, value] of Object.entries(request.headers)) {
-    if (!key || hopByHopHeaders.has(key.toLowerCase()) || value == null) {
-      continue
-    }
-
-    headers[key] = value
-  }
-
-  const chunks = []
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  const body = chunks.length ? Buffer.concat(chunks) : undefined
-
-  const upstreamResponse = await fetch(upstreamUrl, {
-    method: request.method,
-    headers,
-    body,
-  })
-
-  const nextHeaders = {}
-  upstreamResponse.headers.forEach((value, key) => {
-    if (!hopByHopHeaders.has(key.toLowerCase())) {
-      nextHeaders[key] = value
-    }
-  })
-
-  response.writeHead(upstreamResponse.status, nextHeaders)
-  const arrayBuffer = await upstreamResponse.arrayBuffer()
-  response.end(Buffer.from(arrayBuffer))
 }
 
 async function serveStaticAsset(requestPath, response) {
@@ -134,14 +87,18 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.url.startsWith('/api/')) {
-      await proxyApiRequest(request, response)
+      proxyApiRequest(request, response, apiBase)
       return
     }
 
     await serveStaticAsset(request.url, response)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected server error'
-    sendText(response, 500, message)
+    console.error('Web request failed:', error)
+    if (response.headersSent) {
+      response.destroy()
+    } else {
+      sendText(response, 500, 'Service temporarily unavailable. Please retry.')
+    }
   }
 })
 

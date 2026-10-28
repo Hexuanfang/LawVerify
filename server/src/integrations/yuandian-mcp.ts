@@ -1,4 +1,5 @@
 import { env } from '../config/env.js'
+import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
 import type { KnowledgeCase, KnowledgeCaseExcerpt } from '../domain.js'
 
 type JsonRpcRequest = {
@@ -193,7 +194,8 @@ async function postRpc<T>(request: JsonRpcRequest) {
     headers['Mcp-Session-Id'] = cachedSessionId
   }
 
-  const response = await fetch(env.YUANDIAN_MCP_URL ?? DEFAULT_YUANDIAN_MCP_URL, {
+  const response = isCloudAiEnabled() ? await cloudAiFetch('mcp/yuandian', request,
+    cachedSessionId ? { 'Mcp-Session-Id': cachedSessionId } : {}) : await fetch(env.YUANDIAN_MCP_URL ?? DEFAULT_YUANDIAN_MCP_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify(request),
@@ -419,7 +421,7 @@ function normalizeCaseItem(item: Record<string, unknown>) {
 }
 
 export function isYuandianCaseSearchConfigured() {
-  return Boolean(env.YUANDIAN_API_KEY?.trim())
+  return isCloudAiEnabled() || Boolean(env.YUANDIAN_API_KEY?.trim())
 }
 
 export async function searchYuandianCases(query: string, limit = 5) {

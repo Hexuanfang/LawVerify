@@ -52,6 +52,7 @@ const envSchema = z.object({
   AUTO_RUN_MIGRATIONS: booleanFromEnv.default(false),
   APP_PUBLIC_BASE_URL: z.string().default('http://localhost:8787'),
   CLOUD_API_BASE_URL: z.string().optional(),
+  AI_GATEWAY_MODE: z.enum(['direct', 'cloud']).default('direct'),
   LLM_PROVIDER: z.enum(['deepseek', 'openai-compatible']).default('deepseek'),
   LLM_BASE_URL: z.string().optional(),
   LLM_API_KEY: z.string().optional(),

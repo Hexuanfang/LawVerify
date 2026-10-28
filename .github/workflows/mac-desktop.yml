@@ -1,0 +1,70 @@
+name: Build Mac desktop
+
+on:
+  push:
+    branches:
+      - 'build/mac-desktop-*'
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: Developer ID signed and Apple notarized release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Mac ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    environment: ${{ inputs.signed && 'mac-signing' || 'mac-test' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            server/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci --prefix server
+          npm ci --prefix app
+      - name: Build unsigned test package
+        if: ${{ !inputs.signed }}
+        working-directory: app
+        run: npm run build:mac -- --arch ${{ matrix.arch }}
+      - name: Build signed and notarized package
+        if: ${{ inputs.signed }}
+        working-directory: app
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run build:mac:signed -- --arch ${{ matrix.arch }}
+      - name: Upload verified packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: LawVerify-Mac-${{ matrix.arch }}-${{ inputs.signed && 'signed' || 'unsigned' }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            app/release-mac*/*.dmg
+            app/release-mac*/*.zip
+            app/release-mac*/*.sha256
+            app/release-mac*/verification-*.json

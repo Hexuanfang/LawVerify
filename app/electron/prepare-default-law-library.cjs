@@ -11,7 +11,18 @@ const desktopRoot = path.join(appRoot, '.desktop')
 const desktopSeedRoot = path.join(desktopRoot, 'server', 'seeds')
 const defaultLawSourceDir = path.join(projectRoot, 'files', '法律文件')
 const outputFilePath = path.join(desktopSeedRoot, 'default-law-library.json')
+const cacheFilePath = path.join(appRoot, 'build', 'default-law-library.json')
 const articleNumberPattern = /^((第[一二三四五六七八九十百千万零〇两0-9]+条))\s*(.*)$/u
+
+function getSourceFingerprint() {
+  if (!fs.existsSync(defaultLawSourceDir)) return null
+  const hash = crypto.createHash('sha256')
+  const names = fs.readdirSync(defaultLawSourceDir).filter((name) => /\.docx$/i.test(name)).sort()
+  for (const name of names) {
+    hash.update(name).update('\0').update(fs.readFileSync(path.join(defaultLawSourceDir, name)))
+  }
+  return names.length ? hash.digest('hex') : null
+}
 
 function createStableId(prefix, seed) {
   const digest = crypto.createHash('sha1').update(seed).digest('hex').slice(0, 12)
@@ -205,6 +216,15 @@ async function loadEmbeddingHelpers() {
 }
 
 async function buildSeed() {
+  const sourceFingerprint = getSourceFingerprint()
+  if (sourceFingerprint && fs.existsSync(cacheFilePath)) {
+    const cached = JSON.parse(fs.readFileSync(cacheFilePath, 'utf8'))
+    if (cached.sourceFingerprint === sourceFingerprint) {
+      console.log('Reusing the verified bundled law embeddings.')
+      return cached
+    }
+    if (process.env.CI) throw new Error('Bundled law cache is stale. Re-export it locally before building in CI.')
+  }
   const generatedAt = new Date().toISOString()
   const emptySeed = {
     generatedAt,
@@ -312,7 +332,8 @@ async function buildSeed() {
 
   return {
     generatedAt,
-    sourceDir: defaultLawSourceDir,
+    sourceDir: '法律文件',
+    sourceFingerprint,
     knowledgeFiles,
     knowledgeStatutes,
     localRagIndex: {
@@ -331,4 +352,10 @@ async function prepareDefaultLawLibrary() {
 
 module.exports = {
   prepareDefaultLawLibrary,
+  getSourceFingerprint,
+  normalizeText,
+  chunkKnowledgeText,
+  defaultLawSourceDir,
+  cacheFilePath,
+  outputFilePath,
 }

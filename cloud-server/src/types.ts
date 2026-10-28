@@ -25,12 +25,15 @@ export interface SitePlan {
 export interface ReleaseItem {
   id: string
   version: string
+  platform?: 'win32' | 'darwin'
+  arch?: 'x64' | 'arm64'
   channel: string
   sizeLabel: string
   publishedAt: string
   sha256: string
   notes: string[]
   downloadUrl: string
+  checksumUrl?: string
 }
 
 export interface AccountSummary {

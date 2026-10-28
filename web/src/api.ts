@@ -1,6 +1,6 @@
 const API_BASE = (
   (import.meta.env.DEV ? (import.meta.env.VITE_CLOUD_API_BASE as string | undefined)?.trim() : '')
-  || (import.meta.env.DEV ? 'http://127.0.0.1:8788' : 'https://lawagent.zhijing.fun')
+  || (import.meta.env.DEV ? 'http://127.0.0.1:8788' : '')
 ).replace(/\/$/, '')
 const TOKEN_STORAGE_KEY = 'lawverify-cloud-token'
 const DESKTOP_TOKEN_QUERY_KEY = 'desktopToken'
@@ -212,12 +212,15 @@ export const api = {
       items: Array<{
         id: string
         version: string
+        platform?: 'win32' | 'darwin'
+        arch?: 'x64' | 'arm64'
         channel: string
         sizeLabel: string
         publishedAt: string
         sha256: string
         notes: string[]
         downloadUrl: string
+        checksumUrl?: string
       }>
     }>('/api/web/releases')
   },
@@ -411,6 +414,7 @@ export const api = {
         status: 'pending' | 'paid' | 'closed' | 'failed'
         qrCodeContent: string
         paymentUrl?: string
+        providerOrderId?: string
         createdAt: string
         paidAt?: string
       }>
@@ -434,6 +438,7 @@ export const api = {
         status: 'pending' | 'paid' | 'closed' | 'failed'
         qrCodeContent: string
         paymentUrl?: string
+        providerOrderId?: string
         createdAt: string
         paidAt?: string
       }
@@ -472,6 +477,7 @@ export const api = {
         status: 'pending' | 'paid' | 'closed' | 'failed'
         qrCodeContent: string
         paymentUrl?: string
+        providerOrderId?: string
         createdAt: string
         paidAt?: string
       }
@@ -506,6 +512,7 @@ export const api = {
         status: 'pending' | 'paid' | 'closed' | 'failed'
         qrCodeContent: string
         paymentUrl?: string
+        providerOrderId?: string
         createdAt: string
         paidAt?: string
       }

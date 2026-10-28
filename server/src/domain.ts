@@ -1,3 +1,5 @@
+import type { CaseAgentState } from './intelligence/case-agent.js'
+
 export type RoleType = 'plaintiff' | 'defendant'
 
 export type EvidenceType = 'pdf' | 'ppt' | 'image' | 'word' | 'text' | 'other'
@@ -75,6 +77,10 @@ export interface Evidence {
   type: EvidenceType
   fileName: string
   relativePath?: string
+  contentHash?: string
+  sourceFingerprint?: string
+  sourceNumber?: string
+  directoryId?: string
   uploadedAt: string
   ocrText: string
   previewDataUrl?: string
@@ -222,6 +228,8 @@ export interface CaseContextMemory {
   id: string
   caseId: string
   version: number
+  inputKey?: string
+  agentContext?: CaseAgentState
   summary: string
   parties: string[]
   disputeFocuses: string[]
@@ -275,6 +283,7 @@ export interface CaseFolder {
   description: string
   createdAt: string
   status: 'draft' | 'in_review' | 'ready'
+  agent?: CaseAgentState
 }
 
 export interface KnowledgeCaseExcerpt {
@@ -387,6 +396,7 @@ export interface LegalSourceCatalogItem {
 }
 
 export interface WorkspaceState {
+  aiBillingMode?: 'cloud' | 'client'
   user: UserAccount
   cases: CaseFolder[]
   evidences: Evidence[]
@@ -412,9 +422,13 @@ export interface LoginPayload {
 export interface EvidenceImportPayload {
   caseId: string
   processInBackground?: boolean
+  deferUnderstanding?: boolean
   files: Array<{
     fileName: string
     relativePath?: string
+    contentHash?: string
+    sourceFingerprint?: string
+    directoryId?: string
     name: string
     type: EvidenceType
     ocrText: string

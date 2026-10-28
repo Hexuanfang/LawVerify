@@ -1,4 +1,5 @@
 import { cloudErrorMessage } from './cloud-errors'
+import { boundedFetch } from './bounded-fetch'
 import type {
   AppState,
   CasePositionDraft,
@@ -202,7 +203,39 @@ type CertificateStreamHandlers<T = CertificateStreamDonePayload> = {
   onDone: (payload: T) => void
 }
 
+let analyticsToken = ''
+function recordProductEvent(name: string, outcome: 'success' | 'failure', started: number, id: string = crypto.randomUUID()) {
+  if (!analyticsToken || analyticsToken !== localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY)) return
+  void requestCloudEnvelope('/api/account/events', {
+    method: 'POST', body: JSON.stringify({ events: [{
+      id, name, surface: 'desktop', outcome,
+      durationMs: Math.min(3600000, Math.max(0, Math.round(performance.now() - started))),
+    }] }),
+  }).catch(() => {})
+}
+function eventForPath(path: string, init?: RequestInit) {
+  if (path === '/api/v1/verification/legal') {
+    try { return typeof init?.body === 'string' && JSON.parse(init.body).online === true ? 'legal.verify' : '' }
+    catch { return '' }
+  }
+  if (path === '/api/v1/knowledge/cases/search') return 'case.search'
+  if (path === '/api/certificates/import') return 'document.import'
+  if (/\/certificates\/[^/]+\/auto-link/.test(path)) return 'evidence.link'
+  if (/\/certificates\/(?:[^/]+\/)?(?:generate|rewrite)/.test(path)) return 'document.generate'
+  return ''
+}
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const started = performance.now(), name = eventForPath(path, init)
+  try {
+    const result = await baseRequest<T>(path, init)
+    if (name) recordProductEvent(name, 'success', started)
+    return result
+  } catch (error) {
+    if (name) recordProductEvent(name, 'failure', started)
+    throw error
+  }
+}
+async function baseRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {})
   if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
@@ -210,11 +243,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   applyWorkspaceAccountHeader(headers)
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await boundedFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-  }).catch(() => {
-    throw new Error('暂时无法连接本地材料服务，请关闭并重新打开 LawVerify 后重试。已导入的材料会保留。')
+  }).catch((error) => {
+    if (init?.signal?.aborted) throw error
+    throw new Error('本地材料服务暂不可用或请求超时。材料会保留，请确认操作结果后再重试。')
   })
 
   if (!response.ok) {
@@ -251,6 +285,7 @@ async function requestV1<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {})
+  headers.set('x-product-surface', 'desktop')
   if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
@@ -296,10 +331,11 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
 
     let proxiedResponse: Response
     try {
-      proxiedResponse = await fetch(`${API_BASE_URL}/api/cloud${path}`, {
+      proxiedResponse = await boundedFetch(`${API_BASE_URL}/api/cloud${path}`, {
         method: init?.method ?? 'GET',
         headers: nextHeaders,
         body: init?.body,
+        signal: init?.signal,
       })
     } catch (error) {
       throw new Error(buildUserFacingConnectionError(error, 'local-proxy'))
@@ -329,9 +365,9 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
 
   let response: Response
   try {
-    response = await fetch(`${CLOUD_API_BASE_URL}${path}`, {
-      headers,
+    response = await boundedFetch(`${CLOUD_API_BASE_URL}${path}`, {
       ...init,
+      headers,
     })
   } catch (error) {
     throw new Error(buildUserFacingConnectionError(error, 'direct'))
@@ -360,11 +396,16 @@ async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function requestCloudEnvelope<T>(path: string, init?: RequestInit): Promise<T> {
+  const started = performance.now()
   const payload = await requestCloud<{ success: boolean; data: T; error?: { message?: string } }>(path, init)
   if (!payload.success) {
     throw new CloudApiError(cloudErrorMessage(0, payload.error?.message))
   }
 
+  if (/^\/api\/billing\/orders\/[^/]+$/.test(path)) {
+    const order = (payload.data as { order?: { id: string; status: string } })?.order
+    if (order?.status === 'paid') recordProductEvent('payment.completed', 'success', started, order.id)
+  }
   return payload.data
 }
 
@@ -377,23 +418,41 @@ export function isCloudAuthApiError(error: unknown): error is CloudApiError {
 export async function fetchWithWorkspaceAccount(input: string | URL, init?: RequestInit) {
   const headers = new Headers(init?.headers ?? {})
   applyWorkspaceAccountHeader(headers)
-  return fetch(input, {
+  return boundedFetch(input, {
     ...init,
     headers,
   })
 }
 
+export function watchWorkspace(onChange: () => void) {
+  const account = sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY)?.trim().toLowerCase() ?? ''
+  const source = new EventSource(`${API_BASE_URL}/api/workspace/events?${new URLSearchParams({ workspaceAccount: account })}`)
+  source.addEventListener('connected', onChange)
+  source.addEventListener('changed', onChange)
+  return () => source.close()
+}
+
 async function streamRequest<T = CertificateStreamDonePayload>(path: string, init: RequestInit, handlers: CertificateStreamHandlers<T>) {
+  const started = performance.now(), name = eventForPath(path, init)
+  try {
+    await baseStreamRequest(path, init, handlers)
+    if (name) recordProductEvent(name, 'success', started)
+  } catch (error) {
+    if (name) recordProductEvent(name, 'failure', started)
+    throw error
+  }
+}
+async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string, init: RequestInit, handlers: CertificateStreamHandlers<T>) {
   const headers = new Headers(init.headers ?? {})
   if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
   applyWorkspaceAccountHeader(headers)
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await boundedFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-  }).catch(() => {
+  }, 15 * 60 * 1000).catch(() => {
     throw new Error('暂时无法连接服务，请检查连接后重试。')
   })
 
@@ -467,6 +526,7 @@ async function streamRequest<T = CertificateStreamDonePayload>(path: string, ini
         throw new Error('处理连接已中断，请稍后重试。')
       })
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+      if (buffer.length > 16 * 1024 * 1024) throw new Error('返回内容过大，已停止接收。请检查已有结果。')
 
       let separator = /\r?\n\r?\n/.exec(buffer)
       while (separator) {
@@ -489,6 +549,37 @@ async function streamRequest<T = CertificateStreamDonePayload>(path: string, ini
 }
 
 export const api = {
+  recordAppOpen() { recordProductEvent('app.open', 'success', performance.now()) },
+  getReferralSummary() {
+    return requestCloudEnvelope<{ code: string; inviteUrl: string; invited: number; rewarded: number; earnedPoints: number;
+      enabled: boolean; inviterPoints: number; inviteePoints: number; minPaymentFen: number }>('/api/account/referrals')
+  },
+  async getAnalyticsPreference() {
+    const token = localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY) ?? ''
+    const result = await requestCloudEnvelope<{ enabled: boolean }>('/api/account/analytics-preference')
+    if (token === localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY)) analyticsToken = result.enabled ? token : ''
+    return result
+  },
+  async setAnalyticsPreference(enabled: boolean) {
+    analyticsToken = ''
+    const token = localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY) ?? ''
+    const result = await requestCloudEnvelope<{ enabled: boolean }>('/api/account/analytics-preference', {
+      method: 'PUT', body: JSON.stringify({ enabled }),
+    })
+    if (token === localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY)) analyticsToken = result.enabled ? token : ''
+    return result
+  },
+  verifyLegalText(text: string, online = false) {
+    return requestV1<{ findings: import('./LegalReview').LegalFinding[]; truncated: boolean; timedOut?: boolean }>(
+      '/api/v1/verification/legal', { method: 'POST', body: JSON.stringify({ text, online }) })
+  },
+  searchWeightedCases(payload: { keyword?: string; courtName?: string; judgeName?: string; courtWeight?: number; judgeWeight?: number }) {
+    return requestV1<{ items: AppState['knowledgeCases']; configuredProviders: number; failedProviders: number }>(
+      '/api/v1/knowledge/cases/search', { method: 'POST', body: JSON.stringify(payload) })
+  },
+  trackEvents(events: Array<{ id: string; name: string; surface: 'desktop' | 'web'; outcome: 'success' | 'failure'; durationMs: number }>) {
+    return requestCloudEnvelope('/api/account/events', { method: 'POST', body: JSON.stringify({ events }) })
+  },
   login(payload: LoginPayload) {
     return request<LoginResponse>('/api/auth/login', {
       method: 'POST',
@@ -517,8 +608,8 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
-  getWorkspace() {
-    return request<WorkspaceResponse>('/api/workspace')
+  getWorkspace(signal?: AbortSignal) {
+    return request<WorkspaceResponse>('/api/workspace', { signal })
   },
   recharge(amount = 100) {
     return request<WorkspaceResponse>('/api/billing/recharge', {
@@ -603,6 +694,7 @@ export const api = {
     ownerName: string
     email: string
     password: string
+    inviteCode?: string
   }) {
     return requestCloudEnvelope<{
       token: string
@@ -1014,12 +1106,13 @@ export const api = {
     certificateId: string,
     paragraphId: string,
     patch: Partial<CertificateParagraph>,
+    expected?: { text: string; richText?: string },
   ) {
     return request<WorkspaceResponse>(
       `/api/certificates/${certificateId}/paragraphs/${paragraphId}`,
       {
         method: 'PATCH',
-        body: JSON.stringify(patch),
+          body: JSON.stringify({ ...patch, ...(expected ? { expectedContent: expected } : {}) }),
       },
     )
   },

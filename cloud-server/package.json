@@ -9,6 +9,8 @@
     "migrate": "node ./node_modules/tsx/dist/cli.mjs src/scripts/migrate.ts",
     "test:ai": "node --import tsx src/scripts/test-ai-gateway.ts",
     "test:download": "node --import tsx src/scripts/test-release-download.ts",
+    "test:features": "node --import tsx src/scripts/test-referrals-analytics.ts",
+    "test:features:postgres": "node --import tsx src/scripts/test-referrals-analytics.ts --postgres",
     "start": "node dist/index.js"
   },
   "dependencies": {

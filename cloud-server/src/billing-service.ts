@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { rewardDevReferral, rewardStoredReferral } from './referral-service.js'
 import type { PoolClient } from 'pg'
 
 import type { AuthenticatedActor } from './commercial/types.js'
@@ -529,6 +530,7 @@ async function settleStoredPaidOrder(identity: BillingIdentity, order: BillingOr
       ...order, status: 'paid', pointLogId,
       paidAt: stored.paidAt ?? order.paidAt ?? new Date().toISOString(),
     }, getRechargePackage(order.packageId), client)
+    if (identity.commercialUserId) await rewardStoredReferral(client, identity.commercialUserId, paid)
     await client.query('COMMIT')
     return paid
   } catch (error) {
@@ -550,6 +552,7 @@ async function ensureDevPointLedger(identity: BillingIdentity, order: BillingOrd
   return updateDevStore((store) => {
     const existing = store.pointLedgerEntries.find((item) => item.orderId === order.id && item.entryType === 'recharge')
     if (existing) {
+      rewardDevReferral(store, commercialUserId, order)
       return existing.id
     }
 
@@ -585,6 +588,7 @@ async function ensureDevPointLedger(identity: BillingIdentity, order: BillingOrd
       })
     }
 
+    rewardDevReferral(store, commercialUserId, order)
     return pointLogId
   })
 }

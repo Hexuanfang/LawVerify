@@ -1,0 +1,15 @@
+.legal-risk-repealed, .legal-risk-invalid_format { color: #b42318; background: #fee4e2; text-decoration: underline wavy #d92d20; text-underline-offset: 4px; }
+.legal-risk-unverified, .legal-risk-amended { background: #fff3cd; text-decoration: underline dotted #b7791f; text-underline-offset: 4px; }
+.legal-review { margin: 10px 0; padding: 10px 12px; background: #f8fafc; border-radius: 8px; font: 12px/1.6 sans-serif; }
+.legal-review-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.legal-review button { border: 0; border-radius: 5px; background: #e8edf4; padding: 5px 8px; cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.legal-review button:hover { box-shadow: 0 2px 6px #0002; }
+.legal-review button:active { transform: translateY(1px); }
+.legal-review button:disabled { cursor: wait; opacity: .6; }
+.legal-finding { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; align-items: baseline; overflow-wrap: anywhere; }
+.legal-finding-repealed, .legal-finding-invalid_format { color: #b42318; }
+.legal-finding-verified { color: #18744b; }
+.legal-finding a { white-space: nowrap; }
+.legal-search-controls { display: grid; gap: 8px; margin: 10px 0; }
+.legal-search-controls label { display: flex; gap: 8px; align-items: center; }
+.legal-search-controls input { min-width: 0; }

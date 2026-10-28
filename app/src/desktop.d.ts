@@ -21,6 +21,9 @@ declare global {
       platform: string
       arch?: string
       channel: string
+      reportDiagnostic?: (payload: { event: string; duration?: number; count?: number }) => void
+      getServiceStatus?: () => Promise<{ state: string }>
+      onServiceStatus?: (listener: (payload: { state: string }) => void) => () => void
       linkCaseDirectory?: (payload: { account: string; caseId: string; requestId?: string }) => Promise<CaseDirectoryManifest | null>
       onCaseDirectoryBatch?: (listener: (batch: CaseDirectoryBatch) => void) => () => void
       scanCaseDirectories?: (payload: { account: string; caseId: string }) => Promise<CaseDirectoryManifest[]>

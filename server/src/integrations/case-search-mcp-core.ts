@@ -342,6 +342,10 @@ function normalizeCaseItem(config: CaseSearchMcpProviderConfig, item: Record<str
     title,
     caseNumber,
     courtName,
+    judgeNames: uniqueStrings([
+      ...firstStringArray(item, ['judgeNames', 'judges', '审判人员']),
+      ...firstString(item, ['judgeName', 'judge', '审判长', '审判员']).split(/[、,，;\s]+/),
+    ].filter(Boolean), 30),
     courtLevel,
     region,
     trialLevel,

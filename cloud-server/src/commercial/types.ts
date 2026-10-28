@@ -23,6 +23,7 @@ export interface RegisterAccountInput {
   ownerName: string
   email: string
   password: string
+  inviteCode?: string
 }
 
 export interface LoginAccountInput {

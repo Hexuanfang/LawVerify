@@ -68,6 +68,8 @@ test('真实界面处理函数在编辑保存后调用联动，并拦截重复�
     'handleUpdateParagraphById', 'handleAutoLinkCertificate',
   ], {
     activeCertificate: certificate, activeParagraph: { id: 'p' }, selectedEvidenceIds: [],
+    sessionStorage: { getItem: () => 'test-account' }, LOGIN_ACCOUNT_STORAGE_KEY: 'login-account',
+    backgroundWorkspaceHandler: { current: noop },
     previewEvidence: null,
     documentTaskQueueRef: { current: createDocumentTaskQueue() },
     documentAnalysisRunningRef: { current: false },
@@ -467,6 +469,7 @@ test('工作区异步刷新采用最新手动选中文件，不被旧闭包清�
   const noop = () => {}
   const { applyWorkspace } = loadFunctions('../../app/src/App.tsx', ['applyWorkspace'], {
     manualPreviewEvidenceId: null, manualPreviewEvidenceIdRef: ref,
+    streamedDirectoryEvidencesRef: { current: [] },
     selectedCaseId: 'case1', selectedCertificateId: null, activeParagraphId: null,
     selectedEvidenceIds: [], locatorDraft: '',
     localWorkspaceRef: {}, cloudAccountProfileRef: {}, cloudPointsSyncRef: {}, activeSentenceAnchorRef: { current: null },

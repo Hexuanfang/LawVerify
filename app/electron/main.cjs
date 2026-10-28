@@ -1,13 +1,13 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, crashReporter, dialog, ipcMain, shell, utilityProcess } = require('electron')
 const { spawn } = require('node:child_process')
-const http = require('node:http')
 const net = require('node:net')
 const fs = require('node:fs')
 const path = require('node:path')
-const { pathToFileURL } = require('node:url')
 const { registerCaseDirectories } = require('./case-directories.cjs')
 const { getUpdateFileName, validateUpdateFileName } = require('./update-platform.cjs')
 const { createHash } = require('node:crypto')
+const { ServiceSupervisor } = require('./service-supervisor.cjs')
+const { createStabilityLog } = require('./stability-log.cjs')
 
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
@@ -49,6 +49,9 @@ function resolveDesktopUserDataPath() {
 
 app.setPath('userData', resolveDesktopUserDataPath())
 
+const logStability = createStabilityLog(path.join(app.getPath('userData'), 'logs'))
+let quitting = false
+let serviceStatus = { state: 'idle' }
 const isDev = !app.isPackaged
 const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
 let desktopServer
@@ -175,7 +178,46 @@ function createWindow() {
   window.webContents.on('did-finish-load', () => {
     focusWindowContents(window)
     primeAuthInputFocus(window)
+    window.webContents.send('lawverify:service-status', serviceStatus)
   })
+
+  let recoveryPrompt = false
+  const recoverWindow = async (reason) => {
+    if (quitting || recoveryPrompt || window.isDestroyed()) return
+    recoveryPrompt = true
+    logStability('renderer-recovery-request', { reason })
+    try {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'warning',
+        title: 'LawVerify',
+        message: reason === 'unresponsive' ? '当前窗口暂时无响应。' : '当前窗口意外中断。',
+        detail: '恢复窗口后可继续工作，本地草稿会保留。尚未确认完成的操作，请检查结果后再重试。',
+        buttons: ['恢复窗口', '暂不恢复'],
+        defaultId: reason === 'unresponsive' ? 1 : 0,
+        cancelId: 1,
+      })
+      if (response === 0 && !window.isDestroyed() && !quitting) {
+        window.webContents.reload()
+      }
+    } finally { recoveryPrompt = false }
+  }
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logStability('renderer-process-gone', { reason: details.reason, code: details.exitCode })
+    void recoverWindow(details.reason).catch(() => {})
+  })
+  let unresponsiveTimer
+  window.on('unresponsive', () => {
+    if (unresponsiveTimer) return
+    unresponsiveTimer = setTimeout(() => {
+      unresponsiveTimer = null
+      void recoverWindow('unresponsive').catch(() => {})
+    }, 8000)
+  })
+  window.on('responsive', () => {
+    clearTimeout(unresponsiveTimer)
+    unresponsiveTimer = null
+  })
+  window.on('closed', () => clearTimeout(unresponsiveTimer))
 
   return window
 }
@@ -428,42 +470,7 @@ async function findAvailablePort(startPort = 18787, attempts = 30) {
     }
   }
 
-  throw new Error('未找到可用的本地服务端口。')
-}
-
-function waitForServer(url, timeoutMs = 20_000) {
-  const deadline = Date.now() + timeoutMs
-
-  return new Promise((resolve, reject) => {
-    const tryConnect = () => {
-      const request = http.get(`${url}/api/health`, (response) => {
-        response.resume()
-
-        if (response.statusCode && response.statusCode < 500) {
-          resolve()
-          return
-        }
-
-        if (Date.now() >= deadline) {
-          reject(new Error(`本地服务启动失败，状态码：${response.statusCode ?? 'unknown'}`))
-          return
-        }
-
-        setTimeout(tryConnect, 250)
-      })
-
-      request.on('error', () => {
-        if (Date.now() >= deadline) {
-          reject(new Error('等待本地服务启动超时。'))
-          return
-        }
-
-        setTimeout(tryConnect, 250)
-      })
-    }
-
-    tryConnect()
-  })
+  throw new Error('本地服务端口被占用，请关闭其他 LawVerify 进程后重试。')
 }
 
 function isLocalHostOrigin(value) {
@@ -483,6 +490,7 @@ function applyDesktopServerEnv(port) {
   const frontendDistDir = path.join(__dirname, '..', 'dist')
 
   process.env.NODE_ENV = 'production'
+  process.env.LAWVERIFY_DESKTOP = '1'
   process.env.PORT = String(port)
   process.env.CORS_ORIGIN = `http://127.0.0.1:${port},http://localhost:${port}`
   process.env.JSON_LIMIT = process.env.JSON_LIMIT || '100mb'
@@ -501,34 +509,43 @@ function applyDesktopServerEnv(port) {
 }
 
 async function startPackagedServer() {
-  if (desktopServerUrl) {
+  if (desktopServerUrl && desktopServer?.state === 'ready') {
     return desktopServerUrl
   }
 
   if (desktopServerPromise) {
     return desktopServerPromise
   }
+  if (desktopServer) {
+    if (desktopServer.state === 'failed') throw new Error('本地服务恢复失败，请重新打开 LawVerify。')
+    await desktopServer.waitUntilReady()
+    return desktopServerUrl
+  }
 
   desktopServerPromise = (async () => {
-    const port = await findAvailablePort()
+    // Draft storage is origin-bound. Never silently change ports between launches.
+    const port = await findAvailablePort(18787, 1)
     applyDesktopServerEnv(port)
 
-    const backendEntry = path.join(__dirname, '..', '.desktop', 'server', 'dist', 'app.js')
-    const backendModule = await import(pathToFileURL(backendEntry).href)
-
-    await backendModule.initializeCommercialInfrastructure()
-    const bootstrap = backendModule.createApp()
-    const server = await new Promise((resolve, reject) => {
-      const instance = bootstrap.app.listen(port, '127.0.0.1', () => resolve(instance))
-      instance.once('error', reject)
-    })
-
-    bootstrap.attachUpgrade(server)
-    desktopServer = server
     desktopServerUrl = `http://127.0.0.1:${port}`
-    await waitForServer(desktopServerUrl)
+    const serviceEnv = { ...process.env }
+    delete serviceEnv.ELECTRON_RUN_AS_NODE
+    desktopServer = new ServiceSupervisor({
+      fork: (...args) => utilityProcess.fork(...args),
+      entry: path.join(__dirname, 'desktop-service.cjs'),
+      env: serviceEnv,
+    })
+    desktopServer.on('diagnostic', ({ event, ...details }) => logStability(event, details))
+    desktopServer.on('status', status => {
+      serviceStatus = status
+      logStability(`service-${status.state}`)
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send('lawverify:service-status', status)
+      }
+    })
+    await desktopServer.waitUntilReady()
     return desktopServerUrl
-  })()
+  })().finally(() => { desktopServerPromise = null })
 
   return desktopServerPromise
 }
@@ -578,7 +595,18 @@ if (!gotSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    crashReporter.start({ uploadToServer: false, compress: true })
     registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow })
+    ipcMain.handle('lawverify:get-service-status', () => serviceStatus)
+    const diagnosticTimes = new Map()
+    ipcMain.on('lawverify:renderer-diagnostic', (event, payload) => {
+      if (!BrowserWindow.fromWebContents(event.sender) || !payload || typeof payload.event !== 'string') return
+      if (!['renderer-error', 'renderer-rejection', 'react-boundary', 'renderer-long-task', 'draft-storage-failed'].includes(payload.event)) return
+      const key = `${event.sender.id}:${payload.event}`
+      if (Date.now() - (diagnosticTimes.get(key) ?? 0) < 10000) return
+      diagnosticTimes.set(key, Date.now())
+      logStability(payload.event, { duration: payload.duration, count: payload.count })
+    })
     ipcMain.handle(OPEN_EXTERNAL_CHANNEL, handleOpenExternal)
     ipcMain.handle(START_APP_UPDATE_CHANNEL, handleStartAppUpdate)
     void bootApplication()
@@ -592,13 +620,24 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('before-quit', () => {
+  quitting = true
   ipcMain.removeHandler(OPEN_EXTERNAL_CHANNEL)
   ipcMain.removeHandler(START_APP_UPDATE_CHANNEL)
+  ipcMain.removeHandler('lawverify:get-service-status')
   if (desktopServer) {
-    desktopServer.close()
+    desktopServer.stop()
     desktopServer = undefined
     desktopServerUrl = undefined
   }
+})
+
+process.on('uncaughtException', () => {
+  logStability('main-uncaught-exception')
+  app.exit(1)
+})
+process.on('unhandledRejection', () => {
+  logStability('main-unhandled-rejection')
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => {

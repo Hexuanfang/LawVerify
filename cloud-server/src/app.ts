@@ -2,6 +2,7 @@ import compression from 'compression'
 import cors from 'cors'
 import express, { type NextFunction, type Request, type Response } from 'express'
 import helmet from 'helmet'
+import { ZodError } from 'zod'
 
 import { config } from './config.js'
 import { AppError } from './core/app-error.js'
@@ -69,7 +70,9 @@ export function createApp() {
     if (response.headersSent) { response.destroy(); return }
     const appError = error instanceof AppError
       ? error
-      : new AppError(error instanceof Error ? error.message : 'Unexpected server error.', 500, 'INTERNAL_ERROR')
+      : error instanceof ZodError
+        ? new AppError(error.issues[0]?.message ?? '请求参数不正确。', 400, 'VALIDATION_ERROR')
+        : new AppError(error instanceof Error ? error.message : 'Unexpected server error.', 500, 'INTERNAL_ERROR')
     console.error('Request failed:', request.method, request.path, appError.statusCode, appError.code,
       error instanceof Error ? error.name : 'UnknownError')
     // An upstream response may have left an invalid media type on this response.

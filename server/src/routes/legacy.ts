@@ -9,6 +9,8 @@ import { storeObject } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
+import { subscribeWorkspaceChanges } from '../infrastructure/workspace-events.js'
+import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import {
   bootstrap,
   caseAgentMessage,
@@ -62,7 +64,7 @@ const createCaseSchema = z.object({
 
 export function createLegacyRouter() {
   const router = Router()
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } })
+  const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
   const resolveWorkspaceAccount = (request: Request) =>
     request.header('x-workspace-account')?.trim().toLowerCase()
     ?? (typeof request.query.workspaceAccount === 'string'
@@ -127,6 +129,9 @@ export function createLegacyRouter() {
     if (accept) {
       headers.set('accept', accept)
     }
+    if (request.header('x-product-surface') === 'desktop') {
+      headers.set('x-product-surface', 'desktop')
+    }
 
     const method = request.method.toUpperCase()
     const requestBody = method === 'GET' || method === 'HEAD'
@@ -138,6 +143,7 @@ export function createLegacyRouter() {
         method,
         headers,
         body: requestBody,
+        signal: AbortSignal.timeout(120000),
       })
 
       const payloadText = await upstream.text()
@@ -174,6 +180,28 @@ export function createLegacyRouter() {
 
   router.get('/health', (_request, response) => {
     response.json({ ok: true })
+  })
+
+  router.get('/workspace/events', (request, response) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = subscribeWorkspaceChanges(resolveWorkspaceAccount(request), () => {
+      if (timer) return
+      timer = setTimeout(() => {
+        timer = undefined
+        if (!response.destroyed) sendStreamEvent(response, 'changed', {})
+      }, 500)
+    })
+    if (!unsubscribe) { response.sendStatus(429); return }
+    startEventStream(response)
+    sendStreamEvent(response, 'connected', {})
+    const heartbeat = setInterval(() => {
+      if (!response.destroyed) { response.write(': keepalive\n\n'); response.flush?.() }
+    }, 30000)
+    response.once('close', () => {
+      clearTimeout(timer)
+      clearInterval(heartbeat)
+      unsubscribe()
+    })
   })
 
   router.use((request, _response, next) => {
@@ -312,28 +340,29 @@ export function createLegacyRouter() {
     sendWorkspacePayload(response, result)
   })
 
-  router.post('/evidences/assets/upload', upload.array('files', 200), async (request, response) => {
+  router.post('/evidences/assets/upload', reserveUpload, upload.array('files', 200), async (request, response) => {
     const files = Array.isArray(request.files) ? request.files : []
     const manifest = typeof request.body?.manifest === 'string'
       ? JSON.parse(request.body.manifest) as Array<{ relativePath?: string; fileName?: string; sourceMimeType?: string }>
       : []
 
-    const assets = await Promise.all(files.map(async (file, index) => {
+    const assets = []
+    for (const [index, file] of files.entries()) {
       const manifestItem = manifest[index] ?? {}
       const stored = await storeObject(file, {
         bucket: 'evidence',
         fileName: manifestItem.fileName?.trim() || file.originalname,
       })
 
-      return {
+      assets.push({
         relativePath: manifestItem.relativePath?.trim() || file.originalname,
         fileName: manifestItem.fileName?.trim() || file.originalname,
         storageKey: stored.key,
         storageUrl: stored.url,
         sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
         contentHash: createHash('sha256').update(file.buffer).digest('hex'),
-      }
-    }))
+      })
+    }
 
     response.json({ assets })
   })

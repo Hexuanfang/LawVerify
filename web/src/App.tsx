@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 
 import { api, authStorage, consumeDesktopTokenFromUrl, isAuthApiError } from './api'
 import { HeroSlogan } from './HeroSlogan'
+import { AccountFeatures, ProductAnalytics } from './AccountFeatures'
 
 type SiteRoute =
   | '/'
@@ -1376,6 +1377,10 @@ function AuthPage({
               负责人姓名
               <input name="ownerName" placeholder="请输入负责人姓名" required />
             </label>
+            <label>
+              邀请码（选填）
+              <input name="inviteCode" maxLength={16} defaultValue={new URLSearchParams(window.location.search).get('invite') ?? ''} />
+            </label>
           </>
         ) : null}
 
@@ -1529,7 +1534,7 @@ function AdminLayout({ route, data }: { route: SiteRoute; data: DashboardData })
       <div className="admin-main">
         {route === '/admin' ? <AdminDashboardPage /> : null}
         {route === '/admin/users' ? <AdminUsersPage /> : null}
-        {route === '/admin/usage' ? <AdminUsagePage /> : null}
+        {route === '/admin/usage' ? <><AdminUsagePage /><ProductAnalytics /></> : null}
         {route === '/admin/feedback' ? <AdminFeedbackPage /> : null}
       </div>
     </section>
@@ -2901,6 +2906,7 @@ function InvoicesPage({
 
 function ProfilePage({ account, profile }: { account: AccountSummary; profile: SessionProfile | null }) {
   return (
+    <>
     <section className="card form-grid">
       <h3>账户资料</h3>
       <label>
@@ -2920,6 +2926,8 @@ function ProfilePage({ account, profile }: { account: AccountSummary; profile: S
         <input value={profile?.organization.role || '-'} readOnly />
       </label>
     </section>
+    <AccountFeatures />
+    </>
   )
 }
 
@@ -3056,6 +3064,9 @@ export default function App() {
   const [data, setData] = useState<DashboardData>(fallbackData)
   const [profile, setProfile] = useState<SessionProfile | null>(null)
   const [authToken, setAuthToken] = useState(() => consumeDesktopTokenFromUrl() || authStorage.getToken())
+  useEffect(() => {
+    if (authToken) void api.getAnalyticsPreference().then(() => api.trackProductEvent('app.open')).catch(() => {})
+  }, [authToken])
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
   const [isInitializing, setIsInitializing] = useState(!!(consumeDesktopTokenFromUrl() || authStorage.getToken()))
@@ -3300,6 +3311,7 @@ export default function App() {
         ownerName: String(formData.get('ownerName') ?? ''),
         email: String(formData.get('email') ?? ''),
         password: String(formData.get('password') ?? ''),
+        inviteCode: String(formData.get('inviteCode') ?? '').trim() || undefined,
       })
       authStorage.setToken(result.token)
       setAuthToken(result.token)

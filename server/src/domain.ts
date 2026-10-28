@@ -301,6 +301,7 @@ export interface KnowledgeCase {
   title: string
   caseNumber: string
   courtName: string
+  judgeNames?: string[]
   courtLevel: string
   region: string
   trialLevel: string

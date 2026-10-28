@@ -111,7 +111,7 @@ export function CaseDirectorySync({ account, caseId, enabled, onWorkspace, onErr
     let active = true
     let running = false
     const scan = async () => {
-      if (running || !active) return
+      if (running || !active || document.visibilityState === 'hidden') return
       running = true
       try {
         const directories = await window.lawVerifyDesktop!.scanCaseDirectories!({ account, caseId })
@@ -125,9 +125,16 @@ export function CaseDirectorySync({ account, caseId, enabled, onWorkspace, onErr
       } finally { running = false }
     }
     void scan()
-    const timer = window.setInterval(() => void scan(), 20000)
+    const timer = window.setInterval(() => void scan(), 60000)
+    const visible = () => { if (document.visibilityState === 'visible') void scan() }
     window.addEventListener('focus', scan)
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', scan) }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', scan)
+      document.removeEventListener('visibilitychange', visible)
+    }
   }, [account, caseId, enabled])
   return null
 }

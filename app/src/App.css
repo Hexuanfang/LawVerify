@@ -6275,6 +6275,7 @@
 
 .ide-activity-bar > button:hover,
 .ide-activity-bar > button[aria-pressed='true'],
+.ide-activity-bar > button[aria-busy='true'],
 .ide-activity-bar > button[aria-expanded='true'] {
   color: var(--accent);
   background: var(--accent-bg);
@@ -6292,30 +6293,154 @@
 
 .ide-activity-spacer { flex: 1; }
 
+.ide-activity-bar > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ide-document-view:focus,
+.ide-assistant-view:focus,
+.ide-shell .streamlined-sidebar:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+.ide-shell > .ide-knowledge-backdrop {
+  left: 52px;
+}
+
 .ide-account-backdrop {
   position: fixed;
-  inset: 0;
+  inset: 0 0 0 52px;
   z-index: 1200;
 }
 
 .ide-account-popover {
   position: absolute;
-  left: 58px;
+  left: 6px;
   bottom: 12px;
   width: min(320px, calc(100vw - 72px));
+  box-sizing: border-box;
   max-height: calc(100dvh - 24px);
   overflow: auto;
-  padding: 16px;
+  padding: 20px 20px 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--panel-bg);
-  box-shadow: 0 12px 40px #18234022;
+  box-shadow: 0 16px 48px #18234024, 0 2px 8px #1823400a;
 }
 
-.ide-account-popover > button { float: right; }
-.ide-account-popover .sidebar-footer { clear: both; }
-.ide-account-popover .sidebar-feedback-button { display: none; }
-.ide-account-popover strong { overflow-wrap: anywhere; word-break: break-word; }
+.ide-account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ide-account-header > span,
+.ide-account-balance-copy > span {
+  color: var(--text);
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+
+.ide-account-close,
+.ide-account-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-body);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.ide-account-close { margin-right: -8px; }
+
+.ide-account-close:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.ide-account-identity {
+  display: block;
+  min-width: 0;
+  margin-bottom: 20px;
+  color: var(--text-h);
+  font-size: var(--font-title);
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ide-account-balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.ide-account-balance-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ide-account-balance-copy > strong {
+  color: var(--text-h);
+  font-size: var(--font-display);
+  font-weight: 650;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ide-account-balance-copy > strong.is-depleted { color: var(--danger); }
+
+.ide-account-popover .ide-account-recharge {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 18px;
+  border-radius: 9px;
+  font-size: var(--font-body);
+}
+
+.ide-account-actions {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.ide-account-logout {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 38px;
+}
+
+.ide-account-logout svg { width: 17px; height: 17px; flex: 0 0 auto; }
+
+.ide-account-logout:hover { background: #ef44440b; color: var(--danger); }
+
+.ide-account-close:active,
+.ide-account-logout:active { transform: translateY(1px); }
+
+.ide-account-close:focus-visible,
+.ide-account-logout:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .ide-shell .streamlined-sidebar {
   padding: 0;

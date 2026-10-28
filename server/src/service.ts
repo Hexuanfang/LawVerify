@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
+import { rankCases } from './intelligence/legal-verification.js'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import * as mammoth from 'mammoth'
-import { PDFParse } from 'pdf-parse'
+import { extractWordText, withDocumentSession } from './infrastructure/document-jobs.js'
+import { AppError } from './core/app-error.js'
 import type {
   CaseContextMemory,
   CaseFolder,
@@ -1008,7 +1009,7 @@ function normalizeArticleNumber(value: string) {
   }
 }
 
-function extractStatuteMentions(text: string, limit = 3) {
+export function extractStatuteMentions(text: string, limit = 3) {
   const pattern = /(?:《([^》]{2,40})》|((?:中华人民共和国)?[\u4e00-\u9fa5]{1,30}?(?:法|法典|条例|规定|解释)))\s*第([0-9零〇一二三四五六七八九十百千万两]+)条/gu
   const matches: StatuteMention[] = []
 
@@ -1968,7 +1969,7 @@ async function fetchJsonWithTimeout<T>(url: string, init?: RequestInit) {
   try {
     const response = await fetch(url, {
       ...init,
-      signal: controller.signal,
+      signal: init?.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
     })
 
     if (!response.ok) {
@@ -1993,11 +1994,12 @@ function mapNpcEffectiveStatus(status: number | null | undefined): KnowledgeStat
   return 'effective'
 }
 
-async function searchNpcStatute(title: string) {
+async function searchNpcStatute(title: string, signal?: AbortSignal) {
   const payload = await fetchJsonWithTimeout<{
     rows?: NpcSearchRow[]
   }>(NPC_SEARCH_ENDPOINT, {
     method: 'POST',
+    signal,
     headers: {
       'Content-Type': 'application/json;charset=utf-8',
     },
@@ -2031,11 +2033,11 @@ async function searchNpcStatute(title: string) {
   return fuzzyMatch ?? null
 }
 
-async function fetchNpcDetail(bbbs: string) {
+async function fetchNpcDetail(bbbs: string, signal?: AbortSignal) {
   const url = `${NPC_DETAIL_ENDPOINT}?bbbs=${encodeURIComponent(bbbs)}`
   const payload = await fetchJsonWithTimeout<{
     data?: NpcDetailPayload
-  }>(url)
+  }>(url, { signal })
 
   return payload.data ?? null
 }
@@ -2096,19 +2098,21 @@ function upsertKnowledgeStatuteDocument(
   return merged
 }
 
-async function resolveStatuteMentionFromOfficialSource(
+export async function resolveStatuteMentionFromOfficialSource(
   workspace: WorkspaceState,
   mention: StatuteMention,
+  signal?: AbortSignal,
 ): Promise<ResolvedStatuteReferenceBinding | null> {
   const titleCandidates = buildLawTitleCandidates(mention.lawTitle)
 
   for (const title of titleCandidates) {
-    const searchRow = await searchNpcStatute(title).catch(() => null)
+    if (signal?.aborted) break
+    const searchRow = await searchNpcStatute(title, signal).catch(() => null)
     if (!searchRow?.bbbs) {
       continue
     }
 
-    const detail = await fetchNpcDetail(searchRow.bbbs).catch(() => null)
+    const detail = await fetchNpcDetail(searchRow.bbbs, signal).catch(() => null)
     if (!detail?.bbbs) {
       continue
     }
@@ -2380,44 +2384,29 @@ async function extractEvidenceContentFromSourceAsset(
   }
 
   if (lowerName.endsWith('.docx')) {
-    const result = await mammoth.extractRawText({ buffer: asset.buffer })
+    const text = await extractWordText(asset.buffer)
     return {
       sourceMimeType: asset.mimeType,
-      ocrText: result.value.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
+      ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
     }
   }
 
   if (lowerName.endsWith('.pdf') || normalizedMimeType.includes('pdf')) {
-    const parser = new PDFParse({ data: asset.buffer })
-
-    try {
-      const textResult = await parser.getText({
-        pageJoiner: '\n\n----- 第 page_number / total_number 页 -----\n\n',
-      })
-      let pageImageDataUrls: string[] = []
-
-      try {
-        const screenshots = await parser.getScreenshot({
-          first: Math.max(1, Math.min(textResult.total || 1, MAX_BACKGROUND_VISION_PAGES)),
-          scale: 1.1,
-          imageDataUrl: true,
-          imageBuffer: false,
-        })
-        pageImageDataUrls = screenshots.pages.map((page) => page.dataUrl).filter(Boolean)
-      } catch {
-        pageImageDataUrls = evidence.pageImageDataUrls ?? []
+    return withDocumentSession(asset.buffer, async session => {
+      const total = await session.request<number>('info')
+      const text = await session.request<string>('text')
+      const pageImageDataUrls: string[] = []
+      for (let page = 1; page <= Math.min(total, MAX_BACKGROUND_VISION_PAGES); page++) {
+        pageImageDataUrls.push(await session.request<string>('page', page))
       }
-
       return {
         sourceMimeType: asset.mimeType,
-        ocrText: textResult.text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
+        ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
         previewDataUrl: pageImageDataUrls[0] ?? evidence.previewDataUrl,
         pageImageDataUrls,
-        pages: textResult.total || evidence.pages || 1,
+        pages: total || evidence.pages || 1,
       }
-    } finally {
-      await parser.destroy()
-    }
+    })
   }
 
   return {
@@ -3558,21 +3547,19 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
   }
 
   if (evidence.type === 'pdf' && evidence.storageKey) {
-    const parser = new PDFParse({ data: await readObject(evidence.storageKey) })
-    const drafts: EvidencePageInsightDraft[] = []
-    try {
-      const info = await parser.getInfo()
-      for (let page = 1; page <= info.total; page += 1) {
-        const screenshot = await parser.getScreenshot({ partial: [page], scale: 1.1, imageDataUrl: true, imageBuffer: false })
-        const image = screenshot.pages[0]?.dataUrl
+    return withDocumentSession(await readObject(evidence.storageKey), async session => {
+      const total = await session.request<number>('info')
+      const drafts: EvidencePageInsightDraft[] = []
+      for (let page = 1; page <= total; page += 1) {
+        const image = await session.request<string>('page', page)
         if (!image) throw new Error(`第${page}页未能完成原件识别，请重试。`)
-        const draft = await buildEvidencePageInsightDraftWithVision(evidence, fragments, '', image, page, info.total)
+        const draft = await buildEvidencePageInsightDraftWithVision(evidence, fragments, '', image, page, total)
         if (!draft) throw new Error(`第${page}页未返回完整理解，请重试。`)
         drafts.push(draft)
       }
-    } finally { await parser.destroy() }
-    const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
-    return aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+      const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
+      return aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+    })
   }
   if (meaningfulText.length > 12000) {
     const chunks: string[] = []
@@ -6140,9 +6127,17 @@ export async function importCertificate(payload: ImportCertificatePayload) {
 export async function updateParagraph(
   certificateId: string,
   paragraphId: string,
-  patch: Partial<CertificateParagraph>,
+  input: Partial<CertificateParagraph> & { expectedContent?: { text: string; richText?: string } },
 ) {
+  const { expectedContent, ...patch } = input
   const workspace = await readWorkspace()
+  const current = workspace.certificates.find(item => item.id === certificateId)?.paragraphs.find(item => item.id === paragraphId)
+  if (!current) throw new AppError('文稿段落已不存在，草稿会保留。', 404, 'PARAGRAPH_NOT_FOUND')
+  if (expectedContent && (current.text !== expectedContent.text
+    || (current.richText !== undefined && current.richText !== expectedContent.richText))
+    && (current.text !== patch.text || current.richText !== patch.richText)) {
+    throw new AppError('文稿已有更新，已保留未保存草稿。请恢复窗口后核对并选择草稿。', 409, 'PARAGRAPH_CONFLICT')
+  }
   const cache = new Map<string, ResolvedStatuteReferenceBinding | null>()
   const nextCertificates: Certificate[] = []
 
@@ -6343,11 +6338,15 @@ export async function listKnowledgeCases(query?: {
   keyword?: string
   focusTag?: string
   cause?: string
+  courtName?: string
+  judgeName?: string
+  courtWeight?: number
+  judgeWeight?: number
 }) {
   const workspace = await readWorkspace()
   let cases = [...workspace.knowledgeCases]
 
-  if (query?.keyword?.trim()) {
+  if (query?.keyword?.trim() && !query.courtName && !query.judgeName) {
     const keyword = query.keyword.trim()
     cases = cases.filter((item) =>
       [
@@ -6372,7 +6371,7 @@ export async function listKnowledgeCases(query?: {
     cases = cases.filter((item) => item.cause.includes(query.cause!.trim()))
   }
 
-  return { items: cases }
+  return { items: rankCases(cases, query ?? {}) }
 }
 
 export async function getKnowledgeCaseDetail(caseId: string) {
@@ -6394,6 +6393,7 @@ function normalizeImportedKnowledgeCase(item: WorkspaceState['knowledgeCases'][n
     title: item.title?.trim() || '未命名案例',
     caseNumber: item.caseNumber?.trim() || '案号待补充',
     courtName: item.courtName?.trim() || '未标注法院',
+    judgeNames: uniqueStrings((item.judgeNames ?? []).map(name => name.trim()).filter(Boolean), 30),
     courtLevel: item.courtLevel?.trim() || '未标注',
     region: item.region?.trim() || '未标注',
     trialLevel: item.trialLevel?.trim() || '未标注',
@@ -6801,9 +6801,9 @@ async function extractKnowledgeUploadText(file: Express.Multer.File, resolvedFil
 
   if (lowerName.endsWith('.docx')) {
     try {
-      const result = await mammoth.extractRawText({ buffer: file.buffer })
+      const text = await extractWordText(file.buffer)
       return {
-        extractedText: result.value.trim(),
+        extractedText: text.trim(),
         extractionStatus: 'ready' as const,
       }
     } catch (error) {

@@ -8,6 +8,14 @@ contextBridge.exposeInMainWorld('lawVerifyDesktop', {
   platform: process.platform,
   arch: process.arch,
   channel: 'electron',
+  reportDiagnostic: (payload) => ipcRenderer.send('lawverify:renderer-diagnostic', payload),
+  getServiceStatus: () => ipcRenderer.invoke('lawverify:get-service-status'),
+  onServiceStatus: (listener) => {
+    if (typeof listener !== 'function') return () => {}
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('lawverify:service-status', handler)
+    return () => ipcRenderer.removeListener('lawverify:service-status', handler)
+  },
   linkCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-link', payload),
   onCaseDirectoryBatch: (listener) => {
     if (typeof listener !== 'function') return () => {}

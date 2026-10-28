@@ -4,7 +4,7 @@
     "productName":  "LawVerify",
     "author":  "Hexuanfang",
     "private":  true,
-    "version":  "0.1.52",
+    "version":  "0.1.54",
     "type":  "module",
     "main":  "electron/main.cjs",
     "scripts":  {
@@ -27,6 +27,9 @@
                     "build:desktop:dir":  "npm run build \u0026\u0026 npm run build:server \u0026\u0026 npm run prepare:desktop \u0026\u0026 npm run prepare:builder-cache \u0026\u0026 node electron/run-electron-builder.cjs --publish never --win dir",
                     "verify:signature":  "powershell -NoProfile -ExecutionPolicy Bypass -File electron/inspect-windows-signature.ps1 -RequireValid",
                     "verify:workspace":  "node electron/verify-workspace-sqlite.cjs",
+                    "test:stability":  "node --test electron/test-service-supervisor.cjs \u0026\u0026 node electron/run-stability-tests.mjs",
+                    "test:desktop-service":  "node electron/run-electron-test.cjs test-desktop-service.cjs",
+                    "test:layout":  "node electron/run-electron-test.cjs test-ide-layout.cjs",
                     "lint":  "oxlint",
                     "preview":  "vite preview",
                     "desktop":  "electron electron/main.cjs"

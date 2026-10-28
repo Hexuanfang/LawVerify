@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
 import { config } from '../config.js'
@@ -101,6 +102,10 @@ type DevStoreUserFeedback = {
 }
 
 export type DevStoreShape = {
+  referralCodes: Array<{ userId: string; organizationId: string; code: string }>
+  referrals: Array<{ inviteeId: string; inviteeOrganizationId: string; inviterId: string; inviterOrganizationId: string; createdAt: string; rewardedAt?: string; rewardOrderId?: string; inviterPoints?: number; inviteePoints?: number }>
+  analyticsPreferences: Array<{ userId: string; enabled: boolean }>
+  productEvents: Array<{ userId: string; id: string; name: string; surface: string; outcome: string; durationMs: number; receivedAt: string }>
   users: DevStoreUser[]
   organizations: DevStoreOrganization[]
   memberships: DevStoreMembership[]
@@ -112,6 +117,10 @@ export type DevStoreShape = {
 }
 
 const DEFAULT_STORE: DevStoreShape = {
+  referralCodes: [],
+  referrals: [],
+  analyticsPreferences: [],
+  productEvents: [],
   users: [],
   organizations: [],
   memberships: [],
@@ -131,23 +140,31 @@ export async function readDevStore(): Promise<DevStoreShape> {
   try {
     const content = await readFile(storePath, 'utf8')
     return {
-      ...DEFAULT_STORE,
+      ...structuredClone(DEFAULT_STORE),
       ...(JSON.parse(content) as Partial<DevStoreShape>),
     }
-  } catch {
-    return { ...DEFAULT_STORE }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return structuredClone(DEFAULT_STORE)
+    throw error
   }
 }
 
 export async function writeDevStore(store: DevStoreShape) {
   const storePath = getStorePath()
   await mkdir(path.dirname(storePath), { recursive: true })
-  await writeFile(storePath, JSON.stringify(store, null, 2), 'utf8')
+  const temporaryPath = `${storePath}.${randomUUID()}.tmp`
+  await writeFile(temporaryPath, JSON.stringify(store, null, 2), 'utf8')
+  await rename(temporaryPath, storePath)
 }
 
+let pending: Promise<unknown> = Promise.resolve()
 export async function updateDevStore<T>(updater: (store: DevStoreShape) => T | Promise<T>) {
-  const store = await readDevStore()
-  const result = await updater(store)
-  await writeDevStore(store)
-  return result
+  const operation = pending.then(async () => {
+    const store = await readDevStore()
+    const result = await updater(store)
+    await writeDevStore(store)
+    return result
+  })
+  pending = operation.catch(() => {})
+  return operation
 }

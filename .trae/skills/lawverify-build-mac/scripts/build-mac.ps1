@@ -62,7 +62,7 @@ $repoSlug = "$owner/$repository"
 Write-Host "[ok] remote => $repoSlug"
 
 # -- worktree ---------------------------------------------------------------
-$status = Invoke-Checked 'git' @('status', '--porcelain')
+$status = @(Invoke-Checked 'git' @('status', '--porcelain'))
 if ($status.Count -gt 0) {
   Write-Host '[warn] Local working tree has changes. GitHub Actions builds the PUSHED remote code,'
   Write-Host '       so uncommitted changes will NOT be part of the mac package.'
@@ -75,8 +75,8 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "[warn] Cannot compare with origin/$branch (branch may be untracked). Trusting -Push flag." -ForegroundColor Yellow
 } else {
   $parts = "$division" -split '\s+'
-  $ahead = [int]$parts[0]
-  $behind = if ($parts.Count -gt 1) { [int]$parts[1] } else { 0 }
+  $behind = [int]$parts[0]
+  $ahead = if ($parts.Count -gt 1) { [int]$parts[1] } else { 0 }
   if ($behind -gt 0) {
     throw "Local branch is $behind commit(s) BEHIND origin/$branch. Run 'git pull --rebase' first."
   }

@@ -68,3 +68,6 @@ if ($timestampSubject) {
 if ($RequireValid -and $signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
   throw "Signature is not valid: $($signature.Status)"
 }
+if ($RequireValid -and !$signature.TimeStamperCertificate) {
+  throw 'A valid timestamp is required for a release build.'
+}

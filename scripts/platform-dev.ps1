@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('start', 'stop', 'restart', 'status')]
+  [ValidateSet('start', 'stop', 'restart', 'status', 'ensure')]
   [string]$Action = 'start',
   [switch]$Rebuild
 )
@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runtimeDir = Join-Path $repoRoot 'tmp\platform-runtime'
 $stateFile = Join-Path $runtimeDir 'state.json'
+$stopFile = Join-Path $runtimeDir 'manually-stopped'
 $webPort = 4273
 $cloudPort = 8788
 $webUrl = "http://127.0.0.1:$webPort/"
@@ -22,6 +23,9 @@ function Ensure-RuntimeDirectory {
 }
 
 function Get-CommandPath([string[]]$Names) {
+  if ($Names -contains 'node.exe' -and (Test-Path 'C:\nvm4w\nodejs\node.exe')) {
+    return 'C:\nvm4w\nodejs\node.exe'
+  }
   foreach ($name in $Names) {
     $command = Get-Command $name -ErrorAction SilentlyContinue
     if ($command) {
@@ -108,10 +112,14 @@ function Start-WebProcess([string]$NodePath) {
   $previewServer = Join-Path $webWorkingDirectory 'preview-server.mjs'
   $stdout = Join-Path $runtimeDir 'web.out.log'
   $stderr = Join-Path $runtimeDir 'web.err.log'
+  foreach ($log in @($stdout, $stderr)) {
+    if (Test-Path $log) { Copy-Item $log "$log.prev" -Force }
+  }
 
   $process = Start-Process -FilePath $NodePath `
     -ArgumentList @($previewServer, '--host', '0.0.0.0', '--port', "$webPort", '--api-base', "http://127.0.0.1:$cloudPort") `
     -WorkingDirectory $webWorkingDirectory `
+    -WindowStyle Hidden `
     -RedirectStandardOutput $stdout `
     -RedirectStandardError $stderr `
     -PassThru
@@ -128,10 +136,14 @@ function Start-CloudProcess([string]$NodePath) {
   $entry = Join-Path $cloudWorkingDirectory 'dist\index.js'
   $stdout = Join-Path $runtimeDir 'cloud-server.out.log'
   $stderr = Join-Path $runtimeDir 'cloud-server.err.log'
+  foreach ($log in @($stdout, $stderr)) {
+    if (Test-Path $log) { Copy-Item $log "$log.prev" -Force }
+  }
 
   $process = Start-Process -FilePath $NodePath `
     -ArgumentList @($entry) `
     -WorkingDirectory $cloudWorkingDirectory `
+    -WindowStyle Hidden `
     -RedirectStandardOutput $stdout `
     -RedirectStandardError $stderr `
     -PassThru
@@ -169,6 +181,7 @@ function Start-Platform {
   }
 
   Stop-Platform
+  Remove-Item $stopFile -Force -ErrorAction SilentlyContinue
 
   $cloud = Start-CloudProcess -NodePath $nodePath
   Wait-UntilAvailable -Url $cloudHealthUrl -Name 'cloud-server'
@@ -188,6 +201,8 @@ function Start-Platform {
 }
 
 function Stop-Platform {
+  Ensure-RuntimeDirectory
+  New-Item -ItemType File -Path $stopFile -Force | Out-Null
   $state = Read-State
   if ($state) {
     Stop-ProcessIfAlive -ProcessId ([int]$state.web.pid)
@@ -196,6 +211,52 @@ function Stop-Platform {
 
   Stop-PortOwners -Ports @($webPort, $cloudPort)
   Remove-State
+}
+
+function Ensure-Platform {
+  Ensure-RuntimeDirectory
+  if (Test-Path $stopFile) {
+    Write-Output 'Platform intentionally stopped; recovery skipped.'
+    return
+  }
+
+  $mutex = New-Object System.Threading.Mutex($false, 'Local\LawVerifyPlatformRecovery')
+  $locked = $false
+  try {
+    $locked = $mutex.WaitOne(0)
+    if (!$locked) { return }
+    $nodePath = Get-CommandPath @('node.exe', 'node')
+    $state = Read-State
+    foreach ($service in @(
+      @{ name = 'cloudServer'; port = $cloudPort; url = "http://127.0.0.1:$cloudPort/api/web/site/config"; entry = (Join-Path $repoRoot 'cloud-server\dist\index.js') },
+      @{ name = 'web'; port = $webPort; url = "$webUrl"; entry = (Join-Path $repoRoot 'web\preview-server.mjs') }
+    )) {
+      if (Test-Url $service.url) { continue }
+      $owners = @(Get-NetTCPConnection -LocalPort $service.port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
+      foreach ($ownerId in $owners) {
+        $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerId"
+        # Never terminate a different application occupying a platform port.
+        if (!$owner -or $owner.Name -ne 'node.exe' -or !$owner.CommandLine.Contains($service.entry)) {
+          throw "Port $($service.port) is occupied by an unmanaged process; recovery skipped."
+        }
+        Stop-ProcessIfAlive $ownerId
+      }
+      $process = if ($service.name -eq 'cloudServer') { Start-CloudProcess $nodePath } else { Start-WebProcess $nodePath }
+      Wait-UntilAvailable -Url $service.url -Name $service.name
+      $next = @{ startedAt = (Get-Date).ToString('s') }
+      if ($state) {
+        $next.web = $state.web
+        $next.cloudServer = $state.cloudServer
+      }
+      $next[$service.name] = $process
+      Write-State $next
+      $state = Read-State
+      Add-Content -Path (Join-Path $runtimeDir 'recovery.log') -Encoding UTF8 -Value "$(Get-Date -Format s) recovered $($service.name) PID=$($process.pid)"
+    }
+  } finally {
+    if ($locked) { $mutex.ReleaseMutex() }
+    $mutex.Dispose()
+  }
 }
 
 function Show-Status {
@@ -222,4 +283,5 @@ switch ($Action) {
   'stop' { Stop-Platform; Write-Output 'Platform stopped.' }
   'restart' { Stop-Platform; Start-Platform }
   'status' { Show-Status }
+  'ensure' { Ensure-Platform }
 }

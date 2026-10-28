@@ -53,7 +53,6 @@ async function getLocalReleaseAssets(): Promise<LocalReleaseAsset[]> {
       return {
         id: releaseId,
         ...parseReleaseFileName(fileName)!,
-        channel: 'stable',
         sizeLabel: formatSizeLabel(fileStat.size),
         publishedAt: fileStat.mtime.toISOString(),
         sha256: '',
@@ -100,7 +99,7 @@ export async function getLatestPublicRelease(platform = 'win32', arch = 'x64') {
     throw new AppError('不支持的客户端平台或芯片类型。', 400, 'INVALID_RELEASE_PLATFORM')
   }
   const assets = await getLocalReleaseAssets()
-  const latest = assets.find((asset) => asset.platform === platform && asset.arch === arch)
+  const latest = assets.find((asset) => asset.platform === platform && asset.arch === arch && asset.channel === 'stable')
   return latest ? toPublicRelease(latest) : null
 }
 

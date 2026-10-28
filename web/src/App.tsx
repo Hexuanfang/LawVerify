@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 
 import { api, authStorage, consumeDesktopTokenFromUrl, isAuthApiError } from './api'
+import { HeroSlogan } from './HeroSlogan'
 
 type SiteRoute =
   | '/'
@@ -580,7 +581,7 @@ function isPointPackage(item: BillingPackage) {
 function SiteLink({ item, current }: { item: NavItem; current: SiteRoute }) {
   const isActive = current === item.href
   return (
-    <a className={`nav-link ${isActive ? 'active' : ''}`} href={item.href}>
+    <a className={`nav-link ${isActive ? 'active' : ''}`} href={item.href} aria-current={isActive ? 'page' : undefined}>
       {item.label}
     </a>
   )
@@ -617,7 +618,11 @@ function MarketingHero({
     <section className={`hero-card site-hero ${variantClassName}`.trim()}>
       <div className="site-hero-copy">
         <span className="eyebrow">{eyebrow}</span>
-        <h1>{title}</h1>
+        {variantClassName === 'site-hero-home' || variantClassName === 'site-hero-product'
+          ? <HeroSlogan title={title} />
+          : <h1>{title.split('\n').map((line, index) => (
+            <span className={`hero-title-line${index > 0 ? ' hero-title-accent' : ''}`} key={line}>{line}</span>
+          ))}</h1>}
         <p>{description}</p>
         <div className="hero-actions">
           <a className="primary-button" href={primaryHref}>{primaryLabel}</a>
@@ -632,9 +637,10 @@ function MarketingHero({
         ) : null}
       </div>
       <div className="site-hero-panel">
-        {metrics.map((item) => (
+        <div className="hero-orbit" aria-hidden="true" />
+        {metrics.map((item, index) => (
           <article key={`${item.label}-${item.value}`} className="site-hero-panel-card">
-            <span>{item.label}</span>
+            <div className="hero-panel-label"><span>{item.label}</span><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></div>
             <strong>{item.value}</strong>
             <p>{item.detail}</p>
           </article>
@@ -656,40 +662,40 @@ function HomePage({
   const highlightedPlans = plans.slice(0, 3)
   const strategicSignals = [
     {
-      title: '把案件处理放在一个连续界面里',
-      description: '证据整理、质证生成、法条核对与案例参照不再四处跳转，信息密度更高，操作也更顺。',
+      title: '材料很多，也能有条理',
+      description: '从证据原件中梳理关键事实、证明目的与争议焦点，让办案思路更清晰。',
     },
     {
-      title: '把商业能力从桌面端剥离到官网',
-      description: '充值、订单、发票、下载分发和账户管理全部放在云端账户中心，产品边界更清楚。',
+      title: '写作提速，判断不让步',
+      description: '围绕案件材料生成质证意见，把时间留给论证、打磨与专业判断。',
     },
     {
-      title: '把真实办案节奏作为设计起点',
-      description: '不是单点工具页面，而是围绕庭前准备、出稿高峰、反复核验和长期沉淀来组织能力。',
+      title: '每一处引用，都有来路',
+      description: '证据、法条与案例在侧边联动查看，让核验跟得上写作的节奏。',
     },
   ]
   const workflow = [
     '导入案件材料与证据原件',
     '在桌面端完成证据理解、生成与核验',
-    '通过账户中心统一处理套餐、订单和发票',
-    '通过下载中心持续获取稳定版本更新',
+    '逐句核验引用与证据关联',
+    '导出文书，继续打磨专业表达',
   ]
 
   return (
     <div className="public-page-stack">
       <MarketingHero
-        eyebrow="LawVerify"
-        title="为律师办案打造的证据质证工作台，把专业产出、账户中心与商业闭环放进同一套成熟产品里"
-        description="通过桌面端完成案件、证据、质证书和核验作业，通过官网登录账户中心完成套餐购买、订单查看、发票申请与客户端下载。"
+        eyebrow="你的 AI 办案搭档"
+        title={'少一点重复。\n多一点专业判断。'}
+        description="整理证据、起草质证意见、核验引用。在同一个工作台，让材料有条理，让思路更清晰。"
         primaryHref={downloadHref}
         primaryLabel="下载客户端"
-        secondaryHref="/console/billing"
-        secondaryLabel="进入账户中心"
-        badges={['连续文稿体验', '桌面端 + 云端协同', '真实支付与开票闭环']}
+        secondaryHref="/product"
+        secondaryLabel="看看能做什么"
+        badges={['证据整理', '质证写作', '句级核验']}
         metrics={[
-          { label: '核心能力', value: 'AI 质证生成', detail: '证据联动、法条关联、案例参照一体化。' },
-          { label: '使用方式', value: '桌面工作台', detail: '本地文件处理与云端账户体系解耦。' },
-          { label: '商业能力', value: '账户中心闭环', detail: '支付、订单、发票、下载与使用量管理。' },
+          { label: '理清材料', value: '证据，心中有数', detail: '关键事实与证明目的，一起梳理。' },
+          { label: '专注表达', value: '文书，更进一步', detail: '生成与改写衔接，把精力放在论证上。' },
+          { label: '有据可查', value: '引用，随时核验', detail: '证据、法条与案例，沿着引用找回原文。' },
         ]}
         variantClassName="site-hero-home"
       />
@@ -697,7 +703,7 @@ function HomePage({
       <section className="site-stat-grid">
         {strategicSignals.map((item) => (
           <article key={item.title} className="site-stat-card">
-            <span>设计重点</span>
+            <span className="feature-kicker">为办案而设计</span>
             <h3>{item.title}</h3>
             <p>{item.description}</p>
           </article>
@@ -707,8 +713,8 @@ function HomePage({
       <section className="card site-section-surface">
         <div className="section-head">
           <div>
-            <h3>从原始材料到最终交付的完整路径</h3>
-            <span className="muted">不是零散工具堆叠，而是一条可理解、可追溯、可商业化的办案工作流。</span>
+            <h3>从材料到文书，顺着思路走</h3>
+            <span className="muted">整理、写作、核验、导出，让每一步衔接起来。</span>
           </div>
         </div>
         <div className="site-flow-grid">
@@ -739,7 +745,6 @@ function HomePage({
               <span className="muted">
                 {plan.points > 0 ? `每月 ${plan.points.toLocaleString()} 积分` : '按团队方案定制额度'}
               </span>
-              <span className="muted">{plan.highlights[0] || '更多权益即将开放'}</span>
             </article>
           ))}
         </div>
@@ -769,7 +774,7 @@ function HomePage({
       <section className="card site-cta-band">
         <div>
           <span className="eyebrow">开始使用</span>
-          <h3>先下载桌面端体验完整工作流，再到账户中心完成套餐、订单与发票管理。</h3>
+          <h3>下一份文书，试试更顺手的方式。</h3>
         </div>
         <div className="hero-actions">
           <a className="primary-button" href={downloadHref}>立即下载</a>
@@ -895,17 +900,17 @@ function PricingPage({
     <div className="public-page-stack">
       <MarketingHero
         eyebrow="价格套餐"
-        title="先按办案强度选套餐，再按案件高峰补积分，让付费决策更清楚"
-        description="LawVerify 的定价围绕律师真实办案节奏来设计。先从免费版熟悉工作台，再根据案件频次升级月度套餐；遇到阶段性高峰时，也可以单独补充积分，不必为偶发需求长期抬高成本。"
+        title={'按你的节奏，\n选合适的方案。'}
+        description="先免费体验，再按办案频次选择套餐。临时出稿高峰，也可以单独补充积分。"
         primaryHref="/console/billing"
         primaryLabel="进入账户中心"
         secondaryHref="/download"
         secondaryLabel="下载客户端"
         badges={['先体验后升级', '月度套餐 + 积分包', '支持企业开票与统一结算']}
         metrics={[
-          { label: '决策方式', value: '先试再买', detail: '免费版先进入完整工作流，再决定是否升级。' },
-          { label: '购买结构', value: '套餐 + 积分包', detail: '持续办案看套餐，阶段性高峰看积分补充。' },
-          { label: '交付闭环', value: '账户中心统一完成', detail: '套餐、订单、发票和客户端下载全部集中。' },
+          { label: '轻松起步', value: '先体验，再决定', detail: '从免费版开始，找到适合自己的办案节奏。' },
+          { label: '按需选择', value: '忙的时候，更灵活', detail: '月度套餐之外，积分也可以单独补充。' },
+          { label: '团队使用', value: '一起办案，一起提效', detail: '支持团队方案与企业开票。' },
         ]}
         variantClassName="site-hero-pricing"
       />
@@ -914,7 +919,7 @@ function PricingPage({
         <article className="site-stat-card">
           <span>免费起步</span>
           <h3>先熟悉完整工作流</h3>
-          <p>免费版不是阉割展示页，而是让用户先进入真实流程，再决定是否持续开通。</p>
+          <p>从真实案件材料开始体验，再决定适合自己的使用方案。</p>
         </article>
         <article className="site-stat-card">
           <span>高频办案</span>
@@ -1055,7 +1060,12 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
 
   return (
     <div className="public-page-stack">
-      <div className="hero-actions" aria-label="选择下载版本">
+      <header className="page-intro">
+        <span className="eyebrow">下载中心</span>
+        <h1>你的工作台，随时就位。</h1>
+        <p>Windows 或 Mac，选择适合你的版本。</p>
+      </header>
+      <div className="hero-actions download-platform-switch" aria-label="选择下载版本">
         {targets.map((item) => (
           <button key={item.value} type="button"
             className={target === item.value ? 'primary-button' : 'ghost-button'}
@@ -1083,7 +1093,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
           <h3>{latestRelease ? `LawVerify ${latestRelease.version}` : '暂无可下载版本'}</h3>
           <p className="muted">
             {latestRelease
-              ? `${platformLabel} ${latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}，包体 ${latestRelease.sizeLabel}。`
+              ? `${platformLabel}${latestRelease.channel === 'stable' ? ' 稳定版' : ''}，包体 ${latestRelease.sizeLabel}。`
               : `${platformLabel} 安装包暂未开放下载。`}
           </p>
           {latestRelease ? <a className="primary-button" href={latestRelease.downloadUrl}>下载最新版本</a> : null}
@@ -1112,7 +1122,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
                 <strong>LawVerify {latestRelease.version} <span className="eyebrow" style={{ marginLeft: '8px' }}>最新</span></strong>
                 <span>{platformLabel}</span>
                 <span>{latestRelease.sizeLabel}</span>
-                <span>{latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}</span>
+                <span>{latestRelease.channel === 'test' ? 'DMG 安装包' : latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}</span>
                 <a className="primary-button" href={latestRelease.downloadUrl}>立即下载</a>
               </div>
               {historicalReleases.length > 0 ? (
@@ -1129,7 +1139,7 @@ function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
                       <strong>LawVerify {release.version}</strong>
                       <span>{platformLabel}</span>
                       <span>{release.sizeLabel}</span>
-                      <span>{release.channel === 'stable' ? '稳定版' : release.channel}</span>
+                      <span>{release.channel === 'test' ? 'DMG 安装包' : release.channel === 'stable' ? '稳定版' : release.channel}</span>
                       <a className="ghost-button" href={release.downloadUrl}>下载</a>
                     </div>
                   )) : null}
@@ -1176,7 +1186,7 @@ function ProductPage() {
     '导入案件材料与证据原件',
     '自动提炼争议事实与证明目标',
     '联动生成质证意见、法条依据与案例参照',
-    '通过账户中心完成充值、订单、发票与客户端管理',
+    '逐句核验引用，再导出文书继续打磨',
   ]
 
   const scenarios = [
@@ -1198,17 +1208,17 @@ function ProductPage() {
     <div className="public-page-stack">
       <MarketingHero
         eyebrow="面向律师办案"
-        title="文书生成、证据核验、法条核对、案例参照放到统一工作台，让操作更简单高效"
-        description="围绕律师真实办案链路，把常用能力集中在同一个工作界面中，减少来回切换，让材料整理、生成、核验和参照都更顺手。"
+        title={'理清每一份材料。\n写好每一份文书。'}
+        description="从证据理解到质证写作，再到引用核验。让常用能力围绕案件衔接，让你专注于更重要的判断。"
         primaryHref={downloadHref}
         primaryLabel="下载客户端"
         secondaryHref="/console/billing"
         secondaryLabel="进入账户中心"
         badges={['连续文稿体验', '引用联动', '知识库与案例参照协同']}
         metrics={[
-          { label: '文稿体验', value: '连续阅读与写作', detail: '正文聚焦表达，引用侧边联动，接近 Word 的阅读感受。' },
-          { label: '业务闭环', value: '真实交付链路', detail: '从证据处理到支付、订单、发票、下载都是真实系统。' },
-          { label: '产品架构', value: '桌面端 + 官网协同', detail: '本地高效处理材料，云端统一承接账户与商业能力。' },
+          { label: '顺手写作', value: '像文稿一样，连续', detail: '正文保持清爽，引用在侧边联动查看。' },
+          { label: '认真核验', value: '每句话，都能回看', detail: '逐句定位证据，检查表达与原件的关联。' },
+          { label: '积累经验', value: '办案方法，持续沉淀', detail: '案件梳理与知识库，支持后续写作和参照。' },
         ]}
         variantClassName="site-hero-product"
       />
@@ -1253,8 +1263,8 @@ function ProductPage() {
       <section className="card product-architecture-card site-section-surface">
         <div className="section-head">
           <div>
-            <h3>产品架构</h3>
-            <span className="muted">把高频作业、云端账户和商业能力拆清楚，产品才能长期稳定。</span>
+            <h3>让工作更连贯</h3>
+            <span className="muted">材料、文稿、引用，在同一个办案工作台衔接。</span>
           </div>
         </div>
         <div className="product-architecture-grid">
@@ -1267,8 +1277,8 @@ function ProductPage() {
             <span className="muted">负责套餐购买、积分管理、订单记录、发票申请与客户端分发。</span>
           </div>
           <div className="nested-card">
-            <strong>云端业务底座</strong>
-            <span className="muted">负责真实账户、数据库、支付回调、积分账本与权限校验。</span>
+            <strong>引用与原文</strong>
+            <span className="muted">从文稿回到证据原件，查看法条与案例参照，让依据有迹可循。</span>
           </div>
         </div>
       </section>
@@ -1311,7 +1321,6 @@ function DocsPage() {
         <div className="section-head">
           <div>
             <h3>帮助文档</h3>
-            <span className="muted">仅保留当前可用的文档入口。</span>
           </div>
         </div>
         <div className="docs-grid">
@@ -1326,24 +1335,6 @@ function DocsPage() {
         </div>
       </section>
 
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>已支持内容</h3>
-          </div>
-        </div>
-        <div className="table-like">
-        {docEntries.map((item) => (
-            <div key={item.title} className="table-row detailed">
-              <strong>{item.title}</strong>
-              <span>{item.description}</span>
-              <span>官网入口</span>
-              <span>已支持</span>
-              <a href={item.href}>{item.cta}</a>
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   )
 }
@@ -3443,10 +3434,11 @@ export default function App() {
   }
 
   return (
-    <div className="page-shell">
+    <div className={`page-shell ${route.startsWith('/admin') || route.startsWith('/console') ? 'workspace-site' : 'public-site'}`}>
+      <a className="skip-link" href="#main-content">跳到主要内容</a>
       <header className="topbar">
         <a className="brand" href="/">LawVerify</a>
-        <nav className="nav-row">
+        <nav className="nav-row" aria-label="官网导航">
           {siteNav.map((item) => (
             <SiteLink key={item.href} item={item} current={route} />
           ))}
@@ -3465,7 +3457,7 @@ export default function App() {
           )}
         </div>
       </header>
-      <main className={`content-shell${route.startsWith('/admin') ? ' admin-content-shell' : ''}`}>
+      <main id="main-content" className={`content-shell${route.startsWith('/admin') ? ' admin-content-shell' : ''}`}>
         <Content
           route={route}
           data={data}
@@ -3490,6 +3482,9 @@ export default function App() {
           onRegister={handleRegister}
         />
       </main>
+      {!route.startsWith('/admin') && !route.startsWith('/console') && (
+        <footer className="site-footer"><span>LawVerify</span><span>专注办案，有据可依。</span></footer>
+      )}
     </div>
   )
 }

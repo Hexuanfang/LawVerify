@@ -6,7 +6,7 @@
 - 当前版本以 `app/package.json` 为准，本次保留 0.1.52，不修改 Windows 安装包。
 - 未签名测试包采用本机临时签名（ad-hoc），不代表 Developer ID 签名或 Apple 公证。
 - 测试包写入 `app/release-mac-unsigned/`；正式签名包写入 `app/release-mac/`。
-- 测试包不会自动部署到官网，也不会出现在官网稳定版本列表。
+- 测试包不会随构建自动部署；经明确授权可手动开放官网下载，不进入稳定版自动更新。
 
 ## GitHub 云端构建
 
@@ -108,9 +108,40 @@ DMG/ZIP 完整性与 SHA256；正式包额外校验 Gatekeeper 和公证票据�
 未公证测试包可能被 Gatekeeper 阻止；仅用于受控测试，不要求用户关闭系统安全保护。
 GitHub runner 的后台健康检查不能证明所有 GUI 功能已经通过。
 
-验收通过后，仅将正式 DMG 放入 `app/release/`。复制时先用临时扩展名，
+正式发行验收通过后，将正式 DMG 放入 `app/release/`。复制时先用临时扩展名，
 复制完成并核对校验值后再原子重命名为最终名称，避免下载半成品。
 下载页按平台与芯片筛选；旧 Windows 客户端未带查询参数时仍返回 Windows x64。
 Mac 更新下载后校验 SHA256、打开 DMG 并退出应用，由用户拖入“应用程序”替换旧版。
 
-本次不自动修改或重启生产服务。官网与云端适配需要另行部署并完成下载验收。
+## 手动开放测试人员下载
+
+2026-10-28 经授权将两套 0.1.52 Mac 测试 DMG 校验后原子复制到 `app/release/`，
+并部署官网与云端分发服务。页面按普通 Mac 下载入口展示，不额外添加签名或公证提示；
+云端保留 `channel: test`，`/api/web/releases/latest` 始终排除测试包。
+
+官网入口：`https://lawagent.zhijing.fun/download`。
+原始测试产物仍保留在 `app/release-mac-unsigned/`。
+
+在 `cloud-server` 目录验证本地完整下载：
+
+```powershell
+node --import tsx src/scripts/test-mac-download.ts --full
+```
+
+在 `cloud-server` 目录验证公网完整下载：
+
+```powershell
+node --import tsx src/scripts/test-mac-download.ts --base https://lawagent.zhijing.fun --full
+```
+
+遇到传输连接中断时，可验证分段安全续传后的完整文件：
+
+```powershell
+node --import tsx src/scripts/test-mac-download.ts --base https://lawagent.zhijing.fun --full --resume --arch x64
+```
+
+`--arch` 可选 `arm64` 或 `x64`。需要本机代理时，配置 `HTTPS_PROXY`，
+并在 Node.js 命令中加入 `--use-env-proxy`；校验值不匹配不会被重试掩盖。
+
+测试覆盖两套真实 DMG 的元数据、稳定更新隔离、文件长度、Range、
+校验文件及完整下载后的 SHA256。测试包开放下载不代表已完成 Apple 公证或 GUI 验收。

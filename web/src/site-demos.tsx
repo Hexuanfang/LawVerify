@@ -1,5 +1,5 @@
 // 官网的示意组件：全部用 HTML/CSS 实现，示例内容来自《官网改版方案》第 4.2、4.4 节的虚构案件。
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { copyText, getDownloadPageUrl, isMobileDevice, track } from './site'
 
@@ -415,7 +415,7 @@ const heroNotes: Array<{ before: string; mark: string; after: string; tone: 'sup
   { before: '原告已于 2025 年 4 月 10 日完成全部设备交付，被告', mark: '当场验收合格', after: '。', tone: 'warn', icon: '!', label: '证据不足', detail: '送货单仅有签收，未见验收记录' },
   { before: '被告至今', mark: '未支付任何货款', after: '。', tone: 'conflict', icon: '✕', label: '矛盾', detail: '转账回单：已付首款 10 万元' },
   { before: '依据', mark: '《合同法》第一百五十九条', after: '，被告应当按照约定的数额支付价款。', tone: 'conflict', icon: '✕', label: '法条已废止', detail: '现行：《民法典》第六百二十六条' },
-  { before: '类案', mark: '（2024）京01XX民初XXXX号', after: '判决亦持相同观点。', tone: 'warn', icon: '!', label: '案号未能核实', detail: '法院官网正文未找到该案号' },
+  { before: '类案', mark: '（2024）京01XX民初XXXX号', after: '判决亦持相同观点。', tone: 'warn', icon: '!', label: '案号未能核实', detail: '法院官网未查到该案号，不代表案号有误' },
 ]
 
 export function HeroProductPreview() {
@@ -428,8 +428,15 @@ export function HeroProductPreview() {
       </div>
       <div className="hd-grid">
         <p className="hd-title">质证意见（节选）</p>
-        <span className="hd-title-gap hw-side-head">核验结果 · 5 处</span>
+        <span className="hd-title-gap hw-side-head">本案证据核验 · 3 处</span>
         {heroNotes.map((note, index) => (
+          <Fragment key={index}>
+          {index === 3 ? (
+            <>
+              <span className="hd-line hd-gap" aria-hidden="true" />
+              <span className="hw-side-head hw-side-head-2">法条与案例核验 · 2 处</span>
+            </>
+          ) : null}
           <div className="hd-row" key={index} style={{ ['--i' as string]: index }}>
             <p className={`hd-line hd-line-${note.tone}`}>{note.before}<span className="hd-mark">{note.mark}</span>{note.after}</p>
             <div className={`hd-note hd-note-${note.tone}`}>
@@ -437,6 +444,7 @@ export function HeroProductPreview() {
               <span><b>{note.label}</b><em>{note.detail}</em></span>
             </div>
           </div>
+          </Fragment>
         ))}
         <span className="hd-sample">示例案件 · 虚构内容</span>
       </div>
@@ -489,31 +497,6 @@ function useInView<T extends Element>(threshold = 0.2) {
   return [ref, inView] as const
 }
 
-function useCountUp(target: number, run: boolean, duration = 1600) {
-  const reducedMotion = usePrefersReducedMotion()
-  const [value, setValue] = useState(reducedMotion ? target : 0)
-  useEffect(() => {
-    if (reducedMotion) {
-      setValue(target)
-      return
-    }
-    if (!run) {
-      setValue(0)
-      return
-    }
-    let frame = 0
-    const start = performance.now()
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - start) / duration)
-      setValue(Math.round(target * (1 - Math.pow(1 - progress, 3))))
-      if (progress < 1) frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [run, target, duration, reducedMotion])
-  return value
-}
-
 /* ---------- 场景 1：超大文件材料处理 ---------- */
 
 const storyFiles = [
@@ -525,7 +508,6 @@ const storyFiles = [
 ]
 
 function SceneMaterials({ active }: { active: boolean }) {
-  const pages = useCountUp(1281, active)
   return (
     <div className={`scene scene-materials${active ? ' is-active' : ''}`}>
       <div className="sm-photo" style={{ backgroundImage: 'url(/media/files-binder.jpg)' }} aria-hidden="true" />
@@ -539,14 +521,11 @@ function SceneMaterials({ active }: { active: boolean }) {
           ))}
         </div>
       </div>
-      <div className="sm-counter">
-        <strong>{pages.toLocaleString()}</strong>
-        <span>页已逐页解析</span>
-      </div>
       <div className="sm-chips">
         <span>5 份材料 · 2 个文件夹</span>
         <span>单份最大 100MB</span>
         <span>增量导入 · 分批处理</span>
+        <span>Word、PDF、图片、文本</span>
       </div>
     </div>
   )
@@ -566,8 +545,8 @@ function SceneEvidence({ active }: { active: boolean }) {
       <div className="sm-photo" style={{ backgroundImage: 'url(/media/bg-glass.jpg)' }} aria-hidden="true" />
       <div className="se-desk">
         <div className="se-paper se-doc">
-          <span className="se-paper-label">起诉状 · 第 3 句</span>
-          <p>原告诉称，被告至今<mark className="se-hl">未支付任何货款</mark>，请求判令被告支付货款 48 万元。</p>
+          <span className="se-paper-label">答辩状 · 第 2 句</span>
+          <p>被告已于 2025 年 5 月 6 日向原告<mark className="se-hl">付清全部货款</mark>，不存在欠款。</p>
         </div>
         <div className="se-paper se-receipt">
           <span className="se-paper-label">证据 4 · 银行转账回单</span>
@@ -584,8 +563,8 @@ function SceneEvidence({ active }: { active: boolean }) {
         <span className="se-sem">语义比对<b>命中</b></span>
       </p>
       <div className="se-verdict">
-        <Stamp tone="bad">矛盾</Stamp>
-        <span>回单显示被告已付首款 10 万元，诉请金额需扣减</span>
+        <Stamp tone="ok">部分支持</Stamp>
+        <span>回单能证明被告付款 10 万元，不能证明 48 万元货款已全部付清</span>
       </div>
     </div>
   )
@@ -622,13 +601,13 @@ const storyChapters = [
   {
     kicker: '超大文件材料处理',
     title: '上千页的案卷，直接导入。',
-    body: '同一案件可链接多个本地文件夹，增量导入材料，保留原件并支持大文件分批处理。支持 Word、PDF、图片与文本，单份材料最大 100MB。',
-    points: ['多目录材料增量导入', '保留原件，逐页解析', '材料变更后可重新梳理'],
+    body: '同一案件可链接多个本地文件夹，增量导入材料，保留原件并支持大文件分批处理。支持 Word、PDF、图片与文本，单份材料最大 100MB；暂不支持录音、视频。',
+    points: ['多目录材料增量导入', '保留原件，分批处理', '材料变更后可重新梳理'],
   },
   {
     kicker: '语义级证据核验',
     title: '这句话由什么材料支持？',
-    body: '结合全案背景与段落语义，判断当前句是否需要证据支持；基于材料内容、显式提及和语义检索召回候选，再核对它与当前陈述的适配关系。',
+    body: '不仅找出相关材料，还核对这份材料能证明到哪一步。结合全案背景与段落语义召回候选证据，再判断它与当前陈述的适配关系。',
     points: ['证据关联锚定到具体句子', '支持、部分支持、矛盾、证据不足逐句标出', 'AI 摘录的引文必须真实出现在原件里'],
   },
   {
@@ -795,8 +774,8 @@ const audienceCards = [
   {
     key: 'solo',
     title: '个人律师',
-    lead: '适合高频处理庭审、举证质证、答辩和材料梳理，减少从原件到成稿之间的重复劳动。',
-    uses: ['上千页材料一次导入', '每句陈述对回证据原件', '法条、案号随手核验'],
+    lead: '从阅卷到签字前审阅，把文书里的事实依据与引用再核对一遍。',
+    uses: ['多个文件夹材料分批导入', '每句陈述对回证据原件', '法条、案号核对官方来源'],
     image: '/images/scene-solo.jpg',
     alt: '律师在办公桌前审阅案卷材料',
     cta: { label: '免费注册', href: '/register' },
@@ -804,8 +783,8 @@ const audienceCards = [
   {
     key: 'team',
     title: '律所团队',
-    lead: '适合多人协作管理案件资料，助理起草、律师逐句复核，并通过组织账户统一管理订单与开票。',
-    uses: ['助理起草，律师复核', '组织账户统一开票', '团队方案单独沟通'],
+    lead: '用于律师各自办理案件时的材料整理与文书核验；团队需求可联系我们沟通。',
+    uses: ['各自办案的材料整理', '文书逐句核验', '团队需求单独沟通'],
     image: '/images/scene-team.jpg',
     alt: '律所团队围绕电脑讨论案件',
     cta: { label: '咨询团队方案', href: '/console?apply=team#cocreate' },
@@ -813,8 +792,8 @@ const audienceCards = [
   {
     key: 'legal',
     title: '企业法务',
-    lead: '适合合规核验、合同争议分析和证据材料整理，让业务材料与法律结论之间保持可核验链路。',
-    uses: ['合同争议材料整理', '结论回到业务原件', '引用法条逐条核对'],
+    lead: '围绕争议案件材料，核对事实表述与法律引用。',
+    uses: ['合同争议材料整理', '事实表述对回业务原件', '引用法条逐条核对'],
     image: '/images/scene-legal.jpg',
     alt: '法务人员审阅合同文件',
     cta: { label: '免费注册', href: '/register' },
@@ -905,10 +884,10 @@ export function HeroBackdrop() {
 /* ---------- 工作流：可点选的四步，每步一个画面（案件助手放在第 2 步） ---------- */
 
 const wfSteps = [
-  { scene: '接案与阅卷', title: '链接材料，理解原件', body: '同一案件可链接多个本地文件夹，增量导入。从材料内容提取证明目的、关键事实、金额、时间、争议点与证明局限。' },
-  { scene: '举证准备', title: '确认代理立场，梳理举证思路', body: '说明代理当事人与办案目标，确认后按主张梳理成立要件与证明责任，区分支持材料、不利材料和补证事项。' },
-  { scene: '质证意见与法律文书', title: '撰写或导入文书', body: '接近 Word 的连续文稿体验，边生成边审阅，支持定向改写；已经写好的文书也可以直接导入。' },
-  { scene: '庭前审阅', title: '逐句核验，导出 Word', body: '沿句级导航检查关键事实陈述、引用来源与证明缺口，确认后导出 Word 继续打磨。' },
+  { scene: '接案与阅卷', title: '链接材料，理解原件', body: '同一案件可链接多个本地文件夹，增量导入；整理出证明目的、关键事实、争议点与证明局限。' },
+  { scene: '举证准备', title: '确认代理立场，梳理举证思路', body: '先确认代理立场，再梳理主张、成立要件、举证责任与补证缺口，供你判断取舍。' },
+  { scene: '质证意见与法律文书', title: '撰写或导入文书', body: '起草或导入 Word 文书，边生成边审阅，选中段落定向改写。' },
+  { scene: '庭前审阅', title: '逐句核验，导出 Word', body: '逐句核验事实依据，检查法条与案例引用，确认后导出 Word。' },
 ]
 
 const WF_AUTO_MS = 4500
@@ -1001,19 +980,21 @@ function WfReview() {
 
 export function WorkflowExplorer() {
   const [active, setActive] = useState(0)
+  const [userPicked, setUserPicked] = useState(false)
   const reducedMotion = usePrefersReducedMotion()
   const [ref, inView] = useInView<HTMLDivElement>(0.2)
+  const auto = !reducedMotion && inView && !userPicked
 
   useEffect(() => {
-    if (reducedMotion || !inView) return
+    if (!auto) return
     const timer = window.setTimeout(() => setActive((value) => (value + 1) % wfSteps.length), WF_AUTO_MS)
     return () => window.clearTimeout(timer)
-  }, [active, inView, reducedMotion])
+  }, [active, auto])
 
   return (
     <div
       ref={ref}
-      className={`wf${!reducedMotion && inView ? ' is-auto' : ''}`}
+      className={`wf${auto ? ' is-auto' : ''}`}
     >
       <div className="wf-steps" role="tablist" aria-label="典型工作流">
         {wfSteps.map((step, index) => (
@@ -1025,7 +1006,10 @@ export function WorkflowExplorer() {
             aria-selected={active === index}
             aria-controls="wf-panel"
             className={`wf-step${active === index ? ' is-active' : ''}`}
-            onClick={() => setActive(index)}
+            onClick={() => {
+              setActive(index)
+              setUserPicked(true)
+            }}
           >
             <span className="wf-num">{index + 1}</span>
             <span className="wf-step-main">
@@ -1096,6 +1080,7 @@ export function CompareToggle() {
         <ul className="cmp-points" key={mode}>
           {side.points.map((point) => <li key={point}>{point}</li>)}
         </ul>
+        <p className="cmp-note">示意对比，非特定模型实测。</p>
       </div>
       <div className="cmp-doc" aria-label={`${side.label}写出的同一段质证意见（示例）`}>
         <div className="cmp-doc-bar">

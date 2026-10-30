@@ -701,7 +701,7 @@ function PricingList({ plans, packages }: { plans: SitePlan[]; packages: Billing
         })}
         <a className="plist-row plist-team" href="/console?apply=team#cocreate">
           <span className="plist-name"><b>律所团队</b></span>
-          <span className="plist-desc">多人协作、统一开票<small>注册后在账户中心提交咨询</small></span>
+          <span className="plist-desc">团队需求按需沟通<small>注册后在账户中心提交咨询</small></span>
           <span className="plist-price">按需沟通</span>
           <span className="plist-go" aria-hidden="true">→</span>
         </a>
@@ -726,7 +726,7 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
         <HeroBackdrop />
         <div className="home-hero-inner">
           <div className="home-hero-copy">
-            <span className="home-hero-kicker">面向律师的证据联动与文书核验工作台</span>
+            <span className="home-hero-kicker">LawVerify · 律师的 AI 核验台</span>
             <h1 id="home-hero-title">
               <span>每一句话，</span>
               <span><mark>都经得起质证。</mark></span>
@@ -736,6 +736,7 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
               <RegisterButton label="免费注册，领体验积分" source="hero" />
               <DownloadEntryButton source="hero" />
             </div>
+            <p className="home-hero-meta"><span>支持 Windows、Mac（Apple 芯片 / Intel）</span><span>注册送体验积分</span></p>
             <MobileRegisterHint />
             <ul className="home-hero-feats" aria-label="产品特点">
               <li><b>超大文件材料处理</b><span>单份最大 100MB</span></li>
@@ -758,7 +759,7 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
 
       <section className="site-block" aria-labelledby="audience-title">
         <SectionTitle kicker="适用人群" title="独立执业、律所团队、企业法务，都用得上。">
-          按自己的办案方式选：一个人用个人套餐，团队注册后联系我们开通团队方案。
+          按自己的办案方式选：一个人用个人套餐；团队需求，注册后联系我们沟通。
         </SectionTitle>
         <AudienceSection />
       </section>
@@ -787,7 +788,7 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
         </div>
         <ul className="cc-points">
           <li><b>民商事诉讼律师优先</b><span>名额共 30 位</span></li>
-          <li><b>共建期间赠送专业版额度</b><span>用自己的真实案件，完整体验专业版</span></li>
+          <li><b>共建期间赠送专业版额度</b><span>具体额度与期限，在确认参与时说明</span></li>
           <li><b>反馈直接进入产品迭代</b><span>你提的问题和需求会被持续跟进</span></li>
         </ul>
       </section>
@@ -861,49 +862,60 @@ function PricingPage({ plans, packages }: { plans: SitePlan[]; packages: Billing
   )
 }
 
-const downloadTargets: Array<{ value: DownloadTarget; label: string }> = [
-  { value: 'win32-x64', label: 'Windows' },
-  { value: 'darwin-arm64', label: 'Mac · Apple 芯片' },
-  { value: 'darwin-x64', label: 'Mac · Intel' },
-]
-
 const firstSteps = [
   { title: '用官网账号登录', detail: '打开客户端，用在官网注册的账号登录。' },
   { title: '新建案件，关联证据文件夹', detail: '选择电脑上存放这个案件证据的文件夹，材料会增量同步。' },
   { title: '起草或导入文书，点任意一句开始核验', detail: '起草质证意见，或导入已写好的 Word，点任意一句查看对应原件。' },
 ]
 
+function DownloadIcon({ kind }: { kind: 'desktop' | 'laptop' }) {
+  // 通用电脑图标（不使用任何厂商标志）
+  return kind === 'desktop' ? (
+    <svg className="dl-icon" viewBox="0 0 48 48" aria-hidden="true">
+      <rect x="5" y="8" width="38" height="25" rx="3" fill="none" stroke="currentColor" strokeWidth="2.4" />
+      <path d="M19 40h10M24 33v7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  ) : (
+    <svg className="dl-icon" viewBox="0 0 48 48" aria-hidden="true">
+      <rect x="10" y="10" width="28" height="20" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2.4" />
+      <path d="M4 36h40l-3 3H7z" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+const downloadColumns: Array<{ value: DownloadTarget; name: string; sub: string; full: string; icon: 'desktop' | 'laptop'; how: string }> = [
+  { value: 'win32-x64', name: 'Windows', sub: 'Windows 电脑', full: 'Windows 版', icon: 'desktop', how: '下载后双击安装包，按提示完成安装。' },
+  { value: 'darwin-arm64', name: 'Mac', sub: 'Apple 芯片（M 系列）', full: 'Mac Apple 芯片版', icon: 'laptop', how: '打开 DMG，把 LawVerify 拖进“应用程序”。' },
+  { value: 'darwin-x64', name: 'Mac', sub: 'Intel 芯片', full: 'Mac Intel 版', icon: 'laptop', how: '打开 DMG，把 LawVerify 拖进“应用程序”。' },
+]
+
 function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; releasesStatus: 'loading' | 'ready' | 'error' }) {
   const mobile = useIsMobileDevice()
   const [showAll, setShowAll] = useState(false)
-  const [target, setTarget] = useState<DownloadTarget>(() => detectDefaultTarget())
-  const [userPicked, setUserPicked] = useState(false)
+  const [recommended, setRecommended] = useState<DownloadTarget>(() => detectDefaultTarget())
 
-  // Mac 访客：尽量识别出 Intel 芯片；识别不了就保持 Apple 芯片。用户手动切换后不再自动改。
+  // Mac 访客：尽量识别出 Intel 芯片；识别不了就保持 Apple 芯片。只用于“推荐”，三个版本始终都能直接下载。
   useEffect(() => {
     let cancelled = false
     void detectMacArch().then((arch) => {
-      if (!cancelled && arch && !userPicked) {
-        setTarget(arch === 'x64' ? 'darwin-x64' : 'darwin-arm64')
-      }
+      if (!cancelled && arch) setRecommended(arch === 'x64' ? 'darwin-x64' : 'darwin-arm64')
     })
     return () => {
       cancelled = true
     }
-    // 只在首次进入时识别一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const selectedReleases = releases.filter((release) => `${release.platform ?? 'win32'}-${release.arch ?? 'x64'}` === target)
-  const latestRelease = selectedReleases[0]
-  const historicalReleases = selectedReleases.slice(1)
-  const platformLabel = downloadTargets.find((item) => item.value === target)?.label ?? 'Windows'
-  const isMac = target.startsWith('darwin')
-  const formatPackage = (release: ReleaseItem) => (release.platform === 'darwin' ? 'DMG 安装包' : 'EXE 安装包')
+  const releasesFor = (target: DownloadTarget) => releases.filter((release) => `${release.platform ?? 'win32'}-${release.arch ?? 'x64'}` === target)
+  const latestOf = (target: DownloadTarget) => releasesFor(target)[0]
+  const historical = downloadColumns.flatMap((column) => releasesFor(column.value).slice(1).map((release) => ({ column, release })))
+  const checksums = downloadColumns
+    .map((column) => ({ column, release: latestOf(column.value) }))
+    .filter((item) => item.release && /^[a-f0-9]{64}$/i.test(item.release.sha256))
+  const formatDate = (value: string) => (value ? value.slice(0, 10) : '')
 
   return (
-    <div className="public-page-stack site-v2">
-      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/bg-light.jpg)' }}>
+    <div className="public-page-stack site-v2 download-v3">
+      <header className="page-intro page-hero page-hero-compact" style={{ ['--page-bg' as string]: 'url(/media/bg-light.jpg)' }}>
         <span className="section-kicker">下载</span>
         <h1>下载 LawVerify 客户端</h1>
         <p>支持 Windows 和 Mac（Apple 芯片 / Intel）。安装后用官网账号登录即可。</p>
@@ -919,72 +931,62 @@ function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; r
         </div>
       ) : null}
 
-      <div className="download-platform-block">
-        <div className="hero-actions download-platform-switch" role="group" aria-label="选择下载版本">
-          {downloadTargets.map((item) => (
-            <button key={item.value} type="button"
-              className={target === item.value ? 'primary-button' : 'ghost-button'}
-              aria-pressed={target === item.value}
-              onClick={() => { setTarget(item.value); setUserPicked(true); setShowAll(false) }}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-        {isMac ? (
-          <p className="download-chip-hint">不确定芯片类型？点击屏幕左上角苹果菜单 → 关于本机，查看“芯片”或“处理器”一栏：写着 Apple M 系列选 Apple 芯片，写着 Intel 选 Intel。</p>
-        ) : null}
-      </div>
-
-      <section className="download-card-v2" aria-live="polite">
-        {releasesStatus === 'loading' && !latestRelease ? (
-          <div className="download-card-body">
-            <span className="section-kicker">{platformLabel}</span>
-            <h2>正在获取最新版本…</h2>
-            <p className="muted">稍等片刻。</p>
-          </div>
-        ) : latestRelease ? (
-          <div className="download-card-body">
-            <span className="section-kicker">{platformLabel} · 最新版本</span>
-            <h2>LawVerify {latestRelease.version}</h2>
-            <p className="muted">
-              {formatPackage(latestRelease)}，{latestRelease.sizeLabel}。
-              {isMac ? '下载后打开 DMG，把 LawVerify 拖进“应用程序”。' : '下载后双击安装包，按提示完成安装。'}
-            </p>
-            <div className="hero-actions">
-              <a className="primary-button" href={latestRelease.downloadUrl} onClick={() => track('download_click', `${target}:${latestRelease.version}`)}>
-                下载 {platformLabel} 版
-              </a>
+      <section className="dl-grid" aria-label="选择安装包" aria-live="polite">
+        {downloadColumns.map((column) => {
+          const release = latestOf(column.value)
+          const isRec = !mobile && recommended === column.value
+          return (
+            <div key={column.value} className={`dl-col${isRec ? ' is-rec' : ''}`}>
+              <span className="dl-rec">{isRec ? <mark>推荐你下载这个</mark> : null}</span>
+              <DownloadIcon kind={column.icon} />
+              <h2 className="dl-name">{column.name}<small>{column.sub}</small></h2>
+              {release ? (
+                <>
+                  <p className="dl-version">
+                    LawVerify {release.version}
+                    {release.channel && release.channel !== 'stable' ? <span className="dl-beta">测试版</span> : null}
+                  </p>
+                  <p className="dl-meta">
+                    {[formatDate(release.publishedAt) ? `${formatDate(release.publishedAt)} 发布` : '', release.platform === 'darwin' ? 'DMG 安装包' : 'EXE 安装包', release.sizeLabel].filter(Boolean).join(' · ')}
+                  </p>
+                  <a
+                    className={isRec ? 'primary-button dl-btn' : 'ghost-button dl-btn'}
+                    href={release.downloadUrl}
+                    onClick={() => track('download_click', `${column.value}:${release.version}`)}
+                  >
+                    下载 {column.full}
+                  </a>
+                  <p className="dl-how">{column.how}</p>
+                </>
+              ) : releasesStatus === 'loading' ? (
+                <p className="dl-meta">正在获取最新版本…</p>
+              ) : releasesStatus === 'error' ? (
+                <>
+                  <p className="dl-meta">暂时无法获取版本信息</p>
+                  <button type="button" className="ghost-button dl-btn" onClick={() => window.location.reload()}>刷新重试</button>
+                </>
+              ) : (
+                <p className="dl-meta">这个版本暂未开放下载，请稍后再来。</p>
+              )}
             </div>
-            {/^[a-f0-9]{64}$/i.test(latestRelease.sha256) ? (
-              <details className="download-checksum">
-                <summary>安装包完整性校验</summary>
-                <p className="muted">下载完成后再运行安装包。校验值不一致时，请重新下载。</p>
-                <code>{latestRelease.sha256}</code>
-                {latestRelease.checksumUrl ? <a className="ghost-button" href={latestRelease.checksumUrl}>下载 SHA256 校验文件</a> : null}
-              </details>
-            ) : null}
-          </div>
-        ) : (
-          <div className="download-card-body">
-            <span className="section-kicker">{platformLabel}</span>
-            <h2>{releasesStatus === 'error' ? '暂时无法获取版本信息' : '这个版本暂未开放下载'}</h2>
-            <p className="muted">
-              {releasesStatus === 'error'
-                ? '网络或服务暂时不可用，请刷新页面重试。'
-                : `${platformLabel} 安装包还没有上架，可以切换到其他版本，或稍后再来。`}
-            </p>
-          </div>
-        )}
+          )
+        })}
       </section>
 
-      <section className="site-block" aria-labelledby="first-steps-title">
+      <p className="dl-chip-hint">
+        <b>不确定是哪种 Mac？</b>点击屏幕左上角苹果菜单 → 关于本机，看“芯片”或“处理器”一栏：写着 Apple M 系列选 Apple 芯片，写着 Intel 选 Intel。
+      </p>
+
+      <section className="site-block dl-after" aria-labelledby="first-steps-title">
         <SectionTitle kicker="安装之后" title="第一步做什么？" />
-        <ol className="first-steps">
+        <ol className="dl-steps">
           {firstSteps.map((step, index) => (
             <li key={step.title}>
-              <span className="workflow-index">{index + 1}</span>
-              <strong>{step.title}</strong>
-              <span>{step.detail}</span>
+              <span className="dl-step-num">{index + 1}</span>
+              <span>
+                <strong>{step.title}</strong>
+                <span>{step.detail}</span>
+              </span>
             </li>
           ))}
         </ol>
@@ -993,21 +995,32 @@ function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; r
         </div>
       </section>
 
-      {historicalReleases.length ? (
-        <section className="site-block" aria-labelledby="history-title">
-          <button type="button" className="text-link history-toggle" onClick={() => setShowAll(!showAll)} aria-expanded={showAll}>
-            {showAll ? '收起历史版本' : `查看 ${platformLabel} 历史版本（${historicalReleases.length}）`}
-          </button>
-          {showAll ? (
-            <div className="table-like">
-              {historicalReleases.map((release) => (
-                <div key={release.id} className="table-row detailed history-row">
-                  <strong>LawVerify {release.version}</strong>
-                  <span>{release.sizeLabel}</span>
-                  <a className="ghost-button" href={release.downloadUrl} onClick={() => track('download_click', `${target}:${release.version}:history`)}>下载</a>
+      {checksums.length || historical.length ? (
+        <section className="dl-extra" aria-label="校验与历史版本">
+          {checksums.length ? (
+            <details className="dl-details">
+              <summary>安装包完整性校验</summary>
+              <p className="muted">下载完成后再运行安装包。校验值不一致时，请重新下载。</p>
+              {checksums.map(({ column, release }) => (
+                <div key={column.value} className="dl-sum">
+                  <span>{column.full} {release.version}</span>
+                  <code>{release.sha256}</code>
+                  {release.checksumUrl ? <a className="text-link" href={release.checksumUrl}>下载 SHA256 校验文件</a> : null}
                 </div>
               ))}
-            </div>
+            </details>
+          ) : null}
+          {historical.length ? (
+            <details className="dl-details" open={showAll} onToggle={(event) => setShowAll((event.target as HTMLDetailsElement).open)}>
+              <summary>历史版本（{historical.length}）</summary>
+              {historical.map(({ column, release }) => (
+                <div key={release.id} className="dl-hist">
+                  <strong>{column.full} {release.version}</strong>
+                  <span>{[formatDate(release.publishedAt), release.sizeLabel].filter(Boolean).join(' · ')}</span>
+                  <a className="text-link" href={release.downloadUrl} onClick={() => track('download_click', `${column.value}:${release.version}:history`)}>下载</a>
+                </div>
+              ))}
+            </details>
           ) : null}
         </section>
       ) : null}
@@ -1093,7 +1106,7 @@ function ProductPage() {
         id="materials"
         kicker="超大文件材料处理"
         title="整个案卷文件夹，直接关联。"
-        lead="同一案件可以关联多个本地文件夹，材料增量导入；单份材料最大 100MB，上千页逐页解析。"
+        lead="同一案件可以关联多个本地文件夹，材料增量导入、分批处理；单份材料最大 100MB。"
         points={['支持 Word、PDF、图片、文本', '从原件提取证明目的、关键事实、金额、时间与证明局限', '材料变更后可以重新梳理']}
         bg="/media/files-binder.jpg"
       >
@@ -1279,7 +1292,7 @@ const siteFaqs: Array<{ question: string; answer: string }> = [
   },
   {
     question: '能处理多大的案卷材料？',
-    answer: '单份材料最大 100MB，上千页的 PDF 也能逐页解析。材料较多时会排队处理，超过上限的文件需要拆分后再导入。',
+    answer: '单份材料最大 100MB，支持 Word、PDF、图片和文本，暂不支持录音、视频。材料较多时会排队分批处理，超过上限的文件需要拆分后再导入。扫描件的识别效果受清晰度影响，关键内容请核对原件。',
   },
   {
     question: '能核对文书里引用的法条和案例吗？',
@@ -2642,7 +2655,7 @@ function CocreateApplyCard() {
       <div className="section-head">
         <div>
           <h3>申请成为共建律师 / 律所团队咨询</h3>
-          <span className="muted">共建律师：民商事诉讼律师优先，共建期间赠送专业版额度，你的反馈直接进入产品迭代。律所团队：多人协作、统一开票。</span>
+          <span className="muted">共建律师：民商事诉讼律师优先，共建期间赠送专业版额度，你的反馈直接进入产品迭代。律所团队：说明团队规模和需求，我们会联系你沟通。</span>
         </div>
         {!open ? <button type="button" className="primary-button" onClick={() => setOpen(true)}>填写申请</button> : null}
       </div>

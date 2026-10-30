@@ -169,6 +169,26 @@ export const api = {
       method: 'POST',
     })
   },
+  // 复用桌面端已在用的反馈接口：官网的渠道来源记录、共建申请、律所咨询都走这里，后台 /admin/feedback 查看。
+  submitFeedback(payload: {
+    feedbackType: 'bug' | 'suggestion' | 'experience' | 'other'
+    title: string
+    content: string
+    contact?: string
+    clientPlatform?: string
+    pageContext?: string
+  }) {
+    return request<{
+      item: {
+        id: string
+        status: 'pending' | 'reviewing' | 'resolved' | 'ignored'
+        createdAt: string
+      }
+    }>('/api/account/feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
   getProfile() {
     return request<{
       user: {

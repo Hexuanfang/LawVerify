@@ -1,8 +1,47 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 
 import { api, authStorage, consumeDesktopTokenFromUrl, isAuthApiError } from './api'
-import { HeroSlogan } from './HeroSlogan'
+import {
+  applyPageMeta,
+  captureApplyIntent,
+  captureSiteSource,
+  clearApplyIntent,
+  clearSiteSource,
+  describeSiteSource,
+  detectDefaultTarget,
+  detectMacArch,
+  loadAnalytics,
+  readApplyIntent,
+  readSiteSource,
+  setPageJsonLd,
+  siteConfig,
+  track,
+  type ApplyIntent,
+  type DownloadTarget,
+} from './site'
+import {
+  CopyDownloadLinkButton,
+  DownloadEntryButton,
+  HeroBackdrop,
+  HeroProductPreview,
+  AudienceSection,
+  CapabilityStory,
+  CompareToggle,
+  ImportPreview,
+  SectionTitle,
+  StatusBadge,
+  DraftEditor,
+  LegalCheckShowcase,
+  MaterialsPanel,
+  ProductNav,
+  StrategyMap,
+  VerifyDemo,
+  WorkflowExplorer,
+  useIsMobileDevice,
+  verifyStatusMeta,
+  type VerifyStatus,
+} from './site-demos'
 
 type SiteRoute =
   | '/'
@@ -10,6 +49,9 @@ type SiteRoute =
   | '/pricing'
   | '/download'
   | '/docs'
+  | '/faq'
+  | '/verification'
+  | '/ai-notice'
   | '/login'
   | '/register'
   | '/console'
@@ -295,10 +337,10 @@ const emptyInvoiceForm: InvoiceFormValue = {
 }
 
 const siteNav: NavItem[] = [
-  { label: '产品介绍', href: '/product' },
-  { label: '价格套餐', href: '/pricing' },
-  { label: '下载中心', href: '/download' },
-  { label: '帮助文档', href: '/docs' },
+  { label: '产品', href: '/product' },
+  { label: '价格', href: '/pricing' },
+  { label: '下载', href: '/download' },
+  { label: '帮助', href: '/docs' },
 ]
 
 const consoleNav: NavItem[] = [
@@ -324,8 +366,8 @@ const fallbackData: DashboardData = {
       name: '免费版',
       priceLabel: '免费',
       billingCycle: 'monthly',
-      description: '适合先体验核心能力与轻量试用。',
-      highlights: ['每月 100 积分', '可进入账户中心', '支持后续按需购买积分'],
+      description: '注册即送，先用自己的真实案件试。',
+      highlights: ['注册即送体验积分'],
       points: 100,
     },
     {
@@ -463,6 +505,9 @@ function normalizeRoute(pathname: string): SiteRoute {
     '/pricing',
     '/download',
     '/docs',
+    '/faq',
+    '/verification',
+    '/ai-notice',
     '/login',
     '/register',
     '/console',
@@ -587,755 +632,802 @@ function SiteLink({ item, current }: { item: NavItem; current: SiteRoute }) {
   )
 }
 
-function MarketingHero({
-  eyebrow,
-  title,
-  description,
-  primaryHref,
-  primaryLabel,
-  secondaryHref,
-  secondaryLabel,
-  badges,
-  metrics,
-  variantClassName = '',
-}: {
-  eyebrow: string
-  title: string
-  description: string
-  primaryHref: string
-  primaryLabel: string
-  secondaryHref: string
-  secondaryLabel: string
-  badges?: string[]
-  metrics: Array<{
-    label: string
-    value: string
-    detail: string
-  }>
-  variantClassName?: string
-}) {
+function RegisterButton({ label = '免费注册', source, className = 'primary-button' }: { label?: string; source: string; className?: string }) {
   return (
-    <section className={`hero-card site-hero ${variantClassName}`.trim()}>
-      <div className="site-hero-copy">
-        <span className="eyebrow">{eyebrow}</span>
-        {variantClassName === 'site-hero-home' || variantClassName === 'site-hero-product'
-          ? <HeroSlogan title={title} />
-          : <h1>{title.split('\n').map((line, index) => (
-            <span className={`hero-title-line${index > 0 ? ' hero-title-accent' : ''}`} key={line}>{line}</span>
-          ))}</h1>}
-        <p>{description}</p>
-        <div className="hero-actions">
-          <a className="primary-button" href={primaryHref}>{primaryLabel}</a>
-          <a className="ghost-button" href={secondaryHref}>{secondaryLabel}</a>
-        </div>
-        {badges?.length ? (
-          <div className="site-inline-badges">
-            {badges.map((item) => (
-              <span key={item}>{item}</span>
-            ))}
+    <a className={className} href="/register" onClick={() => track('hero_cta_click', `register:${source}`)}>
+      {label}
+    </a>
+  )
+}
+
+function MobileRegisterHint() {
+  const mobile = useIsMobileDevice()
+  if (!mobile) return null
+  return <p className="mobile-register-hint">注册后在电脑上下载客户端，用同一账号登录即可。</p>
+}
+
+function getPublicPlans(plans: SitePlan[]) {
+  // 律所团队单独做咨询卡片，套餐列表只保留免费 / 个人版 / 专业版。
+  return plans.filter((plan) => plan.billingCycle !== 'custom' && plan.id !== 'team-custom')
+}
+
+function getPlanDescription(plan: SitePlan) {
+  if (plan.id.startsWith('free') || plan.priceLabel === '免费') {
+    return '注册即送，先用自己的真实案件试。'
+  }
+  if (plan.id.startsWith('personal')) {
+    return '适合个人律师持续办案。'
+  }
+  if (plan.id.startsWith('pro')) {
+    return '适合高频办案、文书反复核验。'
+  }
+  return plan.description
+}
+
+function getPlanPointsLabel(plan: SitePlan) {
+  if (plan.points <= 0) return ''
+  return plan.billingCycle === 'monthly'
+    ? `每月 ${plan.points.toLocaleString()} 积分`
+    : `${plan.points.toLocaleString()} 积分`
+}
+
+function PricingList({ plans, packages }: { plans: SitePlan[]; packages: BillingPackage[] }) {
+  const publicPlans = getPublicPlans(plans)
+  const pointPackages = packages.filter(isPointPackage)
+  return (
+    <div className="plist">
+      <div className="plist-rows">
+        {publicPlans.map((plan) => {
+          const isFree = plan.id.startsWith('free') || plan.priceLabel === '免费'
+          return (
+            <a
+              key={plan.id}
+              className={`plist-row${plan.recommended ? ' is-rec' : ''}`}
+              href={isFree ? '/register' : '/console/billing'}
+              onClick={() => track('hero_cta_click', `pricing_row:${plan.id}`)}
+            >
+              <span className="plist-name">
+                <b>{plan.name}</b>
+                {plan.recommended ? <em>推荐</em> : null}
+              </span>
+              <span className="plist-desc">
+                {getPlanDescription(plan)}
+                {getPlanPointsLabel(plan) ? <small>{getPlanPointsLabel(plan)}</small> : null}
+              </span>
+              <span className="plist-price">{plan.priceLabel}</span>
+              <span className="plist-go" aria-hidden="true">→</span>
+            </a>
+          )
+        })}
+        <a className="plist-row plist-team" href="/console?apply=team#cocreate">
+          <span className="plist-name"><b>律所团队</b></span>
+          <span className="plist-desc">多人协作、统一开票<small>注册后在账户中心提交咨询</small></span>
+          <span className="plist-price">按需沟通</span>
+          <span className="plist-go" aria-hidden="true">→</span>
+        </a>
+        <p className="plist-points">
+          不想升级套餐，也可以单独补充积分
+          {pointPackages.length ? `：${pointPackages.map((item) => `${item.points.toLocaleString()} 积分 ${formatCurrency(item.amountFen)}`).join(' · ')}` : ''}。
+          <a href="/pricing">查看完整价格 →</a>
+        </p>
+      </div>
+      <figure className="plist-photo">
+        <img src="/media/files-box.jpg" alt="律师从文件箱中取出案卷材料" loading="lazy" />
+        <figcaption><b>注册即送体验积分</b>先用自己的真实案件试</figcaption>
+      </figure>
+    </div>
+  )
+}
+
+function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPackage[] }) {
+  return (
+    <div className="public-page-stack site-v2 home-v4">
+      <section className="home-hero" aria-labelledby="home-hero-title">
+        <HeroBackdrop />
+        <div className="home-hero-inner">
+          <div className="home-hero-copy">
+            <span className="home-hero-kicker">面向律师的证据联动与文书核验工作台</span>
+            <h1 id="home-hero-title">
+              <span>每一句话，</span>
+              <span><mark>都经得起质证。</mark></span>
+            </h1>
+            <p className="home-hero-lead">支持超大文件材料处理，从语义上把每一句陈述对回证据原件，并核验文书中引用的法条与案例。</p>
+            <div className="hero-actions">
+              <RegisterButton label="免费注册，领体验积分" source="hero" />
+              <DownloadEntryButton source="hero" />
+            </div>
+            <MobileRegisterHint />
+            <ul className="home-hero-feats" aria-label="产品特点">
+              <li><b>超大文件材料处理</b><span>单份最大 100MB</span></li>
+              <li><b>语义级证据核验</b><span>每句陈述对回原件</span></li>
+              <li><b>案例法条核验</b><span>核对官方来源</span></li>
+            </ul>
           </div>
+          <HeroProductPreview />
+        </div>
+      </section>
+
+      <CapabilityStory />
+
+      <section className="site-block" aria-labelledby="workflow-title">
+        <SectionTitle kicker="典型工作流" title="从材料到文书，顺着思路走。">
+          链接材料、理解原件、确认代理立场、撰写文书、逐句核验，再导出 Word。点任意一步看看它在做什么。
+        </SectionTitle>
+        <WorkflowExplorer />
+      </section>
+
+      <section className="site-block" aria-labelledby="audience-title">
+        <SectionTitle kicker="适用人群" title="独立执业、律所团队、企业法务，都用得上。">
+          按自己的办案方式选：一个人用个人套餐，团队注册后联系我们开通团队方案。
+        </SectionTitle>
+        <AudienceSection />
+      </section>
+
+      <section className="site-block" aria-labelledby="compare-title">
+        <SectionTitle kicker="和通用 AI 的区别" title="不只是写出来，还要核得住。">
+          同一段质证意见：通用 AI 写完就交给你；LawVerify 先确认代理立场，再把每句陈述对回证据原件、核对引用的法条。切换看看差别。
+        </SectionTitle>
+        <CompareToggle />
+      </section>
+
+      <section className="site-block" aria-labelledby="pricing-summary-title">
+        <SectionTitle kicker="订阅套餐" title="先从免费版体验，再按办案强度升级。">
+          注册即送体验积分；不想升级套餐时，也可以单独补充积分。按实际使用扣积分，每笔扣费明细都能在账户中心查看。
+        </SectionTitle>
+        <PricingList plans={plans} packages={packages} />
+      </section>
+
+      <section className="cocreate" id="cocreate-section" aria-labelledby="cocreate-title">
+        <div className="cc-main">
+          <span className="section-kicker">共建计划</span>
+          <h2 id="cocreate-title">招募 <mark>30</mark> 位共建律师</h2>
+          <a className="primary-button" href="/register?apply=cocreate" onClick={() => track('hero_cta_click', 'register:cocreate')}>
+            注册并申请
+          </a>
+        </div>
+        <ul className="cc-points">
+          <li><b>民商事诉讼律师优先</b><span>名额共 30 位</span></li>
+          <li><b>共建期间赠送专业版额度</b><span>用自己的真实案件，完整体验专业版</span></li>
+          <li><b>反馈直接进入产品迭代</b><span>你提的问题和需求会被持续跟进</span></li>
+        </ul>
+      </section>
+
+    </div>
+  )
+}
+
+function StatusLegend() {
+  const statuses: VerifyStatus[] = ['support', 'partial', 'insufficient', 'conflict']
+  return (
+    <ul className="status-legend" aria-label="核验状态说明">
+      {statuses.map((status) => (
+        <li key={status}>
+          <StatusBadge status={status} />
+          <span>{verifyStatusMeta[status].description}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function PricingPage({ plans, packages }: { plans: SitePlan[]; packages: BillingPackage[] }) {
+  useEffect(() => {
+    track('pricing_view')
+  }, [])
+
+  const pricingFaqs = [
+    {
+      question: '积分怎么扣？',
+      answer: '积分是 LawVerify 的统一使用额度，按实际使用的功能扣减。每一笔扣费明细，都可以在账户中心的「使用情况」页查看。',
+    },
+    {
+      question: '免费版和月度套餐有什么区别？',
+      answer: '免费版注册即送体验积分，适合先用自己的真实案件试；月度套餐每月发放更多积分，适合持续办案。',
+    },
+    {
+      question: '积分包什么时候用？',
+      answer: '不想升级套餐、只是某段时间用得多时，可以单独补充积分，不改变当前套餐。',
+    },
+    {
+      question: '能开发票吗？',
+      answer: '可以。在账户中心「发票管理」提交开票信息即可申请。',
+    },
+  ]
+
+  return (
+    <div className="public-page-stack site-v2">
+      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/files-box.jpg)' }}>
+        <span className="section-kicker">价格</span>
+        <h1>先免费试，再按办案强度选。</h1>
+        <p>注册即送体验积分，先用自己的真实案件试。按实际使用扣积分，每笔扣费明细都能在账户中心查看。</p>
+      </header>
+
+      <section className="site-block" aria-label="套餐">
+        <PricingList plans={plans} packages={packages} />
+      </section>
+
+      <section className="site-block" aria-labelledby="pricing-faq-title">
+        <SectionTitle kicker="常见问题" title="关于价格" />
+        <dl className="faq-list">
+          {pricingFaqs.map((item) => (
+            <div key={item.question} className="faq-item">
+              <dt>{item.question}</dt>
+              <dd>{item.answer}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </div>
+  )
+}
+
+const downloadTargets: Array<{ value: DownloadTarget; label: string }> = [
+  { value: 'win32-x64', label: 'Windows' },
+  { value: 'darwin-arm64', label: 'Mac · Apple 芯片' },
+  { value: 'darwin-x64', label: 'Mac · Intel' },
+]
+
+const firstSteps = [
+  { title: '用官网账号登录', detail: '打开客户端，用在官网注册的账号登录。' },
+  { title: '新建案件，关联证据文件夹', detail: '选择电脑上存放这个案件证据的文件夹，材料会增量同步。' },
+  { title: '起草或导入文书，点任意一句开始核验', detail: '起草质证意见，或导入已写好的 Word，点任意一句查看对应原件。' },
+]
+
+function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; releasesStatus: 'loading' | 'ready' | 'error' }) {
+  const mobile = useIsMobileDevice()
+  const [showAll, setShowAll] = useState(false)
+  const [target, setTarget] = useState<DownloadTarget>(() => detectDefaultTarget())
+  const [userPicked, setUserPicked] = useState(false)
+
+  // Mac 访客：尽量识别出 Intel 芯片；识别不了就保持 Apple 芯片。用户手动切换后不再自动改。
+  useEffect(() => {
+    let cancelled = false
+    void detectMacArch().then((arch) => {
+      if (!cancelled && arch && !userPicked) {
+        setTarget(arch === 'x64' ? 'darwin-x64' : 'darwin-arm64')
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // 只在首次进入时识别一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const selectedReleases = releases.filter((release) => `${release.platform ?? 'win32'}-${release.arch ?? 'x64'}` === target)
+  const latestRelease = selectedReleases[0]
+  const historicalReleases = selectedReleases.slice(1)
+  const platformLabel = downloadTargets.find((item) => item.value === target)?.label ?? 'Windows'
+  const isMac = target.startsWith('darwin')
+  const formatPackage = (release: ReleaseItem) => (release.platform === 'darwin' ? 'DMG 安装包' : 'EXE 安装包')
+
+  return (
+    <div className="public-page-stack site-v2">
+      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/bg-light.jpg)' }}>
+        <span className="section-kicker">下载</span>
+        <h1>下载 LawVerify 客户端</h1>
+        <p>支持 Windows 和 Mac（Apple 芯片 / Intel）。安装后用官网账号登录即可。</p>
+      </header>
+
+      {mobile ? (
+        <div className="mobile-download-note">
+          <p>手机上无法安装客户端。复制下载页链接，在电脑上打开下载；也可以先用手机注册账号。</p>
+          <div className="hero-actions">
+            <CopyDownloadLinkButton className="primary-button" source="download_mobile" />
+            <a className="ghost-button" href="/register">免费注册</a>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="download-platform-block">
+        <div className="hero-actions download-platform-switch" role="group" aria-label="选择下载版本">
+          {downloadTargets.map((item) => (
+            <button key={item.value} type="button"
+              className={target === item.value ? 'primary-button' : 'ghost-button'}
+              aria-pressed={target === item.value}
+              onClick={() => { setTarget(item.value); setUserPicked(true); setShowAll(false) }}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {isMac ? (
+          <p className="download-chip-hint">不确定芯片类型？点击屏幕左上角苹果菜单 → 关于本机，查看“芯片”或“处理器”一栏：写着 Apple M 系列选 Apple 芯片，写着 Intel 选 Intel。</p>
         ) : null}
       </div>
-      <div className="site-hero-panel">
-        <div className="hero-orbit" aria-hidden="true" />
-        {metrics.map((item, index) => (
-          <article key={`${item.label}-${item.value}`} className="site-hero-panel-card">
-            <div className="hero-panel-label"><span>{item.label}</span><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span></div>
-            <strong>{item.value}</strong>
-            <p>{item.detail}</p>
-          </article>
-        ))}
+
+      <section className="download-card-v2" aria-live="polite">
+        {releasesStatus === 'loading' && !latestRelease ? (
+          <div className="download-card-body">
+            <span className="section-kicker">{platformLabel}</span>
+            <h2>正在获取最新版本…</h2>
+            <p className="muted">稍等片刻。</p>
+          </div>
+        ) : latestRelease ? (
+          <div className="download-card-body">
+            <span className="section-kicker">{platformLabel} · 最新版本</span>
+            <h2>LawVerify {latestRelease.version}</h2>
+            <p className="muted">
+              {formatPackage(latestRelease)}，{latestRelease.sizeLabel}。
+              {isMac ? '下载后打开 DMG，把 LawVerify 拖进“应用程序”。' : '下载后双击安装包，按提示完成安装。'}
+            </p>
+            <div className="hero-actions">
+              <a className="primary-button" href={latestRelease.downloadUrl} onClick={() => track('download_click', `${target}:${latestRelease.version}`)}>
+                下载 {platformLabel} 版
+              </a>
+            </div>
+            {/^[a-f0-9]{64}$/i.test(latestRelease.sha256) ? (
+              <details className="download-checksum">
+                <summary>安装包完整性校验</summary>
+                <p className="muted">下载完成后再运行安装包。校验值不一致时，请重新下载。</p>
+                <code>{latestRelease.sha256}</code>
+                {latestRelease.checksumUrl ? <a className="ghost-button" href={latestRelease.checksumUrl}>下载 SHA256 校验文件</a> : null}
+              </details>
+            ) : null}
+          </div>
+        ) : (
+          <div className="download-card-body">
+            <span className="section-kicker">{platformLabel}</span>
+            <h2>{releasesStatus === 'error' ? '暂时无法获取版本信息' : '这个版本暂未开放下载'}</h2>
+            <p className="muted">
+              {releasesStatus === 'error'
+                ? '网络或服务暂时不可用，请刷新页面重试。'
+                : `${platformLabel} 安装包还没有上架，可以切换到其他版本，或稍后再来。`}
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className="site-block" aria-labelledby="first-steps-title">
+        <SectionTitle kicker="安装之后" title="第一步做什么？" />
+        <ol className="first-steps">
+          {firstSteps.map((step, index) => (
+            <li key={step.title}>
+              <span className="workflow-index">{index + 1}</span>
+              <strong>{step.title}</strong>
+              <span>{step.detail}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="block-footer">
+          <a className="text-link" href="/docs">查看完整的快速上手 →</a>
+        </div>
+      </section>
+
+      {historicalReleases.length ? (
+        <section className="site-block" aria-labelledby="history-title">
+          <button type="button" className="text-link history-toggle" onClick={() => setShowAll(!showAll)} aria-expanded={showAll}>
+            {showAll ? '收起历史版本' : `查看 ${platformLabel} 历史版本（${historicalReleases.length}）`}
+          </button>
+          {showAll ? (
+            <div className="table-like">
+              {historicalReleases.map((release) => (
+                <div key={release.id} className="table-row detailed history-row">
+                  <strong>LawVerify {release.version}</strong>
+                  <span>{release.sizeLabel}</span>
+                  <a className="ghost-button" href={release.downloadUrl} onClick={() => track('download_click', `${target}:${release.version}:history`)}>下载</a>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+    </div>
+  )
+}
+
+const productChapters = [
+  { id: 'verify', label: '逐句核验' },
+  { id: 'materials', label: '超大材料' },
+  { id: 'strategy', label: '案件作战图' },
+  { id: 'legal', label: '法条与案例' },
+  { id: 'import', label: '导入已有文书' },
+  { id: 'draft', label: '起草与导出' },
+]
+
+function FeatureChapter({
+  id,
+  kicker,
+  title,
+  lead,
+  points,
+  bg,
+  layout = 'split',
+  children,
+}: {
+  id: string
+  kicker: string
+  title: string
+  lead: string
+  points: string[]
+  bg: string
+  layout?: 'split' | 'flip' | 'wide'
+  children: ReactNode
+}) {
+  return (
+    <section id={id} className={`pf-chapter is-${layout}`} aria-labelledby={`${id}-title`}>
+      <div className="pf-copy">
+        <span className="section-kicker">{kicker}</span>
+        <h2 id={`${id}-title`}>{title}</h2>
+        <p>{lead}</p>
+        <ul>
+          {points.map((point) => <li key={point}>{point}</li>)}
+        </ul>
+      </div>
+      <div className="pf-stage">
+        <div className="pf-stage-photo" style={{ backgroundImage: `url(${bg})` }} aria-hidden="true" />
+        <div className="pf-stage-inner">{children}</div>
       </div>
     </section>
   )
 }
 
-function HomePage({
-  plans,
-  packages,
-}: {
-  plans: SitePlan[]
-  packages: BillingPackage[]
-}) {
-  const downloadHref = '/download'
-  const pointPackages = packages.filter(isPointPackage)
-  const highlightedPlans = plans.slice(0, 3)
-  const strategicSignals = [
-    {
-      title: '材料很多，也能有条理',
-      description: '从证据原件中梳理关键事实、证明目的与争议焦点，让办案思路更清晰。',
-    },
-    {
-      title: '写作提速，判断不让步',
-      description: '围绕案件材料生成质证意见，把时间留给论证、打磨与专业判断。',
-    },
-    {
-      title: '每一处引用，都有来路',
-      description: '证据、法条与案例在侧边联动查看，让核验跟得上写作的节奏。',
-    },
-  ]
-  const workflow = [
-    '导入案件材料与证据原件',
-    '在桌面端完成证据理解、生成与核验',
-    '逐句核验引用与证据关联',
-    '导出文书，继续打磨专业表达',
-  ]
-
-  return (
-    <div className="public-page-stack">
-      <MarketingHero
-        eyebrow="你的 AI 办案搭档"
-        title={'少一点重复。\n多一点专业判断。'}
-        description="整理证据、起草质证意见、核验引用。在同一个工作台，让材料有条理，让思路更清晰。"
-        primaryHref={downloadHref}
-        primaryLabel="下载客户端"
-        secondaryHref="/product"
-        secondaryLabel="看看能做什么"
-        badges={['证据整理', '质证写作', '句级核验']}
-        metrics={[
-          { label: '理清材料', value: '证据，心中有数', detail: '关键事实与证明目的，一起梳理。' },
-          { label: '专注表达', value: '文书，更进一步', detail: '生成与改写衔接，把精力放在论证上。' },
-          { label: '有据可查', value: '引用，随时核验', detail: '证据、法条与案例，沿着引用找回原文。' },
-        ]}
-        variantClassName="site-hero-home"
-      />
-
-      <section className="site-stat-grid">
-        {strategicSignals.map((item) => (
-          <article key={item.title} className="site-stat-card">
-            <span className="feature-kicker">为办案而设计</span>
-            <h3>{item.title}</h3>
-            <p>{item.description}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>从材料到文书，顺着思路走</h3>
-            <span className="muted">整理、写作、核验、导出，让每一步衔接起来。</span>
-          </div>
-        </div>
-        <div className="site-flow-grid">
-          {workflow.map((item, index) => (
-            <article key={item} className="site-flow-step">
-              <span className="site-flow-index">{index + 1}</span>
-              <strong>{item}</strong>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>订阅套餐</h3>
-            <span className="muted">先从免费版体验，也可以按办案强度升级月度套餐。</span>
-          </div>
-          <a href="/console/billing">进入账户中心</a>
-        </div>
-        <div className="site-feature-grid">
-          {highlightedPlans.map((plan) => (
-            <article key={plan.id} className={`card nested-card site-feature-card ${plan.recommended ? 'recommended-card' : ''}`}>
-              <span className="eyebrow">套餐</span>
-              <h3>{plan.name}</h3>
-              <strong className="price">{plan.priceLabel}</strong>
-              <p>{plan.description}</p>
-              <span className="muted">
-                {plan.points > 0 ? `每月 ${plan.points.toLocaleString()} 积分` : '按团队方案定制额度'}
-              </span>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>单独购买积分</h3>
-            <span className="muted">不想升级套餐时，也可以直接补充积分，按需使用。</span>
-          </div>
-          <a href="/console/billing">购买积分</a>
-        </div>
-        <div className="site-feature-grid">
-          {pointPackages.map((item) => (
-            <article key={item.id} className="card nested-card site-feature-card">
-              <span className="eyebrow">积分包</span>
-              <h3>{item.name}</h3>
-              <strong className="price">{formatCurrency(item.amountFen)}</strong>
-              <p>{item.description}</p>
-              <span className="muted">到账 {item.points.toLocaleString()} 积分</span>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card site-cta-band">
-        <div>
-          <span className="eyebrow">开始使用</span>
-          <h3>下一份文书，试试更顺手的方式。</h3>
-        </div>
-        <div className="hero-actions">
-          <a className="primary-button" href={downloadHref}>立即下载</a>
-          <a className="ghost-button" href="/pricing">查看价格套餐</a>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function PricingPage({
-  plans,
-  packages,
-}: {
-  plans: SitePlan[]
-  packages: BillingPackage[]
-}) {
-  const pointPackages = packages.filter(isPointPackage)
-  const planDetails: Record<string, {
-    badge: string
-    summary: string
-    suitable: string
-    deliverables: string
-    response: string
-    collaboration: string
-    invoice: string
-    highlights: string[]
-    ctaLabel: string
-  }> = {
-    'free-monthly': {
-      badge: '先体验',
-      summary: '适合先熟悉证据核验、文书生成和账户中心的完整流程。',
-      suitable: '首次体验、轻量试用、低频办案',
-      deliverables: '基础文书生成与证据核验',
-      response: '标准响应',
-      collaboration: '单人使用',
-      invoice: '支持账户中心申请',
-      highlights: ['每月 100 积分', '可进入完整工作流体验', '后续可按需补充积分'],
-      ctaLabel: '免费开始',
-    },
-    'personal-monthly': {
-      badge: '个人律师',
-      summary: '适合个人律师持续处理庭审、答辩、举证质证和材料梳理。',
-      suitable: '个人律师、轻量案件、高频单人作业',
-      deliverables: '基础生成、证据核验与日常文稿整理',
-      response: '高峰期优先',
-      collaboration: '单人使用',
-      invoice: '支持账户中心申请',
-      highlights: ['每月 500 积分', '适合持续办案的月度方案', '优先保障高峰时段使用体验'],
-      ctaLabel: '选择个人版',
-    },
-    'pro-monthly': {
-      badge: '推荐方案',
-      summary: '适合高频办案、长文生成、证据反复核验和法条案例协同参照。',
-      suitable: '高频办案、复杂案件、长文反复打磨',
-      deliverables: '整文生成、证据核验、法条核对、案例参照',
-      response: '高峰期优先',
-      collaboration: '个人主力账号',
-      invoice: '支持账户中心申请',
-      highlights: ['每月 2,500 积分', '更适合高频生成与复核', '当前官网主推的月度方案'],
-      ctaLabel: '选择专业版',
-    },
-    'team-custom': {
-      badge: '团队方案',
-      summary: '适合律所团队和企业法务统一管理账户、席位、订单和开票。',
-      suitable: '律所团队、企业法务、统一采购',
-      deliverables: '支持组织级管理与更高额度',
-      response: '专属方案沟通',
-      collaboration: '组织席位与权限管理',
-      invoice: '支持企业开票与统一结算',
-      highlights: ['团队席位、组织权限与发票管理', '按团队规模定制额度与方案', '适合统一采购与集中管理'],
-      ctaLabel: '联系方案咨询',
-    },
-  }
-
-  const comparisonRows = [
-    {
-      label: '适合场景',
-      values: plans.map((plan) => planDetails[plan.id]?.suitable || plan.description),
-    },
-    {
-      label: '月度积分',
-      values: plans.map((plan) => (plan.points > 0 ? `${plan.points.toLocaleString()} 积分` : '按方案定制')),
-    },
-    {
-      label: '适合产出',
-      values: plans.map((plan) => planDetails[plan.id]?.deliverables || '进入工作台处理案件'),
-    },
-    {
-      label: '高峰时段体验',
-      values: plans.map((plan) => planDetails[plan.id]?.response || '标准响应'),
-    },
-    {
-      label: '协作方式',
-      values: plans.map((plan) => planDetails[plan.id]?.collaboration || '单人使用'),
-    },
-    {
-      label: '发票与结算',
-      values: plans.map((plan) => planDetails[plan.id]?.invoice || '支持账户中心申请'),
-    },
-  ]
-
-  const pricingFaqs = [
-    {
-      question: '积分怎么理解？',
-      answer: '积分是 LawVerify 的统一使用额度，会随着证据摘要、整文生成、改写和其他办案动作按实际消耗扣减。',
-    },
-    {
-      question: '免费版和月度套餐的区别是什么？',
-      answer: '免费版适合先熟悉工作流，月度套餐更适合持续办案时稳定使用，额度更高、节奏更连贯。',
-    },
-    {
-      question: '积分包适合什么场景？',
-      answer: '当你不想升级月度套餐，但临时遇到庭前准备、集中出稿或案件高峰时，可以直接补充积分，不改变当前套餐层级。',
-    },
-    {
-      question: '能否申请发票？',
-      answer: '支持在账户中心提交企业开票信息并申请发票，适合个人执业和团队统一结算。',
-    },
-  ]
-
-  return (
-    <div className="public-page-stack">
-      <MarketingHero
-        eyebrow="价格套餐"
-        title={'按你的节奏，\n选合适的方案。'}
-        description="先免费体验，再按办案频次选择套餐。临时出稿高峰，也可以单独补充积分。"
-        primaryHref="/console/billing"
-        primaryLabel="进入账户中心"
-        secondaryHref="/download"
-        secondaryLabel="下载客户端"
-        badges={['先体验后升级', '月度套餐 + 积分包', '支持企业开票与统一结算']}
-        metrics={[
-          { label: '轻松起步', value: '先体验，再决定', detail: '从免费版开始，找到适合自己的办案节奏。' },
-          { label: '按需选择', value: '忙的时候，更灵活', detail: '月度套餐之外，积分也可以单独补充。' },
-          { label: '团队使用', value: '一起办案，一起提效', detail: '支持团队方案与企业开票。' },
-        ]}
-        variantClassName="site-hero-pricing"
-      />
-
-      <section className="site-stat-grid">
-        <article className="site-stat-card">
-          <span>免费起步</span>
-          <h3>先熟悉完整工作流</h3>
-          <p>从真实案件材料开始体验，再决定适合自己的使用方案。</p>
-        </article>
-        <article className="site-stat-card">
-          <span>高频办案</span>
-          <h3>专业版更适合作为主力方案</h3>
-          <p>适合复杂案件、长文反复打磨、证据反复核验与法条案例协同参照。</p>
-        </article>
-        <article className="site-stat-card">
-          <span>团队采购</span>
-          <h3>支持团队方案与统一结算</h3>
-          <p>适合律所和企业法务进行组织化采购、权限管理和企业开票流程。</p>
-        </article>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>月度套餐</h3>
-            <span className="muted">先快速判断哪一档适合你，再去账户中心完成开通。</span>
-          </div>
-          <a href="/console/billing">进入账户中心</a>
-        </div>
-        <div className="pricing-plan-grid">
-          {plans.map((plan) => (
-            <article key={plan.id} className={`card nested-card pricing-plan-card site-feature-card ${plan.recommended ? 'recommended-card' : ''}`}>
-              <div className="pricing-plan-head">
-                <span className="eyebrow">{planDetails[plan.id]?.badge || '套餐'}</span>
-                <h3>{plan.name}</h3>
-                <strong className="price">{plan.priceLabel}</strong>
-              </div>
-              <p>{planDetails[plan.id]?.summary || plan.description}</p>
-              <span className="muted">
-                {plan.points > 0 ? `每月 ${plan.points.toLocaleString()} 积分` : '按团队方案定制额度'}
-              </span>
-              <ul className="pricing-feature-list">
-                {(planDetails[plan.id]?.highlights || plan.highlights).map((item) => (
-                  <li key={`${plan.id}-${item}`}>{item}</li>
-                ))}
-              </ul>
-              <a className={`wide-button ${plan.recommended ? 'primary-button' : 'ghost-button'}`} href="/console/billing">
-                {planDetails[plan.id]?.ctaLabel || '查看详情'}
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>权益对照</h3>
-            <span className="muted">先按办案场景判断，再确认每档在额度和协作方式上的差异。</span>
-          </div>
-        </div>
-        <div className="pricing-compare-wrap">
-          <table className="pricing-compare-table">
-            <thead>
-              <tr>
-                <th>权益项</th>
-                {plans.map((plan) => (
-                  <th key={`head-${plan.id}`}>{plan.name}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {comparisonRows.map((row) => (
-                <tr key={row.label}>
-                  <td>{row.label}</td>
-                  {row.values.map((value, index) => (
-                    <td key={`${row.label}-${plans[index]?.id || index}`}>{value}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>积分包补充</h3>
-            <span className="muted">遇到庭前准备、集中出稿或案件高峰时，直接补充积分更灵活。</span>
-          </div>
-          <a href="/console/billing">购买积分</a>
-        </div>
-        <div className="pricing-points-grid">
-          {pointPackages.map((item) => (
-            <article key={item.id} className="card nested-card pricing-points-card site-feature-card">
-              <span className="eyebrow">积分包</span>
-              <h3>{item.name}</h3>
-              <strong className="price">{formatCurrency(item.amountFen)}</strong>
-              <p>{item.description}</p>
-              <span className="muted">到账 {item.points.toLocaleString()} 积分</span>
-              <span className="muted">适合不改套餐层级时的阶段性补充。</span>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>常见问题</h3>
-            <span className="muted">把影响开通决策的几个关键问题先讲清楚。</span>
-          </div>
-        </div>
-        <div className="pricing-faq-grid">
-          {pricingFaqs.map((item) => (
-            <article key={item.question} className="nested-card pricing-faq-card site-feature-card">
-              <strong>{item.question}</strong>
-              <p className="muted">{item.answer}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function DownloadPage({ releases }: { releases: ReleaseItem[] }) {
-  const [showAll, setShowAll] = useState(false)
-  const [target, setTarget] = useState(() => /Macintosh|MacIntel/i.test(navigator.userAgent + navigator.platform)
-    ? 'darwin-arm64' : 'win32-x64')
-  const targets = [
-    { value: 'win32-x64', label: 'Windows' },
-    { value: 'darwin-arm64', label: 'Mac · Apple 芯片' },
-    { value: 'darwin-x64', label: 'Mac · Intel' },
-  ]
-  const selectedReleases = releases.filter((release) => `${release.platform ?? 'win32'}-${release.arch ?? 'x64'}` === target)
-  const latestRelease = selectedReleases[0]
-  const historicalReleases = selectedReleases.slice(1)
-  const platformLabel = targets.find((item) => item.value === target)?.label ?? 'Windows'
-  const installationFlow = [
-    target.startsWith('darwin') ? '打开 DMG，将 LawVerify 拖入“应用程序”' : '下载安装包并完成本地安装',
-    '使用官网账户登录客户端',
-    '按需购买套餐或积分并开始使用',
-  ]
-
-  return (
-    <div className="public-page-stack">
-      <header className="page-intro">
-        <span className="eyebrow">下载中心</span>
-        <h1>你的工作台，随时就位。</h1>
-        <p>Windows 或 Mac，选择适合你的版本。</p>
-      </header>
-      <div className="hero-actions download-platform-switch" aria-label="选择下载版本">
-        {targets.map((item) => (
-          <button key={item.value} type="button"
-            className={target === item.value ? 'primary-button' : 'ghost-button'}
-            aria-pressed={target === item.value}
-            onClick={() => { setTarget(item.value); setShowAll(false) }}>
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <section className="card site-section-surface download-release-shell">
-        <article className="download-highlight-card">
-          <span className="eyebrow">安装流程</span>
-          <h3>3 步完成下载与使用</h3>
-          <div className="download-step-list">
-            {installationFlow.map((item, index) => (
-              <div key={item} className="download-step-item">
-                <span className="site-flow-index">{index + 1}</span>
-                <strong>{item}</strong>
-              </div>
-            ))}
-          </div>
-        </article>
-        <article className="download-highlight-card">
-          <span className="eyebrow">当前推荐</span>
-          <h3>{latestRelease ? `LawVerify ${latestRelease.version}` : '暂无可下载版本'}</h3>
-          <p className="muted">
-            {latestRelease
-              ? `${platformLabel}${latestRelease.channel === 'stable' ? ' 稳定版' : ''}，包体 ${latestRelease.sizeLabel}。`
-              : `${platformLabel} 安装包暂未开放下载。`}
-          </p>
-          {latestRelease ? <a className="primary-button" href={latestRelease.downloadUrl}>下载最新版本</a> : null}
-          {latestRelease && /^[a-f0-9]{64}$/i.test(latestRelease.sha256) ? (
-            <details className="download-checksum">
-              <summary>安装包完整性校验</summary>
-              <p className="muted">下载完成后再运行安装包。校验值不一致时，请重新下载。</p>
-              <code>{latestRelease.sha256}</code>
-              {latestRelease.checksumUrl ? <a className="ghost-button" href={latestRelease.checksumUrl}>下载 SHA256 校验文件</a> : null}
-            </details>
-          ) : null}
-        </article>
-      </section>
-
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>版本列表</h3>
-            <span className="muted">{platformLabel}</span>
-          </div>
-        </div>
-        <div className="table-like">
-          {selectedReleases.length ? (
-            <>
-              <div key={latestRelease.id} className="table-row detailed">
-                <strong>LawVerify {latestRelease.version} <span className="eyebrow" style={{ marginLeft: '8px' }}>最新</span></strong>
-                <span>{platformLabel}</span>
-                <span>{latestRelease.sizeLabel}</span>
-                <span>{latestRelease.channel === 'test' ? 'DMG 安装包' : latestRelease.channel === 'stable' ? '稳定版' : latestRelease.channel}</span>
-                <a className="primary-button" href={latestRelease.downloadUrl}>立即下载</a>
-              </div>
-              {historicalReleases.length > 0 ? (
-                <>
-                  <div
-                    className="table-row"
-                    style={{ cursor: 'pointer', justifyContent: 'center' }}
-                    onClick={() => setShowAll(!showAll)}
-                  >
-                    <span className="muted">{showAll ? '收起历史版本' : '展开历史版本'}</span>
-                  </div>
-                  {showAll ? historicalReleases.map((release) => (
-                    <div key={release.id} className="table-row detailed" style={{ opacity: 0.78 }}>
-                      <strong>LawVerify {release.version}</strong>
-                      <span>{platformLabel}</span>
-                      <span>{release.sizeLabel}</span>
-                      <span>{release.channel === 'test' ? 'DMG 安装包' : release.channel === 'stable' ? '稳定版' : release.channel}</span>
-                      <a className="ghost-button" href={release.downloadUrl}>下载</a>
-                    </div>
-                  )) : null}
-                </>
-              ) : null}
-            </>
-          ) : (
-            <div className="table-row detailed">
-              <strong>暂无可下载版本</strong>
-              <span>-</span>
-              <span>-</span>
-              <span>-</span>
-              <span>请稍后查看</span>
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
-  )
-}
-
 function ProductPage() {
-  const downloadHref = '/download'
-  const productPillars = [
-    {
-      title: '证据理解与质证生成',
-      description: '围绕证据原件、证明目的、争议焦点和主张动作组织生成逻辑，减少律师重复整理工作。',
-    },
-    {
-      title: '证据链与引用联动',
-      description: '正文保持连续阅读，证据引用以侧边批注方式联动展示，让引用可追溯但不打断正文。',
-    },
-    {
-      title: '法条与案例协同检索',
-      description: '法律依据优先走知识库与结构化检索，案例参照对接外部权威来源，避免单一路径失真。',
-    },
-    {
-      title: '案件级协作与沉淀',
-      description: '支持围绕案件材料、知识库和办案方法持续积累，让一次处理不只服务当前文书。',
-    },
-  ]
-
-  const workflow = [
-    '导入案件材料与证据原件',
-    '自动提炼争议事实与证明目标',
-    '联动生成质证意见、法条依据与案例参照',
-    '逐句核验引用，再导出文书继续打磨',
-  ]
-
-  const scenarios = [
-    {
-      title: '个人律师',
-      description: '适合高频处理庭审、举证质证、答辩和材料梳理，减少从原件到成稿之间的重复劳动。',
-    },
-    {
-      title: '律所团队',
-      description: '适合多人协作管理案件资料、统一知识库、沉淀办案方法，并通过组织账户统一管理订单与开票。',
-    },
-    {
-      title: '企业法务',
-      description: '适合合规核验、合同争议分析和证据材料整理，让业务材料与法律结论之间保持可核验链路。',
-    },
-  ]
-
   return (
-    <div className="public-page-stack">
-      <MarketingHero
-        eyebrow="面向律师办案"
-        title={'理清每一份材料。\n写好每一份文书。'}
-        description="从证据理解到质证写作，再到引用核验。让常用能力围绕案件衔接，让你专注于更重要的判断。"
-        primaryHref={downloadHref}
-        primaryLabel="下载客户端"
-        secondaryHref="/console/billing"
-        secondaryLabel="进入账户中心"
-        badges={['连续文稿体验', '引用联动', '知识库与案例参照协同']}
-        metrics={[
-          { label: '顺手写作', value: '像文稿一样，连续', detail: '正文保持清爽，引用在侧边联动查看。' },
-          { label: '认真核验', value: '每句话，都能回看', detail: '逐句定位证据，检查表达与原件的关联。' },
-          { label: '积累经验', value: '办案方法，持续沉淀', detail: '案件梳理与知识库，支持后续写作和参照。' },
-        ]}
-        variantClassName="site-hero-product"
-      />
-
-      <section className="site-feature-grid">
-        {productPillars.map((pillar) => (
-          <article key={pillar.title} className="card site-feature-card">
-            <span className="eyebrow">核心能力</span>
-            <h3>{pillar.title}</h3>
-            <p className="muted">{pillar.description}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="card product-flow-card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>工作流设计</h3>
-            <span className="muted">让案件处理从原始材料进入结构化、可追溯、可交付的产出过程。</span>
-          </div>
-        </div>
-        <div className="product-flow-grid">
-          {workflow.map((item, index) => (
-            <div key={item} className="product-flow-step">
-              <span className="product-flow-index">{index + 1}</span>
-              <strong>{item}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="site-feature-grid product-scenario-grid">
-        {scenarios.map((scenario) => (
-          <article key={scenario.title} className="card site-feature-card">
-            <span className="eyebrow">适用场景</span>
-            <h3>{scenario.title}</h3>
-            <p className="muted">{scenario.description}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="card product-architecture-card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>让工作更连贯</h3>
-            <span className="muted">材料、文稿、引用，在同一个办案工作台衔接。</span>
-          </div>
-        </div>
-        <div className="product-architecture-grid">
-          <div className="nested-card">
-            <strong>桌面端工作台</strong>
-            <span className="muted">负责案件、证据、质证文稿、知识库联动与本地高效操作。</span>
-          </div>
-          <div className="nested-card">
-            <strong>官网与账户中心</strong>
-            <span className="muted">负责套餐购买、积分管理、订单记录、发票申请与客户端分发。</span>
-          </div>
-          <div className="nested-card">
-            <strong>引用与原文</strong>
-            <span className="muted">从文稿回到证据原件，查看法条与案例参照，让依据有迹可循。</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="card product-cta-card site-cta-band">
-        <div className="section-head">
-          <div>
-            <h3>开始使用</h3>
-            <span className="muted">先体验产品能力，再进入账户中心查看价格、订单、发票与客户端下载。</span>
-          </div>
-        </div>
+    <div className="public-page-stack site-v2 product-v3">
+      <header className="page-intro page-hero page-hero-lg" style={{ ['--page-bg' as string]: 'url(/media/files-cases.jpg)' }}>
+        <span className="section-kicker">产品</span>
+        <h1>不做 AI 律师，做签字前的那道核验。</h1>
+        <p>支持超大文件材料处理，把文书里的每一句事实按语义对回证据原件，核验引用的法条与案例；先确认代理立场，再看这个案子怎么打。</p>
         <div className="hero-actions">
-          <a className="ghost-button" href="/pricing">查看价格套餐</a>
-          <a className="ghost-button" href="/console/billing">进入账户中心</a>
+          <RegisterButton label="免费注册" source="product_hero" />
+          <DownloadEntryButton source="product_hero" />
         </div>
+        <MobileRegisterHint />
+      </header>
+
+      <ProductNav items={productChapters} />
+
+      <FeatureChapter
+        id="verify"
+        layout="wide"
+        kicker="逐句证据核验"
+        title="点任意一句，打开它的证据原件。"
+        lead="文书逐句对照本案证据原件，每句给出支持、部分支持、证据不足或矛盾，并锚定到具体证据和页码。"
+        points={['AI 摘录的引文必须真实出现在原件里，否则不予关联', '看过原件后，可以按自己的判断确认或调整结论']}
+        bg="/media/bg-glass.jpg"
+      >
+        <VerifyDemo />
+      </FeatureChapter>
+
+      <FeatureChapter
+        id="materials"
+        kicker="超大文件材料处理"
+        title="整个案卷文件夹，直接关联。"
+        lead="同一案件可以关联多个本地文件夹，材料增量导入；单份材料最大 100MB，上千页逐页解析。"
+        points={['支持 Word、PDF、图片、文本', '从原件提取证明目的、关键事实、金额、时间与证明局限', '材料变更后可以重新梳理']}
+        bg="/media/files-binder.jpg"
+      >
+        <MaterialsPanel />
+      </FeatureChapter>
+
+      <FeatureChapter
+        id="strategy"
+        layout="flip"
+        kicker="案件作战图"
+        title="接案前 10 分钟，看清这个案子怎么打。"
+        lead="先确认代理立场，再按主张梳理成立要件、举证责任、有利与不利证据、补证缺口，以及对方可能的反驳和我方应对。"
+        points={['站在你这一边，但不报喜不报忧', '不利证据和对方反驳单独标出']}
+        bg="/media/bg-scales.jpg"
+      >
+        <StrategyMap />
+      </FeatureChapter>
+
+      <FeatureChapter
+        id="legal"
+        kicker="法条与案例核验"
+        title="引用的法条和案号，都回到官方来源核对。"
+        lead="文书中的法条自动识别并核对国家法律法规数据库，已废止、已修订的条文直接标红；案号回到法院官方页面核对，查不到的如实提示“未能核实”。"
+        points={['法条可以查看官方原文', '只有官方正文对得上，案号才显示已核实']}
+        bg="/media/bg-gavel.jpg"
+      >
+        <LegalCheckShowcase />
+      </FeatureChapter>
+
+      <FeatureChapter
+        id="import"
+        layout="flip"
+        kicker="导入已有文书"
+        title="已经写好的文书，也能核。"
+        lead="自己写的、助理写的、用其他 AI 写的代理词或起诉状（Word），导入后和本案证据逐句对照。"
+        points={['助理起草、律师复核', '对不上的句子提前看到、提前改']}
+        bg="/media/bg-light.jpg"
+      >
+        <ImportPreview />
+      </FeatureChapter>
+
+      <FeatureChapter
+        id="draft"
+        kicker="质证意见起草"
+        title="围绕证据原件起草，改完导出 Word。"
+        lead="接近 Word 的连续文稿体验，边生成边审阅；选中一句就能定向改写，完成后导出 Word 继续打磨。"
+        points={['每句陈述都能点回证据原件', '法条可查看官方原文']}
+        bg="/media/bg-writing.jpg"
+      >
+        <DraftEditor />
+      </FeatureChapter>
+
+      <section className="pf-specs" aria-label="规格">
+        <div><strong>100<small>MB</small></strong><span>单份材料上限</span></div>
+        <div><strong>4<small>种</small></strong><span>Word、PDF、图片、文本</span></div>
+        <div><strong>3<small>个</small></strong><span>Windows / Mac Apple 芯片 / Mac Intel 安装包</span></div>
+        <div><strong>4<small>种</small></strong><span>逐句核验结果</span></div>
       </section>
     </div>
   )
 }
+
+const quickStartSteps: Array<{ title: string; body: ReactNode }> = [
+  {
+    title: '注册与登录',
+    body: <>在官网<a href="/register">免费注册</a>（手机上也能注册）。然后在电脑上<a href="/download">下载客户端</a>，用同一个账号登录。</>,
+  },
+  {
+    title: '新建案件，关联文件夹，导入证据',
+    body: '在客户端新建案件，选择电脑上存放这个案件材料的文件夹。文件夹里的材料会增量同步，支持 Word、PDF、图片、文本。',
+  },
+  {
+    title: '确认代理立场，生成案件作战图',
+    body: '先确认代理方、诉求、认可事实和争议事实，再生成办案策略：主张、成立要件、举证责任、有利与不利证据、补证缺口、对方可能的反驳和我方应对。',
+  },
+  {
+    title: '起草质证意见，或导入已有文书',
+    body: '可以围绕证据原件起草质证意见；已经写好的代理词、起诉状（Word），也可以直接导入。',
+  },
+  {
+    title: '逐句核验',
+    body: (
+      <>
+        文书会被逐句对照证据原件，每句给出一种结果：
+        <ul className="docs-status-list">
+          <li><StatusBadge status="support" />证据原件中找到了对应的原文。</li>
+          <li><StatusBadge status="partial" />原件只能支持其中一部分，其余部分没有找到依据。</li>
+          <li><StatusBadge status="conflict" />原件记载与这句话不一致。</li>
+          <li><StatusBadge status="insufficient" />没有找到足以支持这句话的原文。</li>
+        </ul>
+        点击任意一句，侧边会打开对应的原件。看过原件后，可以按自己的判断确认或调整这句的核验结果，最终以律师判断为准。
+      </>
+    ),
+  },
+  {
+    title: '导出 Word',
+    body: '核验完成后导出 Word，继续打磨。',
+  },
+]
+
+const docsFaqs = [
+  { question: '积分在哪看？', answer: '登录账户中心，首页显示积分余额；「使用情况」页可以看到每一笔扣费明细。' },
+  { question: 'Mac 芯片怎么选？', answer: '点击屏幕左上角苹果菜单 → 关于本机：“芯片”一栏写着 Apple M 系列，选 Apple 芯片版；“处理器”一栏写着 Intel，选 Intel 版。' },
+  { question: '能处理录音和视频吗？', answer: '目前不支持录音和视频。支持的格式是 Word、PDF、图片和文本。' },
+]
 
 function DocsPage() {
-  const docEntries = [
-    {
-      title: '客户端下载与安装',
-      description: '查看 Windows 与 Mac 安装包。',
-      href: '/download',
-      cta: '前往下载中心',
-    },
-    {
-      title: '账户、套餐与积分',
-      description: '登录账户中心，查看订单、积分与发票。',
-      href: '/console/billing',
-      cta: '前往账户中心',
-    },
-  ]
-
   return (
-    <div className="public-page-stack">
-      <section className="card site-section-surface">
-        <div className="section-head">
-          <div>
-            <h3>帮助文档</h3>
-          </div>
-        </div>
-        <div className="docs-grid">
-          {docEntries.map((item) => (
-            <article key={item.title} className="card docs-entry-card">
-              <span className="eyebrow">文档入口</span>
-              <h3>{item.title}</h3>
-              <p className="muted">{item.description}</p>
-              <a className="ghost-button" href={item.href}>{item.cta}</a>
-            </article>
+    <div className="public-page-stack site-v2 docs-v2">
+      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/files-binder.jpg)' }}>
+        <span className="section-kicker">帮助</span>
+        <h1>快速上手</h1>
+        <p>从注册到导出 Word，六步走完一份文书的核验。</p>
+      </header>
+
+      <ol className="quickstart-list">
+        {quickStartSteps.map((step, index) => (
+          <li key={step.title} className="quickstart-item">
+            <span className="workflow-index">{index + 1}</span>
+            <div>
+              <h2>{step.title}</h2>
+              <div className="quickstart-body">{step.body}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <section className="site-block" aria-labelledby="docs-faq-title">
+        <SectionTitle kicker="常见问题" title="使用中常问的三件事" />
+        <dl className="faq-list">
+          {docsFaqs.map((item) => (
+            <div key={item.question} className="faq-item">
+              <dt>{item.question}</dt>
+              <dd>{item.answer}</dd>
+            </div>
           ))}
+        </dl>
+        <div className="block-footer">
+          <a className="text-link" href="/faq">更多常见问题 →</a>
         </div>
       </section>
 
+      <section className="docs-links" aria-label="更多帮助">
+        <a href="/download"><strong>下载客户端</strong><span>Windows 与 Mac 安装包</span></a>
+        <a href="/console"><strong>账户中心</strong><span>积分、订单与发票</span></a>
+        <a href="/verification"><strong>什么是逐句证据核验</strong><span>四种核验结果怎么理解</span></a>
+        <a href="/ai-notice"><strong>AI 使用说明</strong><span>能做什么、不能做什么</span></a>
+      </section>
     </div>
+  )
+}
+
+/* ---------------- GEO / SEO 页面：常见问题、逐句证据核验说明、AI 使用说明 ---------------- */
+
+const siteFaqs: Array<{ question: string; answer: string }> = [
+  {
+    question: 'LawVerify 是什么？',
+    answer: 'LawVerify 是北京智镜科技面向律师的桌面端 AI 产品，定位是“律师的核验台”：不做 AI 律师，做签字前的那道核验。它把文书里的每一句事实对回本案证据原件，逐句标出支持、部分支持、矛盾和证据不足。',
+  },
+  {
+    question: '什么是逐句证据核验？',
+    answer: '把代理词、起诉状、质证意见等文书拆成一句句事实，逐句对照本案的证据原件，判断这句话在原件里是否有依据，并给出对应证据和页码。点任意一句，侧边就会打开对应的原件。',
+  },
+  {
+    question: '核验结果有哪几种？',
+    answer: '四种：支持（原件中找到了对应原文）、部分支持（只能支持其中一部分）、矛盾（原件记载与这句话不一致）、证据不足（没有找到足以支持这句话的原文）。',
+  },
+  {
+    question: 'AI 会不会编造证据原文？',
+    answer: 'LawVerify 要求 AI 摘录的证据原文必须真实出现在证据原件里，否则不予关联。核验结果仍需律师最终核对。',
+  },
+  {
+    question: '已经写好的文书可以核吗？',
+    answer: '可以。自己写的、助理写的、用其他 AI 写的代理词或起诉状（Word），导入 LawVerify 后，会和本案证据逐句对照。',
+  },
+  {
+    question: '案件作战图是什么？',
+    answer: '先确认代理立场（代理方、诉求、认可事实、争议事实），再生成办案策略：主张、成立要件、举证责任、有利与不利证据、补证缺口、对方可能的反驳和我方应对。它站在你这一边，但会把不利证据和对方的反驳一并列出来。',
+  },
+  {
+    question: '能起草质证意见吗？',
+    answer: '可以。LawVerify 围绕证据原件生成质证意见，可以改写，也可以导出 Word 继续打磨。',
+  },
+  {
+    question: '能处理多大的案卷材料？',
+    answer: '单份材料最大 100MB，上千页的 PDF 也能逐页解析。材料较多时会排队处理，超过上限的文件需要拆分后再导入。',
+  },
+  {
+    question: '能核对文书里引用的法条和案例吗？',
+    answer: '可以。文书中的法条会被自动识别，已废止、已修订的条文直接标红提示，并可查看国家法律法规数据库的官方原文；引用的案号会到法院官网核对，只有官方正文里能对上才显示为已核实，查不到或查询失败时如实提示“未能核实”。',
+  },
+  {
+    question: '支持哪些文件格式？能处理录音、视频吗？',
+    answer: '支持 Word、PDF、图片和文本。目前不支持录音和视频。',
+  },
+  {
+    question: '支持哪些电脑系统？',
+    answer: '支持 Windows 和 Mac，Mac 分 Apple 芯片和 Intel 两个版本；下载页会自动识别你的系统。',
+  },
+  {
+    question: '怎么收费？',
+    answer: '注册即送体验积分；个人版 ¥49/月，专业版 ¥199/月，也可以单独购买积分包。按实际使用扣积分，每笔扣费明细都能在账户中心查看。',
+  },
+  {
+    question: '和通用 AI 写作工具有什么区别？',
+    answer: '通用 AI 写作默认中立、根据你的描述来写，出了错要自己逐句去查；LawVerify 先确认代理立场，每句事实都能点回证据原件，对不上、有矛盾、证据不足会逐句标出，法条可以查看官方原文。',
+  },
+  {
+    question: 'LawVerify 能替代律师判断吗？',
+    answer: '不能。AI 输出用于辅助审阅，不替代律师判断；法条和证据摘录仍需律师最终核对。',
+  },
+  {
+    question: '适合哪些律师？',
+    answer: '适合需要围绕证据出文书的个人律师和律所团队。',
+  },
+]
+
+function FaqPage() {
+  useEffect(() => {
+    setPageJsonLd('faq-jsonld', {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: siteFaqs.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: { '@type': 'Answer', text: item.answer },
+      })),
+    })
+    return () => setPageJsonLd('faq-jsonld', null)
+  }, [])
+
+  return (
+    <div className="public-page-stack site-v2 docs-v2">
+      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/bg-writing.jpg)' }}>
+        <span className="section-kicker">常见问题</span>
+        <h1>关于 LawVerify，律师常问的问题</h1>
+        <p>没找到答案？注册后在账户中心提交反馈。</p>
+      </header>
+      <dl className="faq-list faq-list-page">
+        {siteFaqs.map((item) => (
+          <div key={item.question} className="faq-item">
+            <dt><h2>{item.question}</h2></dt>
+            <dd>{item.answer}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function VerificationPage() {
+  useEffect(() => {
+    setPageJsonLd('article-jsonld', {
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      headline: '什么是逐句证据核验？',
+      about: '律师文书逐句对照证据原件的核验方法',
+      publisher: { '@type': 'Organization', name: siteConfig.companyName },
+      mainEntityOfPage: `${siteConfig.siteUrl}/verification`,
+    })
+    return () => setPageJsonLd('article-jsonld', null)
+  }, [])
+
+  return (
+    <article className="public-page-stack site-v2 docs-v2 article-v2">
+      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/bg-glass.jpg)' }}>
+        <span className="section-kicker">方法</span>
+        <h1>什么是逐句证据核验？</h1>
+        <p>签字之前，把文书里的每一句事实，对回本案的证据原件。</p>
+      </header>
+
+      <section className="article-section">
+        <h2>一句话定义</h2>
+        <p>逐句证据核验，是把代理词、起诉状、质证意见等文书拆成一句句事实，逐句对照本案的证据原件，判断每一句在原件里是否有依据，并标出对应的证据和页码。</p>
+      </section>
+
+      <section className="article-section">
+        <h2>为什么要在签字前做</h2>
+        <p>文书里一句和证据对不上的事实，可能被对方抓住、被法官质疑。签字之前逐句核一遍，对不上、有矛盾、证据不足的地方，提前看到、提前补。</p>
+      </section>
+
+      <section className="article-section">
+        <h2>四种核验结果</h2>
+        <StatusLegend />
+      </section>
+
+      <section className="article-section">
+        <h2>看一个例子</h2>
+        <p>下面是一份虚构案件的质证意见节选。点击任意一句，右侧会打开对应的证据原件，并高亮引文。</p>
+        <VerifyDemo />
+      </section>
+
+      <section className="article-section">
+        <h2>引文必须真实存在于原件</h2>
+        <p>在 LawVerify 中，AI 摘录的证据原文必须真实出现在证据原件里，否则不予关联。这样每一条“有依据”的结论，都能点开原件核对。</p>
+      </section>
+
+      <section className="article-section">
+        <h2>和“引用跳转”有什么不同</h2>
+        <p>常见的引用溯源，跳转的是外部的法律资料；逐句证据核验对照的是你手上这个案子的证据原件——合同、送货单、转账回单——核的是文书里的事实本身。</p>
+      </section>
+
+    </article>
+  )
+}
+
+function AiNoticePage() {
+  return (
+    <article className="public-page-stack site-v2 docs-v2 article-v2">
+      <header className="page-intro page-hero" style={{ ['--page-bg' as string]: 'url(/media/bg-scales.jpg)' }}>
+        <span className="section-kicker">AI 使用说明</span>
+        <h1>AI 使用说明</h1>
+        <p>使用 LawVerify 前，请了解 AI 在其中做什么、不做什么。</p>
+      </header>
+      <section className="article-section">
+        <h2>AI 输出的定位</h2>
+        <p>LawVerify 的 AI 输出用于辅助审阅，不替代律师判断；法条和证据摘录仍需律师最终核对。</p>
+        <p>核验结果、案件作战图、质证意见草稿，都是供律师参考和修改的材料，最终由律师确认。</p>
+      </section>
+      <section className="article-section">
+        <h2>引文规则</h2>
+        <p>AI 摘录的证据原文必须真实出现在证据原件里，否则不予关联。</p>
+      </section>
+      <section className="article-section">
+        <h2>法条</h2>
+        <p>文书中的法条自动识别，可以查看国家法律法规数据库的官方原文。引用前请律师核对条文内容与适用情况。</p>
+      </section>
+      <section className="article-section">
+        <h2>目前不支持</h2>
+        <ul className="article-list">
+          <li>录音、视频文件（目前支持 Word、PDF、图片、文本）。</li>
+        </ul>
+      </section>
+    </article>
   )
 }
 
@@ -1350,42 +1442,59 @@ function AuthPage({
   errorMessage: string
   onSubmit: (formData: FormData) => Promise<void>
 }) {
-  const title = mode === 'login' ? '登录账户中心' : '注册账户中心'
-  const actionLabel = mode === 'login' ? '登录' : '注册并创建组织'
+  const title = mode === 'login' ? '登录 LawVerify' : '免费注册，领取体验积分'
+  const actionLabel = mode === 'login' ? '登录' : '免费注册'
+  const [started, setStarted] = useState(false)
 
   return (
-    <section className="auth-shell">
+    <section className="auth-shell auth-split">
+      <figure className="auth-visual" aria-hidden="true">
+        <img src={mode === 'login' ? '/images/scene-legal.jpg' : '/images/scene-solo.jpg'} alt="" />
+        <figcaption>
+          <b>每一句话，<br />都经得起质证。</b>
+          <span>超大文件材料处理 · 语义级证据核验 · 案例法条核验</span>
+        </figcaption>
+      </figure>
       <form
         className="card auth-card"
+        onFocusCapture={() => {
+          if (mode === 'register' && !started) {
+            setStarted(true)
+            track('register_start')
+          }
+        }}
         onSubmit={(event) => {
           event.preventDefault()
           void onSubmit(new FormData(event.currentTarget))
         }}
       >
-        <span className="eyebrow">账户中心</span>
         <h2>{title}</h2>
-        <p className="muted">登录后即可查看订单、积分、发票和客户端下载权益。</p>
+        <p className="muted">
+          {mode === 'login'
+            ? '和客户端使用同一个账号。登录后可以查看积分、订单和发票。'
+            : '注册后在电脑上下载客户端，用这个账号登录即可。'}
+        </p>
 
         {mode === 'register' ? (
           <>
             <label>
-              机构名称
-              <input name="organizationName" placeholder="例如：北京市某某律师事务所" required />
+              律所 / 单位名称
+              <input name="organizationName" placeholder="例如：北京市某某律师事务所" required minLength={2} autoComplete="organization" />
             </label>
             <label>
               负责人姓名
-              <input name="ownerName" placeholder="请输入负责人姓名" required />
+              <input name="ownerName" placeholder="请输入姓名" required autoComplete="name" />
             </label>
           </>
         ) : null}
 
         <label>
-          注册邮箱
-          <input name="email" type="text" placeholder="请输入注册邮箱" required />
+          邮箱
+          <input name="email" type="text" inputMode="email" placeholder="请输入邮箱" required autoComplete="email" />
         </label>
         <label>
           密码
-          <input name="password" type="password" placeholder="至少 6 位密码" required minLength={6} />
+          <input name="password" type="password" placeholder="至少 6 位密码" required minLength={6} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
         </label>
 
         {errorMessage ? <div className="form-error">{errorMessage}</div> : null}
@@ -1395,7 +1504,7 @@ function AuthPage({
         </button>
         <div className="auth-switch">
           {mode === 'login' ? (
-            <a href="/register">还没有账号？立即注册</a>
+            <a href="/register">还没有账号？免费注册</a>
           ) : (
             <a href="/login">已有账号？去登录</a>
           )}
@@ -1555,7 +1664,7 @@ function AdminPageHeader({
     <section className="card admin-page-hero">
       <div className="admin-page-hero-copy">
         <span className="eyebrow">{eyebrow}</span>
-        <h1>{title}</h1>
+        <h1>{title.split('\n').map((line) => <span className="hero-v2-line" key={line}>{line}</span>)}</h1>
         <p>{description}</p>
       </div>
       <div className="admin-page-hero-meta">
@@ -2433,9 +2542,168 @@ function AdminFeedbackPage() {
   )
 }
 
+function WelcomeCard() {
+  const [visible, setVisible] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('welcome') === '1'
+    } catch {
+      return false
+    }
+  })
+  const mobile = useIsMobileDevice()
+  if (!visible) return null
+  return (
+    <section className="card welcome-card">
+      <div>
+        <span className="section-kicker">注册成功</span>
+        <h3>在电脑上下载客户端，用这个账号登录。</h3>
+        <p className="muted">登录后新建案件、关联存放证据的文件夹，起草或导入文书，点任意一句开始核验。</p>
+      </div>
+      <div className="hero-actions">
+        {mobile ? null : <a className="primary-button" href="/download" onClick={() => track('download_click', 'welcome')}>下载客户端</a>}
+        <CopyDownloadLinkButton className={mobile ? 'primary-button' : 'ghost-button'} source="welcome" />
+        <button type="button" className="text-link" onClick={() => {
+          setVisible(false)
+          try {
+            const url = new URL(window.location.href)
+            url.searchParams.delete('welcome')
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+          } catch {
+            // 忽略。
+          }
+        }}>知道了</button>
+      </div>
+    </section>
+  )
+}
+
+const practiceAreas = ['合同', '借贷', '公司股权', '劳动', '其他']
+
+function CocreateApplyCard() {
+  const [intent, setIntent] = useState<ApplyIntent>(() => readApplyIntent() ?? 'cocreate')
+  const [open, setOpen] = useState(() => Boolean(readApplyIntent()) || window.location.hash === '#cocreate')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const cardRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (open && (readApplyIntent() || window.location.hash === '#cocreate')) {
+      cardRef.current?.scrollIntoView({ block: 'start' })
+    }
+    // 只在首次进入时滚动。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleSubmit(form: HTMLFormElement) {
+    const formData = new FormData(form)
+    const years = String(formData.get('years') ?? '')
+    const areas = formData.getAll('areas').map(String)
+    const caseload = String(formData.get('caseload') ?? '')
+    const contact = String(formData.get('contact') ?? '').trim()
+    const extra = String(formData.get('extra') ?? '').trim()
+    if (!contact) {
+      setNotice({ tone: 'error', text: '请填写微信或手机号，方便我们联系你。' })
+      return
+    }
+    const typeLabel = intent === 'team' ? '律所团队咨询' : '共建律师申请'
+    const content = [
+      `申请类型：${typeLabel}`,
+      `执业年限：${years || '未填写'}`,
+      `主要业务领域：${areas.length ? areas.join('、') : '未填写'}`,
+      `每月案件量：${caseload || '未填写'}`,
+      `联系方式：${contact}`,
+      extra ? `补充说明：${extra.slice(0, 600)}` : '',
+    ].filter(Boolean).join('\n')
+
+    setBusy(true)
+    setNotice(null)
+    try {
+      await api.submitFeedback({
+        feedbackType: 'other',
+        title: `官网${typeLabel}`,
+        content,
+        contact: contact.slice(0, 80),
+        clientPlatform: 'web',
+        pageContext: '官网账户中心',
+      })
+      clearApplyIntent()
+      track('cocreate_apply_submit', intent)
+      form.reset()
+      setNotice({ tone: 'success', text: '已提交，我们会通过你留下的联系方式联系你。' })
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : '提交失败，请稍后重试。' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section ref={cardRef} id="cocreate" className="card cocreate-card">
+      <div className="section-head">
+        <div>
+          <h3>申请成为共建律师 / 律所团队咨询</h3>
+          <span className="muted">共建律师：民商事诉讼律师优先，共建期间赠送专业版额度，你的反馈直接进入产品迭代。律所团队：多人协作、统一开票。</span>
+        </div>
+        {!open ? <button type="button" className="primary-button" onClick={() => setOpen(true)}>填写申请</button> : null}
+      </div>
+      {open ? (
+        <form className="cocreate-form" onSubmit={(event) => {
+          event.preventDefault()
+          void handleSubmit(event.currentTarget)
+        }}>
+          <fieldset className="cocreate-type">
+            <legend>申请类型</legend>
+            <label><input type="radio" name="intent" checked={intent === 'cocreate'} onChange={() => setIntent('cocreate')} />申请成为共建律师</label>
+            <label><input type="radio" name="intent" checked={intent === 'team'} onChange={() => setIntent('team')} />律所团队咨询</label>
+          </fieldset>
+          <label>
+            执业年限
+            <select name="years" className="streamlined-case-select" defaultValue="">
+              <option value="">请选择</option>
+              <option>3 年以下</option>
+              <option>3–5 年</option>
+              <option>5–10 年</option>
+              <option>10 年以上</option>
+            </select>
+          </label>
+          <fieldset className="cocreate-areas">
+            <legend>主要业务领域（可多选）</legend>
+            {practiceAreas.map((area) => (
+              <label key={area}><input type="checkbox" name="areas" value={area} />{area}</label>
+            ))}
+          </fieldset>
+          <label>
+            每月案件量
+            <select name="caseload" className="streamlined-case-select" defaultValue="">
+              <option value="">请选择</option>
+              <option>5 件以下</option>
+              <option>5–10 件</option>
+              <option>10–20 件</option>
+              <option>20 件以上</option>
+            </select>
+          </label>
+          <label>
+            联系方式（微信或手机）
+            <input name="contact" required maxLength={80} placeholder="微信号或手机号" />
+          </label>
+          <label className="cocreate-extra">
+            补充说明（选填）
+            <textarea name="extra" rows={3} maxLength={600} placeholder={intent === 'team' ? '团队人数、希望怎么协作等' : '你最希望 LawVerify 帮你核什么'} />
+          </label>
+          {notice ? <div className={notice.tone === 'success' ? 'form-success' : 'form-error'}>{notice.text}</div> : null}
+          <div className="hero-actions">
+            <button className="primary-button" type="submit" disabled={busy}>{busy ? '提交中...' : '提交申请'}</button>
+          </div>
+        </form>
+      ) : null}
+    </section>
+  )
+}
+
 function ConsoleHome({ data }: { data: DashboardData }) {
   return (
     <div className="stack">
+      <WelcomeCard />
       <section className="card summary-grid">
         <div><span>当前套餐</span><strong>{data.account.tierName}</strong></div>
         <div><span>积分余额</span><strong>{data.account.pointsBalance.toLocaleString()}</strong></div>
@@ -2465,6 +2733,7 @@ function ConsoleHome({ data }: { data: DashboardData }) {
           )}
         </div>
       </section>
+      <CocreateApplyCard />
     </div>
   )
 }
@@ -2939,9 +3208,98 @@ function ConsoleAuthRequired() {
   )
 }
 
+function SiteFooter() {
+  const year = new Date().getFullYear()
+  return (
+    <footer className="site-footer-v3">
+      <div className="sf-inner">
+        <div className="sf-cta">
+          <div>
+            <h2>每一句话，都经得起质证。</h2>
+            <p>下一份文书，试试更顺手的方式。注册即送体验积分。</p>
+          </div>
+          <a className="sf-cta-button" href="/register" onClick={() => track('hero_cta_click', 'register:footer')}>免费注册 →</a>
+        </div>
+        <div className="sf-main">
+          <div className="sf-brand">
+            <img src="/brand/lawverify-wordmark-on-dark.svg" alt="LawVerify" width="140" height="40" />
+            <p>面向律师的案件分析、证据联动与文书核验工作台。专注办案，有据可依。</p>
+          </div>
+          <nav className="sf-links" aria-label="页脚导航">
+            <div>
+              <strong>产品</strong>
+              <a href="/product">产品能力</a>
+              <a href="/verification">什么是逐句证据核验</a>
+              <a href="/pricing">价格</a>
+              <a href="/download">下载客户端</a>
+            </div>
+            <div>
+              <strong>帮助</strong>
+              <a href="/docs">快速上手</a>
+              <a href="/faq">常见问题</a>
+              <a href="/ai-notice">AI 使用说明</a>
+              {siteConfig.termsUrl ? <a href={siteConfig.termsUrl}>用户协议</a> : null}
+              {siteConfig.privacyUrl ? <a href={siteConfig.privacyUrl}>隐私政策</a> : null}
+            </div>
+            <div>
+              <strong>合作</strong>
+              <a href="/register?apply=cocreate">申请成为共建律师</a>
+              <a href="/console?apply=team#cocreate">律所团队咨询</a>
+            </div>
+          </nav>
+        </div>
+        <div className="sf-legal">
+          <span>© {year} {siteConfig.companyName}</span>
+          {siteConfig.icpNumber ? (
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">{siteConfig.icpNumber}</a>
+          ) : null}
+          <span className="sf-notice">LawVerify 是律师的辅助工作台，不替代专业判断。材料相关不等于证明成立，模型生成不等于事实认定；证据原件、法条效力、案例出处与适用条件仍需律师核对。<a href="/ai-notice">AI 使用说明</a></span>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+const BANNER_KEY = 'lawverify-cocreate-banner-closed'
+
+function CocreateBanner() {
+  const [closed, setClosed] = useState(() => {
+    try {
+      return window.localStorage.getItem(BANNER_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  if (closed) return null
+  return (
+    <div className="cocreate-banner" role="region" aria-label="共建律师招募">
+      <p>
+        <b>正在招募 30 位共建律师</b>
+        <span>民商事诉讼律师优先，共建期间赠送专业版额度</span>
+      </p>
+      <a href="/register?apply=cocreate" onClick={() => track('hero_cta_click', 'register:banner')}>立即申请 →</a>
+      <button
+        type="button"
+        aria-label="关闭招募通知"
+        onClick={() => {
+          setClosed(true)
+          try {
+            window.localStorage.setItem(BANNER_KEY, '1')
+          } catch {
+            // 忽略。
+          }
+        }}
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
 function Content({
   route,
   data,
+  releasesStatus,
   profile,
   authToken,
   authBusy,
@@ -2964,6 +3322,7 @@ function Content({
 }: {
   route: SiteRoute
   data: DashboardData
+  releasesStatus: 'loading' | 'ready' | 'error'
   profile: SessionProfile | null
   authToken: string
   authBusy: boolean
@@ -3037,7 +3396,7 @@ function Content({
   }
 
   if (route === '/download') {
-    return <DownloadPage releases={data.releases} />
+    return <DownloadPage releases={data.releases} releasesStatus={releasesStatus} />
   }
 
   if (route === '/product') {
@@ -3048,11 +3407,30 @@ function Content({
     return <DocsPage />
   }
 
+  if (route === '/faq') {
+    return <FaqPage />
+  }
+
+  if (route === '/verification') {
+    return <VerificationPage />
+  }
+
+  if (route === '/ai-notice') {
+    return <AiNoticePage />
+  }
+
   return <HomePage plans={data.plans} packages={data.packages} />
 }
 
 export default function App() {
   const route = normalizeRoute(window.location.pathname)
+  const [atPageTop, setAtPageTop] = useState(() => window.scrollY < 40)
+  useEffect(() => {
+    const onScroll = () => setAtPageTop(window.scrollY < 40)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+  const topbarOverHero = route === '/' && atPageTop
   const [data, setData] = useState<DashboardData>(fallbackData)
   const [profile, setProfile] = useState<SessionProfile | null>(null)
   const [authToken, setAuthToken] = useState(() => consumeDesktopTokenFromUrl() || authStorage.getToken())
@@ -3066,6 +3444,18 @@ export default function App() {
   const [invoiceForm, setInvoiceForm] = useState<InvoiceFormValue>(emptyInvoiceForm)
   const [invoiceFormOpen, setInvoiceFormOpen] = useState(false)
   const [selectedChannel, setSelectedChannel] = useState<PaymentChannel>('alipay')
+  const [releasesStatus, setReleasesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+
+  // 官网通用：记录渠道来源和申请意向、加载统计脚本（未配置 ID 时不加载）、设置页面标题与描述。
+  useEffect(() => {
+    captureSiteSource()
+    captureApplyIntent()
+    loadAnalytics()
+  }, [])
+
+  useEffect(() => {
+    applyPageMeta(route)
+  }, [route])
 
   const enabledProviders = useMemo(
     () => data.providers.filter((item) => item.enabled),
@@ -3075,12 +3465,28 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
 
+    // 下载版本单独加载：不再被套餐、支付接口拖慢或拖垮；加载完成前下载页显示“正在获取”，而不是“暂无可下载版本”。
+    async function loadReleases() {
+      try {
+        const releases = await api.getReleases()
+        if (cancelled) {
+          return
+        }
+        setData((current) => ({ ...current, releases: releases.items }))
+        setReleasesStatus('ready')
+      } catch (error) {
+        console.error('Failed to load releases.', error)
+        if (!cancelled) {
+          setReleasesStatus('error')
+        }
+      }
+    }
+
     async function load() {
       try {
-        const [plans, catalog, releases] = await Promise.all([
+        const [plans, catalog] = await Promise.all([
           api.getPlans(),
           api.getBillingCatalog(),
-          api.getReleases(),
         ])
 
         if (cancelled) {
@@ -3092,7 +3498,6 @@ export default function App() {
           plans: plans.items,
           packages: catalog.packages,
           providers: catalog.providers,
-          releases: releases.items,
           apiOnline: true,
         }))
 
@@ -3105,6 +3510,7 @@ export default function App() {
       }
     }
 
+    void loadReleases()
     void load()
 
     return () => {
@@ -3302,12 +3708,38 @@ export default function App() {
         password: String(formData.get('password') ?? ''),
       })
       authStorage.setToken(result.token)
+      track('register_complete')
+      await recordRegisterSource()
       setAuthToken(result.token)
-      window.location.assign('/console')
+      window.location.assign('/console?welcome=1')
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : '注册失败。')
     } finally {
       setAuthBusy(false)
+    }
+  }
+
+  // 带渠道参数（或从外部网站）进入官网的访客注册后，把来源作为一条反馈记下来，管理后台 /admin/feedback 可见。
+  // 最多等 2.5 秒，失败也不影响注册。
+  async function recordRegisterSource() {
+    const source = readSiteSource()
+    if (!source) {
+      return
+    }
+    try {
+      await Promise.race([
+        api.submitFeedback({
+          feedbackType: 'other',
+          title: '注册来源记录',
+          content: describeSiteSource(source),
+          clientPlatform: 'web',
+          pageContext: '官网注册',
+        }),
+        new Promise((resolve) => window.setTimeout(resolve, 2500)),
+      ])
+      clearSiteSource()
+    } catch (error) {
+      console.error('Failed to record register source.', error)
     }
   }
 
@@ -3424,7 +3856,7 @@ export default function App() {
     return (
       <div className="page-shell">
         <header className="topbar">
-          <a className="brand" href="/">LawVerify</a>
+          <a className="brand brand-logo" href="/" aria-label="LawVerify 首页"><img src="/brand/lawverify-wordmark.svg" alt="LawVerify" width="146" height="42" /></a>
         </header>
         <main className="content-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', color: '#666' }}>
           正在加载账户信息...
@@ -3436,8 +3868,12 @@ export default function App() {
   return (
     <div className={`page-shell ${route.startsWith('/admin') || route.startsWith('/console') ? 'workspace-site' : 'public-site'}`}>
       <a className="skip-link" href="#main-content">跳到主要内容</a>
-      <header className="topbar">
-        <a className="brand" href="/">LawVerify</a>
+      {!route.startsWith('/admin') && !route.startsWith('/console') ? <CocreateBanner /> : null}
+      <header className={`topbar${topbarOverHero ? ' topbar-over' : ''}`}>
+        <a className="brand brand-logo" href="/" aria-label="LawVerify 首页">
+          <img className="logo-default" src="/brand/lawverify-wordmark.svg" alt="LawVerify" width="146" height="42" />
+          <img className="logo-on-dark" src="/brand/lawverify-wordmark-on-dark.svg" alt="" aria-hidden="true" width="146" height="42" />
+        </a>
         <nav className="nav-row" aria-label="官网导航">
           {siteNav.map((item) => (
             <SiteLink key={item.href} item={item} current={route} />
@@ -3452,7 +3888,7 @@ export default function App() {
           ) : (
             <>
               <a className="ghost-button" href="/login">登录</a>
-              <a className="primary-button" href="/register">注册</a>
+              <a className="primary-button" href="/register" onClick={() => track('hero_cta_click', 'register:nav')}>免费注册</a>
             </>
           )}
         </div>
@@ -3461,6 +3897,7 @@ export default function App() {
         <Content
           route={route}
           data={data}
+          releasesStatus={releasesStatus}
           profile={profile}
           authToken={authToken}
           authBusy={authBusy}
@@ -3483,7 +3920,7 @@ export default function App() {
         />
       </main>
       {!route.startsWith('/admin') && !route.startsWith('/console') && (
-        <footer className="site-footer"><span>LawVerify</span><span>专注办案，有据可依。</span></footer>
+        <SiteFooter />
       )}
     </div>
   )

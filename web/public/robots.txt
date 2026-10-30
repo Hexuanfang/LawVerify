@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /console
+Disallow: /admin
+Disallow: /login
+
+Sitemap: https://lawagent.zhijing.fun/sitemap.xml

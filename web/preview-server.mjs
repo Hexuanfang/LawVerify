@@ -31,6 +31,7 @@ const mimeTypes = new Map([
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
   ['.txt', 'text/plain; charset=utf-8'],
+  ['.xml', 'application/xml; charset=utf-8'],
   ['.woff', 'font/woff'],
   ['.woff2', 'font/woff2'],
 ])

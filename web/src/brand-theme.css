@@ -1,13 +1,13 @@
 /* Shared brand tokens; public pages get the more expressive composition. */
 :root {
-  --brand-blue: #2945df;
-  --brand-blue-dark: #1931b6;
-  --brand-lime: #d8f36a;
+  --brand-blue: #1f4aa8;
+  --brand-blue-dark: #173a85;
+  --brand-lime: #ffd84d; /* 强调色：荧光黄（变量名沿用旧名，避免大面积改动） */
   --brand-lilac: #e5dffa;
   --brand-ink: #202227;
   --brand-muted: #65666f;
-  --brand-paper: #f7f7f2;
-  --brand-line: #e0e1da;
+  --brand-paper: #f5f7fb;
+  --brand-line: #e1e6ef;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--brand-ink);
   background: var(--brand-paper);
@@ -114,7 +114,7 @@ select {
 
 .primary-button:hover {
   background: var(--brand-blue-dark);
-  box-shadow: 0 6px 0 #12278d;
+  box-shadow: 0 6px 0 #102a62;
   transform: translateY(-3px);
 }
 
@@ -666,7 +666,7 @@ input,
 input:focus,
 .streamlined-case-select:focus {
   border-color: var(--brand-blue);
-  box-shadow: 0 0 0 3px #2945df12;
+  box-shadow: 0 0 0 3px #1f4aa81f;
 }
 
 .channel-chip {
@@ -675,7 +675,7 @@ input:focus,
 
 .channel-chip.active {
   border-color: var(--brand-blue);
-  background: #edf0ff;
+  background: #eef2fa;
 }
 
 .site-footer {

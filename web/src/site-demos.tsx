@@ -576,13 +576,14 @@ const storyCitations = [
   { cite: '《民法典》第五百七十七条', source: '国家法律法规数据库', tone: 'ok' as const, result: '现行有效', note: '' },
   { cite: '《合同法》第一百五十九条', source: '国家法律法规数据库', tone: 'bad' as const, result: '已废止', note: '现行对应：《民法典》第六百二十六条' },
   { cite: '（2024）京01XX民初XXXX号', source: '法院官方页面', tone: 'warn' as const, result: '未能核实', note: '官方正文中未找到该案号' },
+  { cite: '《某市物业管理条例》第二十条', source: '你上传到知识库的法规文件', tone: 'ok' as const, result: '已对照原文', note: '内置库未收录，按你上传的版本对照' },
 ]
 
 function SceneCitations({ active }: { active: boolean }) {
   return (
     <div className={`scene scene-citations${active ? ' is-active' : ''}`}>
       <div className="sm-photo" style={{ backgroundImage: 'url(/media/bg-gavel.jpg)' }} aria-hidden="true" />
-      <span className="sc-head">文书中识别到 3 处引用</span>
+      <span className="sc-head">文书中识别到 4 处引用</span>
       {storyCitations.map((item, index) => (
         <div className={`sc-row sc-${item.tone}`} key={item.cite} style={{ ['--i' as string]: index }}>
           <div className="sc-text">
@@ -613,8 +614,8 @@ const storyChapters = [
   {
     kicker: '案例法条核验',
     title: '让论证依据回到可核对的来源。',
-    body: '文书中的法条自动识别并核对官方法源，已废止、已修订的条文直接标红提示；引用的案号回到法院官方页面核对，只有官方正文能对上才显示已核实。',
-    points: ['法条可查看官方原文', '废止、修订版本给出风险提示', '查不到的案号如实提示“未能核实”'],
+    body: '文书中的法条自动识别并核对官方法源，已废止、已修订的条文直接标红提示；引用的案号回到法院官方页面核对，只有官方正文能对上才显示已核实。内置法律库之外，地方性法规、行业规范等小众法规，也可以自己上传到知识库，引用时直接对照你上传的原文。',
+    points: ['法条可查看官方原文', '废止、修订版本给出风险提示', '查不到的案号如实提示“未能核实”', '小众法规可上传到知识库，对照原文'],
   },
 ]
 

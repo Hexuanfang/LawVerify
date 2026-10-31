@@ -793,11 +793,12 @@ export const api = {
       }>
     }>('/api/account/point-ledger')
   },
-  getLatestPublicRelease() {
+  getLatestPublicRelease(channel: 'stable' | 'test' = 'stable') {
     const desktop = window.lawVerifyDesktop
     const query = new URLSearchParams({
       platform: desktop?.platform ?? 'win32',
       arch: desktop?.arch ?? 'x64',
+      channel,
     })
     return requestCloudEnvelope<ReleaseItem | null>(`/api/web/releases/latest?${query}`)
   },

@@ -28,7 +28,9 @@ siteRouter.get('/plans', (_request, response) => {
 siteRouter.get('/releases/latest', async (request, response) => {
   const platform = request.query.platform === undefined ? 'win32' : String(request.query.platform)
   const arch = request.query.arch === undefined ? 'x64' : String(request.query.arch)
-  const release = await getLatestPublicRelease(platform, arch)
+  const channel = request.query.channel === undefined ? 'stable' : String(request.query.channel)
+  const release = await getLatestPublicRelease(platform, arch, channel)
+  response.setHeader('Cache-Control', 'no-store')
   sendSuccess(response, release)
 })
 

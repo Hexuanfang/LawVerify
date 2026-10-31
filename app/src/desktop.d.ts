@@ -7,6 +7,7 @@ declare global {
     version: string
     downloadUrl: string
     sha256: string
+    channel?: 'stable' | 'test'
   }
 
   interface LawVerifyDesktopUpdateStatus {

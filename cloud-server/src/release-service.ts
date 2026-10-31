@@ -94,12 +94,15 @@ export async function listPublicReleases() {
   return items
 }
 
-export async function getLatestPublicRelease(platform = 'win32', arch = 'x64') {
+export async function getLatestPublicRelease(platform = 'win32', arch = 'x64', channel = 'stable') {
   if (!['win32', 'darwin'].includes(platform) || !['x64', 'arm64'].includes(arch)) {
     throw new AppError('不支持的客户端平台或芯片类型。', 400, 'INVALID_RELEASE_PLATFORM')
   }
+  if (!['stable', 'test'].includes(channel)) {
+    throw new AppError('不支持的更新通道。', 400, 'INVALID_RELEASE_CHANNEL')
+  }
   const assets = await getLocalReleaseAssets()
-  const latest = assets.find((asset) => asset.platform === platform && asset.arch === arch && asset.channel === 'stable')
+  const latest = assets.find((asset) => asset.platform === platform && asset.arch === arch && asset.channel === channel)
   return latest ? toPublicRelease(latest) : null
 }
 

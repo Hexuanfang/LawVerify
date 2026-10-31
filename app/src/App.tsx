@@ -134,7 +134,7 @@ interface FeedbackDialogState {
 }
 
 interface AppUpdateState {
-  status: 'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error'
+  status: 'idle' | 'checking' | 'unavailable' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error'
   latestRelease: ReleaseItem | null
   progress: number | null
   message: string
@@ -2411,26 +2411,42 @@ function App() {
   const cloudPointsRevisionRef = useRef(0)
   const cloudAccountProfileRef = useRef<CloudAccountSessionProfile | null>(null)
   const hasCheckedAppUpdateOnLaunchRef = useRef(false)
+  const appUpdateBusyRef = useRef(false)
   const isDesktopClient = window.lawVerifyDesktop?.channel === 'electron'
 
-  const checkForAppUpdate = useCallback(async (options: { silent?: boolean } = {}) => {
+  const checkForAppUpdate = useCallback(async (options: { silent?: boolean; channel?: 'stable' | 'test' } = {}) => {
     if (!isDesktopClient) {
       return
     }
 
-    if (appUpdateState.status === 'downloading') {
+    if (appUpdateBusyRef.current) {
       return
     }
 
+    appUpdateBusyRef.current = true
     setAppUpdateState((current) => ({
       ...current,
       status: 'checking',
       progress: null,
-      message: options.silent ? current.message : '正在检查桌面端新版本…',
+      message: '正在检查桌面端新版本…',
     }))
 
     try {
-      const latestRelease = await api.getLatestPublicRelease()
+      const latestRelease = await api.getLatestPublicRelease(options.channel)
+      if (!latestRelease) {
+        setAppUpdateState({
+          status: 'unavailable', latestRelease: null, progress: null,
+          message: options.channel === 'test'
+            ? '暂未发布适用于此 Mac 的测试版。'
+            : '暂未发布适用于此设备的正式版更新。',
+        })
+        return
+      }
+      if (latestRelease.platform !== window.lawVerifyDesktop?.platform
+        || latestRelease.arch !== window.lawVerifyDesktop?.arch
+        || latestRelease.channel !== (options.channel ?? 'stable')) {
+        throw new Error('更新版本与当前设备或更新通道不匹配，请前往官网下载。')
+      }
       const hasNewerVersion = latestRelease && compareAppVersions(__APP_VERSION__, latestRelease.version) < 0
 
       setAppUpdateState({
@@ -2438,32 +2454,36 @@ function App() {
         latestRelease,
         progress: null,
         message: hasNewerVersion
-          ? `发现新版本 v${latestRelease.version}，可直接更新。`
+          ? `发现${latestRelease.channel === 'test' ? '未签名测试版' : '新版本'} v${latestRelease.version}，可下载更新。`
           : options.silent ? '' : `当前已是最新版本 v${__APP_VERSION__}。`,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '检查更新失败，请稍后重试。'
+      const message = `检查更新失败，请确认网络和官网可访问后重试。${error instanceof Error ? error.message : ''}`
       setAppUpdateState((current) => ({
         ...current,
         status: 'error',
         progress: null,
         message,
       }))
+    } finally {
+      appUpdateBusyRef.current = false
     }
-  }, [appUpdateState.status, isDesktopClient])
+  }, [isDesktopClient])
 
   const handleStartAppUpdate = useCallback(async () => {
     const latestRelease = appUpdateState.latestRelease
-    if (!latestRelease) {
+    if (!latestRelease || appUpdateBusyRef.current) {
       return
     }
 
     if (window.lawVerifyDesktop?.startAppUpdate) {
+      appUpdateBusyRef.current = true
       try {
         await window.lawVerifyDesktop.startAppUpdate({
           version: latestRelease.version,
           downloadUrl: latestRelease.downloadUrl,
           sha256: latestRelease.sha256,
+          channel: latestRelease.channel === 'test' ? 'test' : 'stable',
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : '更新失败，请稍后重试。'
@@ -2473,6 +2493,8 @@ function App() {
           progress: null,
           message,
         }))
+      } finally {
+        appUpdateBusyRef.current = false
       }
       return
     }
@@ -8807,7 +8829,7 @@ function App() {
         <div className="app-update-copy">
           <span>桌面端更新</span>
           <strong>{title}</strong>
-          <p>{detail}</p>
+          <p role="status" aria-live="polite">{detail}</p>
         </div>
 
         {appUpdateState.status === 'downloading' ? (
@@ -8828,14 +8850,24 @@ function App() {
           >
             {appUpdateState.status === 'checking' ? '检查中...' : '检查更新'}
           </button>
+          {window.lawVerifyDesktop?.platform === 'darwin' ? (
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => void checkForAppUpdate({ channel: 'test' })}
+              disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
+            >
+              检查测试版
+            </button>
+          ) : null}
           {hasAvailableUpdate ? (
             <button
               className="primary-button"
               type="button"
               onClick={() => void handleStartAppUpdate()}
-              disabled={appUpdateState.status === 'downloading'}
+              disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
             >
-              {appUpdateState.status === 'downloading' ? '正在更新...' : '一键更新'}
+              {appUpdateState.status === 'downloading' ? '正在更新...' : window.lawVerifyDesktop?.platform === 'darwin' ? '下载并安装' : '一键更新'}
             </button>
           ) : null}
         </div>

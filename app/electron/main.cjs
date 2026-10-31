@@ -5,7 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { registerCaseDirectories } = require('./case-directories.cjs')
 const { getUpdateFileName, validateUpdateFileName } = require('./update-platform.cjs')
-const { createHash } = require('node:crypto')
+const { downloadInstaller } = require('./update-download.cjs')
 const { ServiceSupervisor } = require('./service-supervisor.cjs')
 const { createStabilityLog } = require('./stability-log.cjs')
 const { ACCOUNT_REQUEST_CHANNEL, createAccountRequestHandler } = require('./account-network.cjs')
@@ -288,7 +288,10 @@ function getFileNameFromContentDisposition(headerValue) {
 function resolveUpdateDownloadTarget(version, response) {
   const responseFileName = getFileNameFromContentDisposition(response.headers.get('content-disposition'))
   const fallbackFileName = getUpdateFileName(String(version || app.getVersion()).trim() || app.getVersion())
-  const normalizedFileName = validateUpdateFileName(sanitizeFileName(responseFileName || fallbackFileName) || fallbackFileName)
+  const normalizedFileName = validateUpdateFileName(
+    sanitizeFileName(responseFileName || fallbackFileName) || fallbackFileName,
+    process.platform, process.arch, version,
+  )
   const updatesDir = path.join(app.getPath('temp'), 'LawVerify', 'updates')
   fs.mkdirSync(updatesDir, { recursive: true })
   return {
@@ -298,83 +301,25 @@ function resolveUpdateDownloadTarget(version, response) {
 }
 
 async function downloadUpdateInstaller(downloadUrl, version, expectedSha256) {
-  const response = await fetch(downloadUrl, { redirect: 'follow' })
-  if (!response.ok || !response.body) {
-    throw new Error(`更新安装包下载失败（${response.status || 'unknown'}）。`)
-  }
-
-  const { targetPath, tempPath } = resolveUpdateDownloadTarget(version, response)
-  const totalBytes = Number(response.headers.get('content-length') || '0')
-  const writer = fs.createWriteStream(tempPath)
-  const hash = createHash('sha256')
-
-  try {
-    const reader = response.body.getReader()
-    let receivedBytes = 0
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        break
-      }
-
-      const chunk = Buffer.from(value)
-      hash.update(chunk)
-      await new Promise((resolve, reject) => {
-        writer.write(chunk, (error) => {
-          if (error) {
-            reject(error)
-            return
-          }
-
-          resolve()
-        })
-      })
-
-      receivedBytes += chunk.length
-      const progress = totalBytes > 0 ? Math.min(100, Math.round((receivedBytes / totalBytes) * 100)) : undefined
-      broadcastAppUpdateStatus({
-        status: 'downloading',
-        version,
-        progress,
-        message: totalBytes > 0
-          ? `正在下载更新安装包… ${progress}%`
-          : '正在下载更新安装包…',
-      })
-    }
-
-    await new Promise((resolve, reject) => {
-      writer.end((error) => {
-        if (error) {
-          reject(error)
-          return
-        }
-
-        resolve()
-      })
-    })
-
-    if (expectedSha256 && hash.digest('hex') !== expectedSha256.toLowerCase()) {
-      throw new Error('安装包完整性校验失败，请重新下载更新。')
-    }
-    if (fs.existsSync(targetPath)) {
-      fs.rmSync(targetPath, { force: true })
-    }
-    fs.renameSync(tempPath, targetPath)
-    return targetPath
-  } catch (error) {
-    writer.destroy()
-    if (fs.existsSync(tempPath)) {
-      fs.rmSync(tempPath, { force: true })
-    }
-    throw error
-  }
+  const updateSession = session.fromPartition('persist:lawverify-account')
+  return downloadInstaller({
+    fetch: (url, init) => updateSession.fetch(url, init),
+    url: downloadUrl, version, sha256: expectedSha256,
+    resolveTarget: resolveUpdateDownloadTarget,
+    onProgress: broadcastAppUpdateStatus,
+  })
 }
 
 async function launchInstallerAndQuit(installerPath) {
   if (process.platform === 'darwin') {
     const error = await shell.openPath(installerPath)
     if (error) throw new Error('无法打开更新安装包，请从官网下载后安装。')
+    await dialog.showMessageBox({
+      type: 'info', title: '安装 LawVerify 更新',
+      message: '更新安装包已打开',
+      detail: '请退出 LawVerify，将安装包中的 LawVerify 拖入“应用程序”，选择替换旧版，再从“应用程序”启动。已保存的本地案件材料会保留。',
+      buttons: ['退出并安装'], noLink: true,
+    })
     app.quit()
     return
   }
@@ -391,7 +336,7 @@ async function handleStartAppUpdate(_event, payload) {
   const downloadUrl = String(payload?.downloadUrl || '').trim()
   const sha256 = String(payload?.sha256 || '').trim()
 
-  if (!version) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
     throw new Error('缺少更新版本号。')
   }
 
@@ -407,6 +352,15 @@ async function handleStartAppUpdate(_event, payload) {
   }
 
   appUpdateTask = (async () => {
+    if (payload?.channel === 'test' || /-unsigned\.dmg$/i.test(new URL(downloadUrl).pathname)) {
+      const confirmation = await dialog.showMessageBox({
+        type: 'warning', title: '安装测试版',
+        message: `是否下载 v${version} 未签名测试版？`,
+        detail: '此版本尚未完成正式签名与公证。macOS 可能要求在“系统设置 > 隐私与安全性”中手动允许打开。正式版用户建议等待正式更新。',
+        buttons: ['取消', '下载测试版'], defaultId: 0, cancelId: 0, noLink: true,
+      })
+      if (confirmation.response !== 1) return { ok: false }
+    }
     broadcastAppUpdateStatus({
       status: 'downloading',
       version,

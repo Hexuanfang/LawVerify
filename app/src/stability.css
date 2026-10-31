@@ -1,0 +1,86 @@
+.stability-fallback {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  margin: 24px;
+  padding: 24px;
+  border: 1px solid #dfe4ee;
+  border-radius: 12px;
+  background: #fff;
+  color: #26344b;
+}
+.stability-fallback p { margin: 0; }
+.stability-fallback button,
+.draft-recovery button {
+  padding: 8px 14px;
+  border: 1px solid #cdd6e5;
+  border-radius: 8px;
+  background: #f5f7fb;
+  color: #26344b;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.stability-fallback button:hover,
+.draft-recovery button:hover { box-shadow: 0 3px 10px #18234022; }
+.stability-fallback button:active,
+.draft-recovery button:active { transform: translateY(1px); }
+.stability-notice {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10000;
+  max-width: min(400px, calc(100vw - 40px));
+  padding: 14px 18px;
+  border: 1px solid #dfe4ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #26344b;
+  box-shadow: 0 8px 30px #18234022;
+}
+.draft-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  color: #805300;
+  background: #fff7df;
+  border-radius: 8px;
+}
+.draft-recovery details { flex-basis: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.word-paragraph { content-visibility: auto; contain-intrinsic-size: auto 140px; }
+.word-paragraph.active { content-visibility: visible; }
+.pdf-preview { width: 100%; overflow: auto; }
+.pdf-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px;
+  position: sticky;
+  top: 0;
+  background: var(--panel-bg, #fff);
+  z-index: 1;
+}
+.pdf-preview-toolbar button {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #dfe4ee);
+  border-radius: 8px;
+  background: var(--panel-soft, #f5f7fb);
+  color: var(--text, #26344b);
+  cursor: pointer;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+.pdf-preview-toolbar button:hover:not(:disabled) { box-shadow: 0 3px 10px #18234022; }
+.pdf-preview-toolbar button:active:not(:disabled) { transform: translateY(1px); }
+.pdf-preview-toolbar button:disabled { opacity: .45; cursor: default; }
+.pdf-preview canvas { display: block; margin: 8px auto; max-width: 100%; }
+.pdf-preview canvas[hidden] { display: none; }
+.virtual-evidence-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}

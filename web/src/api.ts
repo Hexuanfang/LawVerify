@@ -4,6 +4,7 @@ const API_BASE = (
 ).replace(/\/$/, '')
 const TOKEN_STORAGE_KEY = 'lawverify-cloud-token'
 const DESKTOP_TOKEN_QUERY_KEY = 'desktopToken'
+let analyticsToken = ''
 
 export class ApiError extends Error {
   status: number
@@ -88,7 +89,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     )
   }
 
+  if (/^\/api\/billing\/orders\/[^/]+$/.test(path)) {
+    const order = (payload.data as { order?: { id: string; status: string } })?.order
+    if (order?.status === 'paid') void sendProductEvent('payment.completed', order.id)
+  }
   return payload.data
+}
+
+function sendProductEvent(name: 'app.open' | 'auth.login' | 'payment.completed', id: string = crypto.randomUUID()) {
+  if (!analyticsToken || analyticsToken !== getAuthToken()) return Promise.resolve()
+  return request('/api/account/events', { method: 'POST', body: JSON.stringify({ events: [{
+    id, name, surface: 'web', outcome: 'success', durationMs: 0,
+  }] }) }).then(() => {}).catch(() => {})
 }
 
 export function isAuthApiError(error: unknown): error is ApiError {
@@ -120,11 +132,35 @@ export function consumeDesktopTokenFromUrl() {
 }
 
 export const api = {
+  getReferralSummary() {
+    return request<{ code: string; inviteUrl: string; invited: number; rewarded: number; earnedPoints: number;
+      enabled: boolean; inviterPoints: number; inviteePoints: number; minPaymentFen: number }>('/api/account/referrals')
+  },
+  async getAnalyticsPreference() {
+    const token = getAuthToken()
+    const result = await request<{ enabled: boolean }>('/api/account/analytics-preference')
+    if (getAuthToken() === token) analyticsToken = result.enabled ? token : ''
+    return result
+  },
+  async setAnalyticsPreference(enabled: boolean) {
+    analyticsToken = ''
+    const token = getAuthToken()
+    const result = await request<{ enabled: boolean }>('/api/account/analytics-preference', { method: 'PUT', body: JSON.stringify({ enabled }) })
+    if (getAuthToken() === token) analyticsToken = result.enabled ? token : ''
+    return result
+  },
+  trackProductEvent(name: 'app.open' | 'auth.login' | 'payment.completed') {
+    return sendProductEvent(name)
+  },
+  getProductAnalytics() {
+    return request<{ days: number; items: Array<{ name: string; surface: string; count: number; failures: number; averageDurationMs: number }> }>('/api/admin/analytics')
+  },
   register(payload: {
     organizationName: string
     ownerName: string
     email: string
     password: string
+    inviteCode?: string
   }) {
     return request<{
       token: string

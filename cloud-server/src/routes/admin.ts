@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getAdminDashboard, getAdminUsers, getAdminUsage } from '../admin-service.js'
 import { getAdminFeedbackInsights, updateAdminFeedbackStatus } from '../feedback-service.js'
 import { authenticate, requirePlatformAdmin } from '../middleware/authenticate.js'
+import { getProductAnalytics } from '../analytics-service.js'
 
 export const adminRouter = Router()
 
@@ -14,6 +15,10 @@ const feedbackUpdateSchema = z.object({
 
 adminRouter.use(authenticate)
 adminRouter.use(requirePlatformAdmin)
+
+adminRouter.get('/analytics', async (_req, res) => {
+  res.json({ success: true, data: await getProductAnalytics() })
+})
 
 adminRouter.get('/dashboard', async (req, res, next) => {
   try {

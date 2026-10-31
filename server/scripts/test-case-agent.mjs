@@ -13,6 +13,7 @@ env.CLOUD_API_BASE_URL = 'http://case-agent-test.invalid'
 env.LLM_BASE_URL = 'http://case-agent-test.invalid'
 env.LLM_API_KEY = 'test-only'
 env.LLM_MODEL = 'test-only'
+env.LLM_CHAT_MODELS = 'agent-alternate'
 const { readWorkspace, writeWorkspace, runWithWorkspaceAccount } = await import('../src/store.ts')
 const { confirmCasePosition, importEvidences, retryCaseAgent, caseAgentMessage, bootstrap, deleteEvidence } = await import('../src/service.ts')
 const { rememberCaseAgentCredential, chargedCaseAgentTask, settleCaseAgentRefunds } = await import('../src/case-agent-billing.ts')
@@ -41,6 +42,9 @@ globalThis.fetch = async (input, init = {}) => {
       choices: [{ message: { content: JSON.stringify({
         reply: '请确认代理立场。', proposal: { party: '李某', role: 'defendant', goals: ['核减重复计算'], admissions: [], disputes: [], boundaries: [] },
       }) } }],
+    })
+    if (system.includes('回答本次办案问题')) return respond({
+      choices: [{ message: { content: JSON.stringify({ reply: '请按证明责任补充证据。' }) } }],
     })
     if (system.includes('主张或抗辩')) return respond({ choices: [{ message: { content: JSON.stringify({
       summary: `为${payload.position.party}整理思路`,
@@ -95,6 +99,15 @@ test('case agent identity, cache, persistence, billing and position isolation', 
     await confirmCasePosition('agent-case', reply.proposal, 0)
     let state = await waitReady()
     assert.equal(state.cases[0].agent.position.role, 'defendant')
+    await caseAgentMessage('agent-case', '梳理证据缺口', 'question',
+      { model: 'agent-alternate', agent: 'evidence', skill: 'evidence_gaps' })
+    const selectedCall = calls.filter(c => c.url.endsWith('/chat/completions')).at(-1)
+    assert.equal(selectedCall.body.model, 'agent-alternate')
+    assert.match(selectedCall.body.messages[0].content, /执行补证清单/)
+    assert.equal((await readWorkspace()).cases[0].agent.position.role, 'defendant')
+    const beforeInvalidModel = calls.length
+    await assert.rejects(caseAgentMessage('agent-case', 'test', 'question', { model: 'unapproved' }), /不可用/)
+    assert.equal(calls.length, beforeInvalidModel, 'invalid models must fail before charging')
     assert.equal(state.cases[0].agent.strategy.positionVersion, 1)
     const memory = structuredClone(state.caseContextMemories)
     const llmCallsBefore = calls.filter(c => c.url.endsWith('/chat/completions')).length

@@ -354,6 +354,9 @@ export interface KnowledgeCase {
   title: string
   caseNumber: string
   courtName: string
+  judgeNames?: string[]
+  searchScore?: number
+  searchMatches?: { courtMatched: boolean; judgeMatched: boolean }
   courtLevel: string
   region: string
   trialLevel: string

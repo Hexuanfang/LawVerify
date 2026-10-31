@@ -7,6 +7,8 @@ import { listKnowledgeFilesForWorkspace } from './commercial/knowledge-file-serv
 import { getWorkspaceDataDir } from './config/paths.js'
 import { shouldUseCommercialKnowledgeStore } from './knowledge-mode.js'
 import { inheritWorkspaceSnapshot, WorkspaceSqliteStore } from './infrastructure/workspace-sqlite.js'
+import { notifyWorkspaceChanged } from './infrastructure/workspace-events.js'
+import { scheduleWorkspaceBackup } from './infrastructure/workspace-backups.js'
 import {
   buildClaimEvidenceMatches,
   buildClaimUnits,
@@ -435,6 +437,10 @@ export async function writeWorkspace(state: WorkspaceState) {
   new WorkspaceSqliteStore(paths.dataDir).save(normalized)
   Object.assign(state, normalized)
   inheritWorkspaceSnapshot(normalized, state)
+  notifyWorkspaceChanged(paths.account)
+  if (process.env.LAWVERIFY_DESKTOP === '1') {
+    scheduleWorkspaceBackup(path.join(paths.dataDir, 'workspace.sqlite'))
+  }
 }
 
 export function runWithWorkspaceAccount<T>(account: string | null | undefined, callback: () => T) {

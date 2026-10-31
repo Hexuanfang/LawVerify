@@ -1,5 +1,6 @@
 import { Router, type Request } from 'express'
 import multer from 'multer'
+import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import express from 'express'
 import { z } from 'zod'
 import { createRechargePaymentOrder, getBillingCatalog, getRechargePaymentOrder, listRechargePaymentOrders } from '../billing-service.js'
@@ -60,6 +61,7 @@ import {
   updateParagraph,
 } from '../service.js'
 import type { WorkspaceState } from '../domain.js'
+import { searchWeightedCases, verifyLegalText } from '../legal-verification-service.js'
 
 const loginSchema = z.object({
   account: z.string().min(1, '请输入账号。'),
@@ -139,7 +141,7 @@ export function createV1Router() {
     response.write(`data: ${JSON.stringify(data)}\n\n`)
     response.flush?.()
   }
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } })
+  const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
 
   router.use((request, _response, next) => {
     runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => {
@@ -337,6 +339,7 @@ export function createV1Router() {
     '/files/upload',
     authenticate,
     requirePermission('evidence.upload'),
+    reserveUpload,
     upload.single('file'),
     async (request, response) => {
       if (!request.file) {
@@ -553,11 +556,29 @@ export function createV1Router() {
     sendSuccess(response, result)
   })
 
+  router.post('/verification/legal', async (request, response) => {
+    const payload = z.object({ text: z.string().max(30000), online: z.boolean().default(false) }).parse(request.body)
+    sendSuccess(response, await verifyLegalText(payload.text, payload.online))
+  })
+
+  router.post('/knowledge/cases/search', async (request, response) => {
+    const payload = z.object({
+      keyword: z.string().trim().max(300).optional(),
+      courtName: z.string().trim().max(80).optional(),
+      judgeName: z.string().trim().max(30).optional(),
+      courtWeight: z.number().min(0).max(5).optional(),
+      judgeWeight: z.number().min(0).max(5).optional(),
+    }).refine(p => !!(p.keyword || p.courtName || p.judgeName), '请输入检索条件。').parse(request.body)
+    sendSuccess(response, await searchWeightedCases(payload))
+  })
+
   router.get('/knowledge/cases', async (request, response) => {
     const result = await listKnowledgeCases({
       keyword: typeof request.query.keyword === 'string' ? request.query.keyword : undefined,
       focusTag: typeof request.query.focusTag === 'string' ? request.query.focusTag : undefined,
       cause: typeof request.query.cause === 'string' ? request.query.cause : undefined,
+      courtName: typeof request.query.courtName === 'string' ? request.query.courtName : undefined,
+      judgeName: typeof request.query.judgeName === 'string' ? request.query.judgeName : undefined,
     })
     sendSuccess(response, result)
   })
@@ -609,6 +630,7 @@ export function createV1Router() {
 
   router.post(
     '/knowledge/files/upload',
+    reserveUpload,
     upload.array('files', 200),
     async (request, response) => {
       const files = Array.isArray(request.files) ? request.files : []

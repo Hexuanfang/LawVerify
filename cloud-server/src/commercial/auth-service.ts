@@ -9,6 +9,7 @@ import { readDevStore, updateDevStore } from '../infrastructure/dev-store.js'
 import { isDatabaseEnabled, query, getPool } from '../infrastructure/postgres.js'
 import { recordAuditEvent } from './audit-service.js'
 import type { AuthClaims, AuthenticatedActor, LoginAccountInput, RegisterAccountInput } from './types.js'
+import { bindDevReferral, bindStoredReferral } from '../referral-service.js'
 
 const SIGNUP_BONUS_POINTS = 300
 
@@ -122,6 +123,7 @@ export async function registerAccount(input: RegisterAccountInput) {
         createdAt: new Date().toISOString(),
       })
 
+      bindDevReferral(store, userId, organizationId, input.inviteCode)
       const token = signToken({
         sub: userId,
         organizationId,
@@ -147,7 +149,10 @@ export async function registerAccount(input: RegisterAccountInput) {
     })
   }
 
-  const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1 LIMIT 1', [email])
+  const client = await getPool().connect()
+  try {
+  await client.query('BEGIN')
+  const existing = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1 LIMIT 1', [email])
 
   if (existing.rowCount) {
     throw new AppError('该邮箱已注册。', 409, 'EMAIL_ALREADY_EXISTS')
@@ -155,12 +160,12 @@ export async function registerAccount(input: RegisterAccountInput) {
 
   const passwordHash = await bcrypt.hash(input.password, 10)
 
-  const organization = await query<{ id: string; name: string }>(
+  const organization = await client.query<{ id: string; name: string }>(
     'INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id, name',
     [input.organizationName.trim(), createSlug(input.organizationName)],
   )
 
-  const userResult = await query<{ id: string; email: string; name: string }>(
+  const userResult = await client.query<{ id: string; email: string; name: string }>(
     `
       INSERT INTO users (email, password_hash, name, status)
       VALUES ($1, $2, $3, 'active')
@@ -170,7 +175,7 @@ export async function registerAccount(input: RegisterAccountInput) {
   )
   const user = userResult.rows[0]
 
-  const membership = await query<{ id: string; role: AuthClaims['role'] }>(
+  const membership = await client.query<{ id: string; role: AuthClaims['role'] }>(
     `
       INSERT INTO organization_memberships (organization_id, user_id, role, title, status)
       VALUES ($1, $2, 'owner', '负责人', 'active')
@@ -179,7 +184,7 @@ export async function registerAccount(input: RegisterAccountInput) {
     [organization.rows[0].id, user.id],
   )
 
-  await query(
+  await client.query(
     `
       INSERT INTO point_accounts (organization_id, user_id, balance_points)
       VALUES ($1, $2, $3)
@@ -188,7 +193,7 @@ export async function registerAccount(input: RegisterAccountInput) {
     [organization.rows[0].id, user.id, SIGNUP_BONUS_POINTS],
   )
 
-  await query(
+  await client.query(
     `
       INSERT INTO point_ledger_entries (
         organization_id,
@@ -218,13 +223,7 @@ export async function registerAccount(input: RegisterAccountInput) {
     ],
   )
 
-  await recordAuditEvent({
-    organizationId: organization.rows[0].id,
-    action: 'auth.register',
-    entityType: 'user',
-    entityId: user.id,
-    metadata: { email, organizationName: input.organizationName.trim() },
-  })
+  await bindStoredReferral(client, user.id, organization.rows[0].id, input.inviteCode)
 
   const token = signToken({
     sub: user.id,
@@ -235,7 +234,13 @@ export async function registerAccount(input: RegisterAccountInput) {
     sessionId,
   })
 
-  await persistSession(user.id, sessionId, token)
+  const decoded = jwt.decode(token) as { exp: number }
+  await client.query('INSERT INTO account_sessions (id, user_id, expires_at) VALUES ($1, $2, $3)',
+    [sessionId, user.id, new Date(decoded.exp * 1000).toISOString()])
+  await client.query(`INSERT INTO audit_logs (organization_id, action, entity_type, entity_id, metadata)
+    VALUES ($1, 'auth.register', 'user', $2, $3::jsonb)`,
+    [organization.rows[0].id, user.id, JSON.stringify({ email, organizationName: input.organizationName.trim() })])
+  await client.query('COMMIT')
 
   return {
     token,
@@ -250,6 +255,10 @@ export async function registerAccount(input: RegisterAccountInput) {
       role: membership.rows[0].role,
     },
   }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
 }
 
 export async function seedAdminAccount() {

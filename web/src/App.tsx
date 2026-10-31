@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 
 import { api, authStorage, consumeDesktopTokenFromUrl, isAuthApiError } from './api'
+import { AccountFeatures, ProductAnalytics } from './AccountFeatures'
 import {
   applyPageMeta,
   captureApplyIntent,
@@ -944,7 +945,7 @@ function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; r
                 <>
                   <p className="dl-version">
                     LawVerify {release.version}
-                    {release.channel && release.channel !== 'stable' ? <span className="dl-beta">测试版</span> : null}
+                    {release.channel && release.channel !== 'stable' ? <span className="dl-beta">{release.channel === 'test' ? '未签名测试版' : '测试版'}</span> : null}
                   </p>
                   <p className="dl-meta">
                     {[formatDate(release.publishedAt) ? `${formatDate(release.publishedAt)} 发布` : '', release.platform === 'darwin' ? 'DMG 安装包' : 'EXE 安装包', release.sizeLabel].filter(Boolean).join(' · ')}
@@ -957,6 +958,13 @@ function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; r
                     下载 {column.full}
                   </a>
                   <p className="dl-how">{column.how}</p>
+                  {release.channel === 'test' ? (
+                    <p className="dl-how dl-unsigned">
+                      {release.platform === 'darwin'
+                        ? '未进行 Apple Developer ID 签名及公证，首次打开可能需要在系统设置的“隐私与安全性”中允许。'
+                        : '未进行代码签名，Windows 可能显示未知发布者或 SmartScreen 提示。'}
+                    </p>
+                  ) : null}
                 </>
               ) : releasesStatus === 'loading' ? (
                 <p className="dl-meta">正在获取最新版本…</p>
@@ -1498,6 +1506,10 @@ function AuthPage({
               负责人姓名
               <input name="ownerName" placeholder="请输入姓名" required autoComplete="name" />
             </label>
+            <label>
+              邀请码（选填）
+              <input name="inviteCode" maxLength={16} defaultValue={new URLSearchParams(window.location.search).get('invite') ?? ''} />
+            </label>
           </>
         ) : null}
 
@@ -1651,7 +1663,7 @@ function AdminLayout({ route, data }: { route: SiteRoute; data: DashboardData })
       <div className="admin-main">
         {route === '/admin' ? <AdminDashboardPage /> : null}
         {route === '/admin/users' ? <AdminUsersPage /> : null}
-        {route === '/admin/usage' ? <AdminUsagePage /> : null}
+        {route === '/admin/usage' ? <><AdminUsagePage /><ProductAnalytics /></> : null}
         {route === '/admin/feedback' ? <AdminFeedbackPage /> : null}
       </div>
     </section>
@@ -3183,6 +3195,7 @@ function InvoicesPage({
 
 function ProfilePage({ account, profile }: { account: AccountSummary; profile: SessionProfile | null }) {
   return (
+    <>
     <section className="card form-grid">
       <h3>账户资料</h3>
       <label>
@@ -3202,6 +3215,8 @@ function ProfilePage({ account, profile }: { account: AccountSummary; profile: S
         <input value={profile?.organization.role || '-'} readOnly />
       </label>
     </section>
+    <AccountFeatures />
+    </>
   )
 }
 
@@ -3447,6 +3462,9 @@ export default function App() {
   const [data, setData] = useState<DashboardData>(fallbackData)
   const [profile, setProfile] = useState<SessionProfile | null>(null)
   const [authToken, setAuthToken] = useState(() => consumeDesktopTokenFromUrl() || authStorage.getToken())
+  useEffect(() => {
+    if (authToken) void api.getAnalyticsPreference().then(() => api.trackProductEvent('app.open')).catch(() => {})
+  }, [authToken])
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
   const [isInitializing, setIsInitializing] = useState(!!(consumeDesktopTokenFromUrl() || authStorage.getToken()))
@@ -3719,6 +3737,7 @@ export default function App() {
         ownerName: String(formData.get('ownerName') ?? ''),
         email: String(formData.get('email') ?? ''),
         password: String(formData.get('password') ?? ''),
+        inviteCode: String(formData.get('inviteCode') ?? '').trim() || undefined,
       })
       authStorage.setToken(result.token)
       track('register_complete')

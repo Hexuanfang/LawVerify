@@ -1,5 +1,5 @@
 import path from 'node:path'
-import * as mammoth from 'mammoth'
+import { extractWordText } from '../infrastructure/document-jobs.js'
 import type { KnowledgeFileRecord } from '../domain.js'
 import { AppError } from '../core/app-error.js'
 import { readObject, storeObject } from '../infrastructure/object-storage.js'
@@ -268,9 +268,9 @@ async function extractKnowledgeText(file: Express.Multer.File, relativePath: str
 
   if (lowerName.endsWith('.docx')) {
     try {
-      const result = await mammoth.extractRawText({ buffer: file.buffer })
+      const text = await extractWordText(file.buffer)
       return {
-        extractedText: result.value.trim(),
+        extractedText: text.trim(),
         extractionStatus: 'ready',
       }
     } catch (error) {

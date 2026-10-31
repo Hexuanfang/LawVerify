@@ -9,6 +9,10 @@ import { storeObject } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
+import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel } from '../integrations/llm-service.js'
+import { assistantOptionsSchema } from '../intelligence/assistant-options.js'
+import { subscribeWorkspaceChanges } from '../infrastructure/workspace-events.js'
+import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import {
   bootstrap,
   caseAgentMessage,
@@ -62,7 +66,7 @@ const createCaseSchema = z.object({
 
 export function createLegacyRouter() {
   const router = Router()
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } })
+  const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
   const resolveWorkspaceAccount = (request: Request) =>
     request.header('x-workspace-account')?.trim().toLowerCase()
     ?? (typeof request.query.workspaceAccount === 'string'
@@ -127,6 +131,9 @@ export function createLegacyRouter() {
     if (accept) {
       headers.set('accept', accept)
     }
+    if (request.header('x-product-surface') === 'desktop') {
+      headers.set('x-product-surface', 'desktop')
+    }
 
     const method = request.method.toUpperCase()
     const requestBody = method === 'GET' || method === 'HEAD'
@@ -138,6 +145,7 @@ export function createLegacyRouter() {
         method,
         headers,
         body: requestBody,
+        signal: AbortSignal.timeout(120000),
       })
 
       const payloadText = await upstream.text()
@@ -176,6 +184,28 @@ export function createLegacyRouter() {
     response.json({ ok: true })
   })
 
+  router.get('/workspace/events', (request, response) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = subscribeWorkspaceChanges(resolveWorkspaceAccount(request), () => {
+      if (timer) return
+      timer = setTimeout(() => {
+        timer = undefined
+        if (!response.destroyed) sendStreamEvent(response, 'changed', {})
+      }, 500)
+    })
+    if (!unsubscribe) { response.sendStatus(429); return }
+    startEventStream(response)
+    sendStreamEvent(response, 'connected', {})
+    const heartbeat = setInterval(() => {
+      if (!response.destroyed) { response.write(': keepalive\n\n'); response.flush?.() }
+    }, 30000)
+    response.once('close', () => {
+      clearTimeout(timer)
+      clearInterval(heartbeat)
+      unsubscribe()
+    })
+  })
+
   router.use((request, _response, next) => {
     runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => {
       rememberCaseAgentCredential(request.header('x-case-agent-token'))
@@ -186,6 +216,11 @@ export function createLegacyRouter() {
 
   router.use('/cloud', (request, response) => {
     void proxyCloudRequest(request, response)
+  })
+
+  router.use('/certificates', async (request, _response, next) => {
+    if (request.method !== 'POST' || !/^\/(?:generate(?:\/stream)?|[^/]+\/rewrite(?:\/stream)?)\/?$/.test(request.path)) return next()
+    try { await withAssistantModel(request.body?.model, () => next()) } catch (error) { next(error) }
   })
 
   router.post('/auth/login', async (request, response) => {
@@ -280,8 +315,20 @@ export function createLegacyRouter() {
     const payload = z.object({
       message: z.string().trim().min(1).max(6000),
       intent: z.enum(['position', 'question']),
+      options: assistantOptionsSchema.optional(),
     }).parse(request.body)
-    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent))
+    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent, payload.options))
+  })
+
+  router.get('/assistant/capabilities', async (_request, response) => {
+    response.json(await getAssistantCapabilities())
+  })
+  const voiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 0 } })
+  router.post('/assistant/transcriptions', reserveUpload, voiceUpload.single('file'), async (request, response) => {
+    if (!request.file || !['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'].includes(request.file.mimetype)) {
+      throw new AppError('请提供有效的语音文件。', 400, 'INVALID_AUDIO')
+    }
+    response.json(await transcribeAssistantAudio(request.file.buffer, request.file.mimetype))
   })
 
   router.put('/cases/:caseId/agent/position', async (request, response) => {
@@ -312,28 +359,29 @@ export function createLegacyRouter() {
     sendWorkspacePayload(response, result)
   })
 
-  router.post('/evidences/assets/upload', upload.array('files', 200), async (request, response) => {
+  router.post('/evidences/assets/upload', reserveUpload, upload.array('files', 200), async (request, response) => {
     const files = Array.isArray(request.files) ? request.files : []
     const manifest = typeof request.body?.manifest === 'string'
       ? JSON.parse(request.body.manifest) as Array<{ relativePath?: string; fileName?: string; sourceMimeType?: string }>
       : []
 
-    const assets = await Promise.all(files.map(async (file, index) => {
+    const assets = []
+    for (const [index, file] of files.entries()) {
       const manifestItem = manifest[index] ?? {}
       const stored = await storeObject(file, {
         bucket: 'evidence',
         fileName: manifestItem.fileName?.trim() || file.originalname,
       })
 
-      return {
+      assets.push({
         relativePath: manifestItem.relativePath?.trim() || file.originalname,
         fileName: manifestItem.fileName?.trim() || file.originalname,
         storageKey: stored.key,
         storageUrl: stored.url,
         sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
         contentHash: createHash('sha256').update(file.buffer).digest('hex'),
-      }
-    }))
+      })
+    }
 
     response.json({ assets })
   })

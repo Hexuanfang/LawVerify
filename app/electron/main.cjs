@@ -1,13 +1,14 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, crashReporter, dialog, ipcMain, session, shell, utilityProcess } = require('electron')
 const { spawn } = require('node:child_process')
-const http = require('node:http')
 const net = require('node:net')
 const fs = require('node:fs')
 const path = require('node:path')
-const { pathToFileURL } = require('node:url')
 const { registerCaseDirectories } = require('./case-directories.cjs')
 const { getUpdateFileName, validateUpdateFileName } = require('./update-platform.cjs')
-const { createHash } = require('node:crypto')
+const { downloadInstaller } = require('./update-download.cjs')
+const { ServiceSupervisor } = require('./service-supervisor.cjs')
+const { createStabilityLog } = require('./stability-log.cjs')
+const { ACCOUNT_REQUEST_CHANNEL, createAccountRequestHandler } = require('./account-network.cjs')
 
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
@@ -49,15 +50,16 @@ function resolveDesktopUserDataPath() {
 
 app.setPath('userData', resolveDesktopUserDataPath())
 
+const logStability = createStabilityLog(path.join(app.getPath('userData'), 'logs'))
+let quitting = false
+let serviceStatus = { state: 'idle' }
 const isDev = !app.isPackaged
 const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
 let desktopServer
 let desktopServerUrl
 let desktopServerPromise
 
-// 渲染进程只与本机内置服务通信（云端请求由内置服务转发），禁用系统代理，
-// 避免用户机器上的 VPN/代理工具拦截 Chromium 请求导致“无法连接账户服务”。
-app.commandLine.appendSwitch('no-proxy-server')
+// Keep local material requests direct without disabling the cloud account's system proxy.
 
 if (!isDev && process.platform === 'win32') {
   // Some Windows packaged builds can lose keyboard focus/hit-testing in Chromium.
@@ -175,7 +177,46 @@ function createWindow() {
   window.webContents.on('did-finish-load', () => {
     focusWindowContents(window)
     primeAuthInputFocus(window)
+    window.webContents.send('lawverify:service-status', serviceStatus)
   })
+
+  let recoveryPrompt = false
+  const recoverWindow = async (reason) => {
+    if (quitting || recoveryPrompt || window.isDestroyed()) return
+    recoveryPrompt = true
+    logStability('renderer-recovery-request', { reason })
+    try {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'warning',
+        title: 'LawVerify',
+        message: reason === 'unresponsive' ? '当前窗口暂时无响应。' : '当前窗口意外中断。',
+        detail: '恢复窗口后可继续工作，本地草稿会保留。尚未确认完成的操作，请检查结果后再重试。',
+        buttons: ['恢复窗口', '暂不恢复'],
+        defaultId: reason === 'unresponsive' ? 1 : 0,
+        cancelId: 1,
+      })
+      if (response === 0 && !window.isDestroyed() && !quitting) {
+        window.webContents.reload()
+      }
+    } finally { recoveryPrompt = false }
+  }
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logStability('renderer-process-gone', { reason: details.reason, code: details.exitCode })
+    void recoverWindow(details.reason).catch(() => {})
+  })
+  let unresponsiveTimer
+  window.on('unresponsive', () => {
+    if (unresponsiveTimer) return
+    unresponsiveTimer = setTimeout(() => {
+      unresponsiveTimer = null
+      void recoverWindow('unresponsive').catch(() => {})
+    }, 8000)
+  })
+  window.on('responsive', () => {
+    clearTimeout(unresponsiveTimer)
+    unresponsiveTimer = null
+  })
+  window.on('closed', () => clearTimeout(unresponsiveTimer))
 
   return window
 }
@@ -247,7 +288,10 @@ function getFileNameFromContentDisposition(headerValue) {
 function resolveUpdateDownloadTarget(version, response) {
   const responseFileName = getFileNameFromContentDisposition(response.headers.get('content-disposition'))
   const fallbackFileName = getUpdateFileName(String(version || app.getVersion()).trim() || app.getVersion())
-  const normalizedFileName = validateUpdateFileName(sanitizeFileName(responseFileName || fallbackFileName) || fallbackFileName)
+  const normalizedFileName = validateUpdateFileName(
+    sanitizeFileName(responseFileName || fallbackFileName) || fallbackFileName,
+    process.platform, process.arch, version,
+  )
   const updatesDir = path.join(app.getPath('temp'), 'LawVerify', 'updates')
   fs.mkdirSync(updatesDir, { recursive: true })
   return {
@@ -257,83 +301,25 @@ function resolveUpdateDownloadTarget(version, response) {
 }
 
 async function downloadUpdateInstaller(downloadUrl, version, expectedSha256) {
-  const response = await fetch(downloadUrl, { redirect: 'follow' })
-  if (!response.ok || !response.body) {
-    throw new Error(`更新安装包下载失败（${response.status || 'unknown'}）。`)
-  }
-
-  const { targetPath, tempPath } = resolveUpdateDownloadTarget(version, response)
-  const totalBytes = Number(response.headers.get('content-length') || '0')
-  const writer = fs.createWriteStream(tempPath)
-  const hash = createHash('sha256')
-
-  try {
-    const reader = response.body.getReader()
-    let receivedBytes = 0
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        break
-      }
-
-      const chunk = Buffer.from(value)
-      hash.update(chunk)
-      await new Promise((resolve, reject) => {
-        writer.write(chunk, (error) => {
-          if (error) {
-            reject(error)
-            return
-          }
-
-          resolve()
-        })
-      })
-
-      receivedBytes += chunk.length
-      const progress = totalBytes > 0 ? Math.min(100, Math.round((receivedBytes / totalBytes) * 100)) : undefined
-      broadcastAppUpdateStatus({
-        status: 'downloading',
-        version,
-        progress,
-        message: totalBytes > 0
-          ? `正在下载更新安装包… ${progress}%`
-          : '正在下载更新安装包…',
-      })
-    }
-
-    await new Promise((resolve, reject) => {
-      writer.end((error) => {
-        if (error) {
-          reject(error)
-          return
-        }
-
-        resolve()
-      })
-    })
-
-    if (expectedSha256 && hash.digest('hex') !== expectedSha256.toLowerCase()) {
-      throw new Error('安装包完整性校验失败，请重新下载更新。')
-    }
-    if (fs.existsSync(targetPath)) {
-      fs.rmSync(targetPath, { force: true })
-    }
-    fs.renameSync(tempPath, targetPath)
-    return targetPath
-  } catch (error) {
-    writer.destroy()
-    if (fs.existsSync(tempPath)) {
-      fs.rmSync(tempPath, { force: true })
-    }
-    throw error
-  }
+  const updateSession = session.fromPartition('persist:lawverify-account')
+  return downloadInstaller({
+    fetch: (url, init) => updateSession.fetch(url, init),
+    url: downloadUrl, version, sha256: expectedSha256,
+    resolveTarget: resolveUpdateDownloadTarget,
+    onProgress: broadcastAppUpdateStatus,
+  })
 }
 
 async function launchInstallerAndQuit(installerPath) {
   if (process.platform === 'darwin') {
     const error = await shell.openPath(installerPath)
     if (error) throw new Error('无法打开更新安装包，请从官网下载后安装。')
+    await dialog.showMessageBox({
+      type: 'info', title: '安装 LawVerify 更新',
+      message: '更新安装包已打开',
+      detail: '请退出 LawVerify，将安装包中的 LawVerify 拖入“应用程序”，选择替换旧版，再从“应用程序”启动。已保存的本地案件材料会保留。',
+      buttons: ['退出并安装'], noLink: true,
+    })
     app.quit()
     return
   }
@@ -350,7 +336,7 @@ async function handleStartAppUpdate(_event, payload) {
   const downloadUrl = String(payload?.downloadUrl || '').trim()
   const sha256 = String(payload?.sha256 || '').trim()
 
-  if (!version) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
     throw new Error('缺少更新版本号。')
   }
 
@@ -366,6 +352,15 @@ async function handleStartAppUpdate(_event, payload) {
   }
 
   appUpdateTask = (async () => {
+    if (payload?.channel === 'test' || /-unsigned\.dmg$/i.test(new URL(downloadUrl).pathname)) {
+      const confirmation = await dialog.showMessageBox({
+        type: 'warning', title: '安装测试版',
+        message: `是否下载 v${version} 未签名测试版？`,
+        detail: '此版本尚未完成正式签名与公证。macOS 可能要求在“系统设置 > 隐私与安全性”中手动允许打开。正式版用户建议等待正式更新。',
+        buttons: ['取消', '下载测试版'], defaultId: 0, cancelId: 0, noLink: true,
+      })
+      if (confirmation.response !== 1) return { ok: false }
+    }
     broadcastAppUpdateStatus({
       status: 'downloading',
       version,
@@ -428,42 +423,7 @@ async function findAvailablePort(startPort = 18787, attempts = 30) {
     }
   }
 
-  throw new Error('未找到可用的本地服务端口。')
-}
-
-function waitForServer(url, timeoutMs = 20_000) {
-  const deadline = Date.now() + timeoutMs
-
-  return new Promise((resolve, reject) => {
-    const tryConnect = () => {
-      const request = http.get(`${url}/api/health`, (response) => {
-        response.resume()
-
-        if (response.statusCode && response.statusCode < 500) {
-          resolve()
-          return
-        }
-
-        if (Date.now() >= deadline) {
-          reject(new Error(`本地服务启动失败，状态码：${response.statusCode ?? 'unknown'}`))
-          return
-        }
-
-        setTimeout(tryConnect, 250)
-      })
-
-      request.on('error', () => {
-        if (Date.now() >= deadline) {
-          reject(new Error('等待本地服务启动超时。'))
-          return
-        }
-
-        setTimeout(tryConnect, 250)
-      })
-    }
-
-    tryConnect()
-  })
+  throw new Error('本地服务端口被占用，请关闭其他 LawVerify 进程后重试。')
 }
 
 function isLocalHostOrigin(value) {
@@ -483,6 +443,7 @@ function applyDesktopServerEnv(port) {
   const frontendDistDir = path.join(__dirname, '..', 'dist')
 
   process.env.NODE_ENV = 'production'
+  process.env.LAWVERIFY_DESKTOP = '1'
   process.env.PORT = String(port)
   process.env.CORS_ORIGIN = `http://127.0.0.1:${port},http://localhost:${port}`
   process.env.JSON_LIMIT = process.env.JSON_LIMIT || '100mb'
@@ -501,34 +462,43 @@ function applyDesktopServerEnv(port) {
 }
 
 async function startPackagedServer() {
-  if (desktopServerUrl) {
+  if (desktopServerUrl && desktopServer?.state === 'ready') {
     return desktopServerUrl
   }
 
   if (desktopServerPromise) {
     return desktopServerPromise
   }
+  if (desktopServer) {
+    if (desktopServer.state === 'failed') throw new Error('本地服务恢复失败，请重新打开 LawVerify。')
+    await desktopServer.waitUntilReady()
+    return desktopServerUrl
+  }
 
   desktopServerPromise = (async () => {
-    const port = await findAvailablePort()
+    // Draft storage is origin-bound. Never silently change ports between launches.
+    const port = await findAvailablePort(18787, 1)
     applyDesktopServerEnv(port)
 
-    const backendEntry = path.join(__dirname, '..', '.desktop', 'server', 'dist', 'app.js')
-    const backendModule = await import(pathToFileURL(backendEntry).href)
-
-    await backendModule.initializeCommercialInfrastructure()
-    const bootstrap = backendModule.createApp()
-    const server = await new Promise((resolve, reject) => {
-      const instance = bootstrap.app.listen(port, '127.0.0.1', () => resolve(instance))
-      instance.once('error', reject)
-    })
-
-    bootstrap.attachUpgrade(server)
-    desktopServer = server
     desktopServerUrl = `http://127.0.0.1:${port}`
-    await waitForServer(desktopServerUrl)
+    const serviceEnv = { ...process.env }
+    delete serviceEnv.ELECTRON_RUN_AS_NODE
+    desktopServer = new ServiceSupervisor({
+      fork: (...args) => utilityProcess.fork(...args),
+      entry: path.join(__dirname, 'desktop-service.cjs'),
+      env: serviceEnv,
+    })
+    desktopServer.on('diagnostic', ({ event, ...details }) => logStability(event, details))
+    desktopServer.on('status', status => {
+      serviceStatus = status
+      logStability(`service-${status.state}`)
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send('lawverify:service-status', status)
+      }
+    })
+    await desktopServer.waitUntilReady()
     return desktopServerUrl
-  })()
+  })().finally(() => { desktopServerPromise = null })
 
   return desktopServerPromise
 }
@@ -577,8 +547,33 @@ if (!gotSingleInstanceLock) {
     focusWindowContents(existingWindow)
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await session.defaultSession.setProxy({ mode: 'direct' })
+    const accountSession = session.fromPartition('persist:lawverify-account')
+    await accountSession.setProxy({ mode: 'system' })
+    ipcMain.handle(ACCOUNT_REQUEST_CHANNEL, createAccountRequestHandler({
+      fetch: (url, init) => accountSession.fetch(url, init),
+      report: logStability,
+      isTrustedSender: event => {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window || window.isDestroyed() || event.senderFrame !== event.sender.mainFrame) return false
+        try {
+          return new URL(event.senderFrame.url).origin === (isDev ? 'http://127.0.0.1:5173' : desktopServerUrl)
+        } catch { return false }
+      },
+    }))
+    crashReporter.start({ uploadToServer: false, compress: true })
     registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow })
+    ipcMain.handle('lawverify:get-service-status', () => serviceStatus)
+    const diagnosticTimes = new Map()
+    ipcMain.on('lawverify:renderer-diagnostic', (event, payload) => {
+      if (!BrowserWindow.fromWebContents(event.sender) || !payload || typeof payload.event !== 'string') return
+      if (!['renderer-error', 'renderer-rejection', 'react-boundary', 'renderer-long-task', 'draft-storage-failed'].includes(payload.event)) return
+      const key = `${event.sender.id}:${payload.event}`
+      if (Date.now() - (diagnosticTimes.get(key) ?? 0) < 10000) return
+      diagnosticTimes.set(key, Date.now())
+      logStability(payload.event, { duration: payload.duration, count: payload.count })
+    })
     ipcMain.handle(OPEN_EXTERNAL_CHANNEL, handleOpenExternal)
     ipcMain.handle(START_APP_UPDATE_CHANNEL, handleStartAppUpdate)
     void bootApplication()
@@ -592,13 +587,25 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('before-quit', () => {
+  quitting = true
   ipcMain.removeHandler(OPEN_EXTERNAL_CHANNEL)
   ipcMain.removeHandler(START_APP_UPDATE_CHANNEL)
+  ipcMain.removeHandler(ACCOUNT_REQUEST_CHANNEL)
+  ipcMain.removeHandler('lawverify:get-service-status')
   if (desktopServer) {
-    desktopServer.close()
+    desktopServer.stop()
     desktopServer = undefined
     desktopServerUrl = undefined
   }
+})
+
+process.on('uncaughtException', () => {
+  logStability('main-uncaught-exception')
+  app.exit(1)
+})
+process.on('unhandledRejection', () => {
+  logStability('main-unhandled-rejection')
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => {

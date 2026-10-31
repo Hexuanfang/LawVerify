@@ -7286,3 +7286,10 @@ button.verify-sentence-button:hover {
     gap: 18px;
   }
 }
+
+
+/* v26：下载页未签名提示 */
+.dl-unsigned {
+  max-width: 30em;
+  line-height: 1.7;
+}

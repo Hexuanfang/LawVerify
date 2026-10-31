@@ -43,6 +43,8 @@ jobs:
         run: |
           npm ci --prefix server
           npm ci --prefix app
+      - name: Verify desktop account networking
+        run: npm run test:account --prefix app
       - name: Build unsigned test package
         if: ${{ !inputs.signed }}
         working-directory: app

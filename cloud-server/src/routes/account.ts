@@ -1,18 +1,22 @@
 import { Router } from 'express'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
-import { getCurrentActorProfile, loginAccount, logoutAccount, registerAccount } from '../commercial/auth-service.js'
+import { getCurrentActorProfile, loginAccount, logoutAccount, registerAccount, verifyToken } from '../commercial/auth-service.js'
 import { createUserFeedback } from '../feedback-service.js'
 import { getBillingAccountSummary, getUsageSummary, listRechargePointLedger } from '../billing-service.js'
 import { sendSuccess } from '../http.js'
 import { authenticate, requirePermission } from '../middleware/authenticate.js'
 import { consumePointAction, listPointPolicies, quotePointAction, refundPointAction } from '../point-service.js'
+import { getReferralSummary } from '../referral-service.js'
+import { eventBatchSchema, getAnalyticsPreference, ingestProductEvents, setAnalyticsPreference } from '../analytics-service.js'
 
 const registerSchema = z.object({
   organizationName: z.string().min(2, '机构名称至少 2 个字。'),
   ownerName: z.string().min(2, '负责人姓名至少 2 个字。'),
   email: z.string().email('请输入正确的邮箱地址。'),
   password: z.string().min(6, '密码至少 6 位。'),
+  inviteCode: z.string().trim().regex(/^[A-Fa-f0-9]{16}$/).optional(),
 })
 
 const loginSchema = z.object({
@@ -62,6 +66,21 @@ const feedbackCreateSchema = z.object({
 
 export const accountRouter = Router()
 
+accountRouter.get('/referrals', authenticate, requirePermission('account.read'), async (req, res) => {
+  sendSuccess(res, await getReferralSummary(req.actor!))
+})
+accountRouter.get('/analytics-preference', authenticate, async (req, res) => {
+  sendSuccess(res, await getAnalyticsPreference(req.actor!))
+})
+accountRouter.put('/analytics-preference', authenticate, async (req, res) => {
+  const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(req.body)
+  sendSuccess(res, await setAnalyticsPreference(req.actor!, enabled))
+})
+accountRouter.post('/events', authenticate, async (req, res) => {
+  const { events } = eventBatchSchema.parse(req.body)
+  sendSuccess(res, await ingestProductEvents(req.actor!, events))
+})
+
 accountRouter.post('/register', async (request, response) => {
   const payload = registerSchema.parse(request.body ?? {})
   const result = await registerAccount(payload)
@@ -69,8 +88,15 @@ accountRouter.post('/register', async (request, response) => {
 })
 
 accountRouter.post('/login', async (request, response) => {
+  const started = Date.now()
   const payload = loginSchema.parse(request.body ?? {})
   const result = await loginAccount(payload)
+  const claims = verifyToken(result.token)
+  await ingestProductEvents({ userId: claims.sub, organizationId: claims.organizationId, membershipId: claims.membershipId,
+    role: claims.role, email: claims.email, sessionId: claims.sessionId }, [{
+    id: randomUUID(), name: 'auth.login', surface: request.header('x-product-surface') === 'desktop' ? 'desktop' : 'web',
+    outcome: 'success', durationMs: Math.min(3600000, Date.now() - started),
+  }]).catch(() => {})
   sendSuccess(response, result)
 })
 

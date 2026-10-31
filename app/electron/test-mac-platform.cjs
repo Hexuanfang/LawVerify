@@ -10,6 +10,10 @@ test('updates select a native installer for each supported platform', () => {
   assert.throws(() => validateUpdateFileName('LawVerify-Setup-0.1.52.exe', 'darwin'))
   assert.throws(() => validateUpdateFileName('LawVerify-Mac-0.1.52-arm64.dmg', 'win32'))
   assert.equal(validateUpdateFileName('LawVerify-Mac-0.1.52-arm64.dmg', 'darwin'), 'LawVerify-Mac-0.1.52-arm64.dmg')
+  assert.equal(validateUpdateFileName('LawVerify-Mac-0.1.56-arm64-unsigned.dmg', 'darwin', 'arm64', '0.1.56'),
+    'LawVerify-Mac-0.1.56-arm64-unsigned.dmg')
+  assert.throws(() => validateUpdateFileName('LawVerify-Mac-0.1.56-x64.dmg', 'darwin', 'arm64', '0.1.56'))
+  assert.throws(() => validateUpdateFileName('LawVerify-Mac-0.1.52-arm64.dmg', 'darwin', 'arm64', '0.1.56'))
 })
 
 test('Mac builder does not reuse Windows runtimes or expose unsigned packages as stable', () => {

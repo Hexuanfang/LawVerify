@@ -32,6 +32,7 @@ module.exports = {
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
     extendInfo: {
+      NSMicrophoneUsageDescription: 'LawVerify uses the microphone only when you start voice input.',
       NSDocumentsFolderUsageDescription: 'LawVerify needs access to the case materials you select.',
       NSDownloadsFolderUsageDescription: 'LawVerify needs access to the case materials you select.',
       NSDesktopFolderUsageDescription: 'LawVerify needs access to the case materials you select.',

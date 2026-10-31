@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import * as mammoth from 'mammoth/mammoth.browser'
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 import { Extension } from '@tiptap/core'
 import TextAlign from '@tiptap/extension-text-align'
@@ -12,12 +11,24 @@ import StarterKit from '@tiptap/starter-kit'
 import { exportCertificateToWord } from './export-word'
 import { AttentionText, EvidenceAttention } from './EvidenceAttention'
 import { AgentPromptInput, type AgentPromptInputHandle } from './AgentPromptInput'
+import { IdeActivityBar, type IdeNavigationTarget } from './IdeActivityBar'
 import { CaseAgentPanel } from './CaseAgentPanel'
+import { AssistantPicker, VoiceInputButton } from './AssistantControls'
 import { CaseDirectorySync, syncDesktopDirectory, stopCaseDirectorySync, resumeCaseDirectorySync } from './CaseDirectorySync'
 import { getAttentionTerms } from './evidence-attention'
 import { createDocumentTaskQueue } from './document-task-queue'
+import { draftKey, readDraft, removeDraft, writeDraft, type ParagraphDraft } from './draft-store'
+import { StabilityBoundary } from './StabilityBoundary'
+import { reportDiagnostic } from './stability-monitor'
+import { readBoundedSource } from './bounded-fetch'
+import { importWordContent } from './word-import'
+import { VirtualList } from './VirtualList'
+import { LegalReview, LegalReviewExtension } from './LegalReview'
+import { CaseSearchPanel } from './CaseSearchPanel'
+import { AccountFeatures } from './AccountFeatures'
+const PdfPreview = lazy(() => import('./PdfPreview').then(module => ({ default: module.PdfPreview })))
 import './App.css'
-import { api, fetchWithWorkspaceAccount, getEvidenceSourceUrl, isCloudAuthApiError } from './api'
+import { api, fetchWithWorkspaceAccount, getEvidenceSourceUrl, isCloudAuthApiError, watchWorkspace } from './api'
 import type {
   AppState,
   CaseFolder,
@@ -123,7 +134,7 @@ interface FeedbackDialogState {
 }
 
 interface AppUpdateState {
-  status: 'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error'
+  status: 'idle' | 'checking' | 'unavailable' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error'
   latestRelease: ReleaseItem | null
   progress: number | null
   message: string
@@ -146,6 +157,7 @@ interface DesktopRegisterForm {
   ownerName: string
   email: string
   password: string
+  inviteCode?: string
 }
 
 interface CloudLedgerEntrySnapshot {
@@ -1413,6 +1425,16 @@ interface EvidenceFolderTreeNode {
   evidences: Evidence[]
 }
 
+type EvidenceTreeRow = { key: string; depth: number; label?: string; evidence?: Evidence }
+const evidenceRowKey = (row: EvidenceTreeRow) => row.key
+const evidenceRowHeight = (row: EvidenceTreeRow) => row.evidence ? 78 : 32
+function flattenEvidenceTree(node: EvidenceFolderTreeNode, rows: EvidenceTreeRow[] = []) {
+  if (node.key) rows.push({ key: `folder:${node.key}`, depth: node.depth, label: node.label })
+  for (const folder of node.folders) flattenEvidenceTree(folder, rows)
+  for (const evidence of node.evidences) rows.push({ key: evidence.id, depth: node.depth, evidence })
+  return rows
+}
+
 function getEvidenceDisplayFileName(evidence: Pick<Evidence, 'fileName' | 'relativePath'>) {
   const relativePath = normalizeRelativePath(evidence.relativePath, evidence.fileName)
   const segments = relativePath.split('/').filter(Boolean)
@@ -1709,6 +1731,8 @@ function extractPlainTextFromHtml(html: string) {
 
 interface ParagraphRichEditorProps {
   paragraph: CertificateParagraph
+  account: string
+  certificateId: string
   editable: boolean
   active: boolean
   activeSentenceIndex: number | null
@@ -1721,13 +1745,15 @@ interface ParagraphRichEditorProps {
   }>
   onActivate: () => void
   onActivateSentence: (sentenceIndex: number, sentenceText: string, userInitiated?: boolean) => void
-  onCommit: (patch: Partial<CertificateParagraph>) => Promise<boolean>
+  onCommit: (patch: Partial<CertificateParagraph>, expected?: { text: string; richText?: string }) => Promise<boolean>
   onRegisterEditor: (editor: Editor | null) => void
   onEditorStateChange: () => void
 }
 
-function ParagraphRichEditor({
+export function ParagraphRichEditor({
   paragraph,
+  account,
+  certificateId,
   editable,
   active,
   activeSentenceIndex,
@@ -1748,6 +1774,75 @@ function ParagraphRichEditor({
   const onCommitRef = useRef(onCommit)
   const onRegisterEditorRef = useRef(onRegisterEditor)
   const onEditorStateChangeRef = useRef(onEditorStateChange)
+  const key = draftKey(account, certificateId, paragraph.id)
+  const pendingDraftRef = useRef<ParagraphDraft | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const savingRef = useRef(false)
+  const editedRef = useRef(false)
+  const [recoveryDraft, setRecoveryDraft] = useState<ParagraphDraft | null>(null)
+  const [draftWarning, setDraftWarning] = useState('')
+
+  const captureDraft = (currentEditor: Editor) => {
+    const html = currentEditor.getHTML()
+    const text = extractPlainTextFromHtml(html)
+    const pending = pendingDraftRef.current
+    if (pending?.richText === html && pending.text === text) return
+    if (!pending && html === lastCommittedRef.current.html && text === lastCommittedRef.current.text) return
+    const draft: ParagraphDraft = {
+      key, text, richText: html, baseText: lastCommittedRef.current.text,
+      baseRichText: lastCommittedRef.current.html, revision: crypto.randomUUID(),
+    }
+    pendingDraftRef.current = draft
+    void writeDraft(draft).catch(() => {
+      reportDiagnostic('draft-storage-failed')
+      setDraftWarning('本地草稿保存失败，请检查磁盘空间并及时保存文稿。')
+    })
+  }
+  const commitDraft = async (currentEditor: Editor) => {
+    clearTimeout(snapshotTimerRef.current)
+    snapshotTimerRef.current = undefined
+    captureDraft(currentEditor)
+    if (savingRef.current || !pendingDraftRef.current) return
+    const draft = pendingDraftRef.current
+    savingRef.current = true
+    try {
+      const saved = await onCommitRef.current(
+        { text: draft.text, richText: draft.richText },
+        { text: draft.baseText, richText: draft.baseRichText },
+      )
+      if (saved) {
+        lastCommittedRef.current = { html: draft.richText, text: draft.text }
+        await removeDraft(draft.key, draft.revision)
+        if (pendingDraftRef.current?.revision === draft.revision) {
+          pendingDraftRef.current = null
+          setDraftWarning('')
+        } else if (pendingDraftRef.current) {
+          const next = {
+            ...pendingDraftRef.current,
+            baseText: draft.text,
+            baseRichText: draft.richText,
+          }
+          pendingDraftRef.current = next
+          await writeDraft(next)
+        }
+      } else setDraftWarning('文稿尚未保存完成，本地草稿已保留。')
+    } catch {
+      setDraftWarning('文稿尚未保存完成，请重试。')
+    } finally {
+      savingRef.current = false
+      if (pendingDraftRef.current && pendingDraftRef.current.revision !== draft.revision && !currentEditor.isDestroyed) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = setTimeout(() => void commitDraft(currentEditor), 1500)
+      }
+    }
+  }
+  const commitDraftRef = useRef(commitDraft)
+  const captureDraftRef = useRef(captureDraft)
+  useEffect(() => {
+    commitDraftRef.current = commitDraft
+    captureDraftRef.current = captureDraft
+  })
 
   useEffect(() => {
     onActivateRef.current = onActivate
@@ -1777,6 +1872,7 @@ function ParagraphRichEditor({
         types: ['heading', 'paragraph'],
       }),
       SentenceHighlightExtension,
+      LegalReviewExtension,
     ],
     content,
     editorProps: {
@@ -1801,22 +1897,52 @@ function ParagraphRichEditor({
       }
       handleEditorStateChange()
     },
+    onUpdate: ({ editor: currentEditor }) => {
+      editedRef.current = true
+      // Throttle local snapshots, including during uninterrupted typing.
+      if (!snapshotTimerRef.current) snapshotTimerRef.current = setTimeout(() => {
+        snapshotTimerRef.current = undefined
+        if (!currentEditor.isDestroyed) captureDraftRef.current(currentEditor)
+      }, 250)
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => {
+        if (!currentEditor.isDestroyed) void commitDraftRef.current(currentEditor)
+      }, 1500)
+    },
     onBlur: ({ editor: currentEditor }) => {
-      const html = currentEditor.getHTML()
-      const text = extractPlainTextFromHtml(html)
-
-      if (html === lastCommittedRef.current.html && text === lastCommittedRef.current.text) {
-        return
-      }
-
-      void onCommitRef.current({
-        text,
-        richText: html,
-      }).then((saved) => {
-        if (saved) lastCommittedRef.current = { html, text }
-      })
+      clearTimeout(saveTimerRef.current)
+      void commitDraftRef.current(currentEditor)
     },
   })
+
+  useEffect(() => {
+    if (!editor || !account) return
+    let active = true
+    const initialContent = lastCommittedRef.current
+    void readDraft(key).then(draft => {
+      if (!active || !draft || editedRef.current) return
+      if (draft.richText === initialContent.html && draft.text === initialContent.text) {
+        void removeDraft(key, draft.revision).catch(() => {})
+      } else setRecoveryDraft(draft)
+    }).catch(() => {
+      if (active) setDraftWarning('本地草稿暂不可用，请及时保存文稿。')
+    })
+    const flush = () => { if (!editor.isDestroyed && editedRef.current) captureDraftRef.current(editor) }
+    const retry = () => { if (!editor.isDestroyed && pendingDraftRef.current) void commitDraftRef.current(editor) }
+    const handleVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('lawverify:service-ready', retry)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      active = false
+      flush()
+      clearTimeout(saveTimerRef.current)
+      clearTimeout(snapshotTimerRef.current)
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('lawverify:service-ready', retry)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [editor, key, account])
 
   useEffect(() => {
     onRegisterEditorRef.current(editor ?? null)
@@ -1842,8 +1968,8 @@ function ParagraphRichEditor({
   }, [editor, paragraph.richText, paragraph.text])
 
   useEffect(() => {
-    editor?.setEditable(editable)
-  }, [editor, editable])
+    editor?.setEditable(editable && !recoveryDraft, false)
+  }, [editor, editable, recoveryDraft])
 
   useEffect(() => {
     if (!editor) {
@@ -1880,7 +2006,27 @@ function ParagraphRichEditor({
         }
       }}
     >
+      {recoveryDraft ? <div className="draft-recovery" role="alert" onClick={event => event.stopPropagation()}>
+        <span>{recoveryDraft.baseText === paragraph.text ? '发现未保存草稿。' : '文稿已有更新，请核对未保存草稿。'}</span>
+        <button type="button" onClick={() => {
+          if (!editor) return
+          editor.commands.setContent(recoveryDraft.richText, { emitUpdate: false })
+          editedRef.current = true
+          captureDraftRef.current(editor)
+          setRecoveryDraft(null)
+          void commitDraftRef.current(editor)
+        }}>恢复草稿</button>
+        <button type="button" onClick={() => {
+          void removeDraft(key, recoveryDraft.revision).then(() => setRecoveryDraft(null)).catch(() => setDraftWarning('草稿暂时无法移除。'))
+        }}>保留当前文稿</button>
+        <details><summary>查看草稿</summary>{recoveryDraft.text}</details>
+      </div> : null}
+      {draftWarning ? <div className="draft-recovery" role="alert">
+        <span>{draftWarning}</span>
+        <button type="button" onClick={() => { if (editor) void commitDraftRef.current(editor) }}>重试保存</button>
+      </div> : null}
       <EditorContent editor={editor} />
+      <LegalReview editor={editor} active={active} account={account} showPanel={false} />
       {inlineReferences.length ? (
         <div className="tiptap-inline-citation-row">
           {inlineReferences.map((chip) => (
@@ -1933,7 +2079,7 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
         if (!response.ok) {
           throw new Error('原件暂时无法读取，请重新选择文件或检查本地服务。')
         }
-        const arrayBuffer = await response.arrayBuffer()
+        const arrayBuffer = (await readBoundedSource(response, 20 * 1024 * 1024)).buffer
 
         if (disposed) {
           return
@@ -1978,7 +2124,7 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
         if (!response.ok) {
           throw new Error('原件暂时无法读取')
         }
-        const text = await response.text()
+        const text = new TextDecoder().decode(await readBoundedSource(response, 8 * 1024 * 1024))
         if (!disposed) {
           setFallbackPreviewText(stripRtfControlText(text))
         }
@@ -2045,7 +2191,7 @@ function TextOriginalPreview({ sourceUrl, fileName }: { sourceUrl: string; fileN
     void fetchWithWorkspaceAccount(sourceUrl, { signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error('原件暂时无法读取')
-        return response.text()
+        return readBoundedSource(response, 8 * 1024 * 1024).then(bytes => new TextDecoder().decode(bytes))
       })
       .then(content => { if (active) setText(content) })
       .catch(() => { if (active) setError('原件暂时无法读取，请重试。') })
@@ -2079,6 +2225,9 @@ function App() {
   const [appState, setAppState] = useState<AppState | null>(null)
   const [authToken, setAuthToken] = useState(() => sessionStorage.getItem(AUTH_STORAGE_KEY))
   const [cloudAuthToken, setCloudAuthToken] = useState(() => localStorage.getItem(CLOUD_TOKEN_STORAGE_KEY))
+  useEffect(() => {
+    if (cloudAuthToken) void api.getAnalyticsPreference().then(() => api.recordAppOpen()).catch(() => {})
+  }, [cloudAuthToken])
   const [loginAccount, setLoginAccount] = useState(() => sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY) ?? '')
   const [isLoading, setIsLoading] = useState(Boolean(sessionStorage.getItem(AUTH_STORAGE_KEY)))
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -2087,6 +2236,16 @@ function App() {
   const [errorMessage, setErrorMessage] = useState('')
   const [entryOnboardingStep, setEntryOnboardingStep] = useState<EntryOnboardingStep>('idle')
   const [agentMode, setAgentMode] = useState<'case' | 'document'>('case')
+  const [documentModel, setDocumentModel] = useState<string>()
+  const [assistantModels, setAssistantModels] = useState<Array<{ id: string; label: string }>>([])
+  const [documentVoiceBusy, setDocumentVoiceBusy] = useState(false)
+  useEffect(() => {
+    if (agentMode !== 'document') return
+    let active = true
+    void api.assistantCapabilities().then(result => { if (active) setAssistantModels(result.models) })
+      .catch(error => { if (active) setErrorMessage(error instanceof Error ? error.message : '无法获取可用模型。') })
+    return () => { active = false }
+  }, [agentMode])
   const [evidenceImportProgress, setEvidenceImportProgress] = useState<EvidenceImportProgress | null>(null)
   const [evidenceImportResult, setEvidenceImportResult] = useState<{ caseId: string; message: string } | null>(null)
   const [directoryImportRetry, setDirectoryImportRetry] = useState<{ caseId: string; directory: CaseDirectoryManifest; message: string } | null>(null)
@@ -2150,6 +2309,7 @@ function App() {
   const [ideContentTab, setIdeContentTab] = useState<'document' | 'evidence'>('document')
   const [isIdeAssistantVisible, setIsIdeAssistantVisible] = useState(true)
   const [isIdeAccountOpen, setIsIdeAccountOpen] = useState(false)
+  const [ideNavigationRequest, setIdeNavigationRequest] = useState<{ target: IdeNavigationTarget } | null>(null)
   const [activeReferenceIndex, setActiveReferenceIndex] = useState(0)
   const [selectedKnowledgeReferenceId, setSelectedKnowledgeReferenceId] = useState<string | null>(null)
   const [knowledgeTab, setKnowledgeTab] = useState<KnowledgeTab>('cases')
@@ -2251,26 +2411,42 @@ function App() {
   const cloudPointsRevisionRef = useRef(0)
   const cloudAccountProfileRef = useRef<CloudAccountSessionProfile | null>(null)
   const hasCheckedAppUpdateOnLaunchRef = useRef(false)
+  const appUpdateBusyRef = useRef(false)
   const isDesktopClient = window.lawVerifyDesktop?.channel === 'electron'
 
-  const checkForAppUpdate = useCallback(async (options: { silent?: boolean } = {}) => {
+  const checkForAppUpdate = useCallback(async (options: { silent?: boolean; channel?: 'stable' | 'test' } = {}) => {
     if (!isDesktopClient) {
       return
     }
 
-    if (appUpdateState.status === 'downloading') {
+    if (appUpdateBusyRef.current) {
       return
     }
 
+    appUpdateBusyRef.current = true
     setAppUpdateState((current) => ({
       ...current,
       status: 'checking',
       progress: null,
-      message: options.silent ? current.message : '正在检查桌面端新版本…',
+      message: '正在检查桌面端新版本…',
     }))
 
     try {
-      const latestRelease = await api.getLatestPublicRelease()
+      const latestRelease = await api.getLatestPublicRelease(options.channel)
+      if (!latestRelease) {
+        setAppUpdateState({
+          status: 'unavailable', latestRelease: null, progress: null,
+          message: options.channel === 'test'
+            ? '暂未发布适用于此 Mac 的测试版。'
+            : '暂未发布适用于此设备的正式版更新。',
+        })
+        return
+      }
+      if (latestRelease.platform !== window.lawVerifyDesktop?.platform
+        || latestRelease.arch !== window.lawVerifyDesktop?.arch
+        || latestRelease.channel !== (options.channel ?? 'stable')) {
+        throw new Error('更新版本与当前设备或更新通道不匹配，请前往官网下载。')
+      }
       const hasNewerVersion = latestRelease && compareAppVersions(__APP_VERSION__, latestRelease.version) < 0
 
       setAppUpdateState({
@@ -2278,32 +2454,36 @@ function App() {
         latestRelease,
         progress: null,
         message: hasNewerVersion
-          ? `发现新版本 v${latestRelease.version}，可直接更新。`
+          ? `发现${latestRelease.channel === 'test' ? '未签名测试版' : '新版本'} v${latestRelease.version}，可下载更新。`
           : options.silent ? '' : `当前已是最新版本 v${__APP_VERSION__}。`,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '检查更新失败，请稍后重试。'
+      const message = `检查更新失败，请确认网络和官网可访问后重试。${error instanceof Error ? error.message : ''}`
       setAppUpdateState((current) => ({
         ...current,
         status: 'error',
         progress: null,
         message,
       }))
+    } finally {
+      appUpdateBusyRef.current = false
     }
-  }, [appUpdateState.status, isDesktopClient])
+  }, [isDesktopClient])
 
   const handleStartAppUpdate = useCallback(async () => {
     const latestRelease = appUpdateState.latestRelease
-    if (!latestRelease) {
+    if (!latestRelease || appUpdateBusyRef.current) {
       return
     }
 
     if (window.lawVerifyDesktop?.startAppUpdate) {
+      appUpdateBusyRef.current = true
       try {
         await window.lawVerifyDesktop.startAppUpdate({
           version: latestRelease.version,
           downloadUrl: latestRelease.downloadUrl,
           sha256: latestRelease.sha256,
+          channel: latestRelease.channel === 'test' ? 'test' : 'stable',
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : '更新失败，请稍后重试。'
@@ -2313,6 +2493,8 @@ function App() {
           progress: null,
           message,
         }))
+      } finally {
+        appUpdateBusyRef.current = false
       }
       return
     }
@@ -2873,13 +3055,18 @@ function App() {
     }
 
     const orderId = rechargeDialogState.activeOrder.id
-    const timer = window.setInterval(() => {
-      void refreshRechargeOrder(orderId, true)
-    }, 3000)
-
-    void refreshRechargeOrder(orderId, true)
+    let active = true
+    let running = false
+    const refresh = async () => {
+      if (!active || running || document.visibilityState === 'hidden') return
+      running = true
+      try { await refreshRechargeOrder(orderId, true) } finally { running = false }
+    }
+    const timer = window.setInterval(() => void refresh(), 3000)
+    void refresh()
 
     return () => {
+      active = false
       window.clearInterval(timer)
     }
   }, [rechargeDialogState?.activeOrder?.id, rechargeDialogState?.activeOrder?.status])
@@ -2889,8 +3076,12 @@ function App() {
       return
     }
 
-    const syncNow = () => {
-      void syncCloudPoints()
+    let active = true
+    let running = false
+    const syncNow = async () => {
+      if (!active || running || document.visibilityState === 'hidden') return
+      running = true
+      try { await syncCloudPoints() } finally { running = false }
     }
 
     syncNow()
@@ -2908,6 +3099,7 @@ function App() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
+      active = false
       window.clearInterval(timer)
       window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -3222,37 +3414,41 @@ function App() {
     || appState?.cases.some(c => c.agent?.autoAnalyze !== false && ['queued', 'processing'].includes(c.agent?.task?.status ?? '')),
   )
 
+  const backgroundWorkspaceHandler = useRef<(workspace: AppState) => void>(() => {})
+  backgroundWorkspaceHandler.current = workspace => applyWorkspace(workspace, {}, { preserveManualPreview: true })
   useEffect(() => {
     if (!authToken || !hasBackgroundEvidenceProcessing) {
       return
     }
 
     let active = true
+    let running = false
+    let dirty = false
+    const controller = new AbortController()
     const syncWorkspace = async () => {
+      if (!active || document.visibilityState === 'hidden') return
+      if (running) { dirty = true; return }
+      running = true
       try {
-        const { workspace } = await api.getWorkspace()
+        const { workspace } = await api.getWorkspace(controller.signal)
         if (!active) {
           return
         }
 
-        applyWorkspace(workspace, {
-          selectedCaseId,
-          selectedCertificateId,
-          activeParagraphId,
-          selectedEvidenceIds,
-          locatorDraft,
-        }, {
-          preserveManualPreview: true,
-        })
+        backgroundWorkspaceHandler.current(workspace)
       } catch {
         // 后台处理中时静默同步，避免打断当前操作。
+      } finally {
+        running = false
+        if (dirty && active) { dirty = false; void syncWorkspace() }
       }
     }
 
     void syncWorkspace()
     const timer = window.setInterval(() => {
       void syncWorkspace()
-    }, 3000)
+    }, 60000)
+    const unwatch = watchWorkspace(() => void syncWorkspace())
     const handleFocus = () => {
       void syncWorkspace()
     }
@@ -3263,22 +3459,21 @@ function App() {
     }
 
     window.addEventListener('focus', handleFocus)
+    window.addEventListener('lawverify:service-ready', handleFocus)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       active = false
+      controller.abort()
+      unwatch()
       window.clearInterval(timer)
       window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('lawverify:service-ready', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [
-    activeParagraphId,
     authToken,
     hasBackgroundEvidenceProcessing,
-    locatorDraft,
-    selectedCaseId,
-    selectedCertificateId,
-    selectedEvidenceIds,
   ])
 
   useEffect(() => {
@@ -3356,6 +3551,7 @@ function App() {
   const understoodCount = understandingEvidences.filter(e => e.summaryStatus === 'ready').length
   const groupedCaseEvidences = useMemo(() => groupEvidencesByFolder(caseEvidences), [caseEvidences])
   const evidenceFolderTree = useMemo(() => buildEvidenceFolderTree(displayCaseEvidences), [displayCaseEvidences])
+  const evidenceTreeRows = useMemo(() => flattenEvidenceTree(evidenceFolderTree), [evidenceFolderTree])
   const normalizedLoginAccount = loginAccount.trim()
   const sidebarPrimaryIdentity = appState?.user.email?.trim() || normalizedLoginAccount || appState?.user.name?.trim() || '未登录'
   const evidenceFolderCount = useMemo(() => countEvidenceFolderTree(evidenceFolderTree), [evidenceFolderTree])
@@ -4417,6 +4613,7 @@ function App() {
           ownerName: registerForm.ownerName.trim(),
           email,
           password: registerForm.password,
+          inviteCode: registerForm.inviteCode?.trim() || undefined,
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : '平台注册失败。'
@@ -5471,12 +5668,42 @@ function App() {
   function handleToggleStreamlinedSidebar() {
     if (isStreamlinedSidebarCollapsed) {
       setStreamlinedSidebarWidth((current) => Math.max(current, DEFAULT_STREAMLINED_SIDEBAR_WIDTH))
-      setIsStreamlinedSidebarCollapsed(false)
-      return
     }
-
-    setIsStreamlinedSidebarCollapsed(true)
+    setIsStreamlinedSidebarCollapsed(current => !current)
   }
+
+  function handleIdeNavigation(target: IdeNavigationTarget) {
+    setIsIdeAccountOpen(false)
+    if (target !== 'knowledge') setIsKnowledgeLibraryDialogOpen(false)
+    if (target === 'files') {
+      handleToggleStreamlinedSidebar()
+    } else if (target === 'document') {
+      setIdeContentTab('document')
+    } else if (target === 'assistant') {
+      setIsIdeAssistantVisible(true)
+      setAgentMode('case')
+    } else {
+      setSettingsTab('files')
+      setIsKnowledgeLibraryDialogOpen(true)
+    }
+    setIdeNavigationRequest({ target })
+  }
+
+  useEffect(() => {
+    if (!ideNavigationRequest) return
+    // Also give already-open panels a visible destination without focusing the editor
+    // and changing its sentence selection or triggering an automatic save.
+    const frame = window.requestAnimationFrame(() => {
+      const { target } = ideNavigationRequest
+      const selector = target === 'files' ? '.streamlined-sidebar'
+        : target === 'document' ? '.ide-document-view'
+          : target === 'assistant' ? '.ide-assistant-view' : '.knowledge-library-dialog'
+      const panel = streamlinedShellRef.current?.querySelector<HTMLElement>(selector)
+      if (!panel || panel.hidden) return
+      panel.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [ideNavigationRequest])
 
   function handleResetStreamlinedSidebarWidth() {
     setStreamlinedSidebarWidth(DEFAULT_STREAMLINED_SIDEBAR_WIDTH)
@@ -5515,6 +5742,7 @@ function App() {
           resourceId: selectedCase.id,
           note: `整文生成：${selectedCase.name}${selectedEvidenceLabel}`,
         }, () => api.generateCertificateStream({
+          model: documentModel,
           caseId: selectedCase.id,
           evidenceIds: selectedEvidenceIds,
           role: selectedCase.agent?.position?.role === 'defendant' ? 'defendant' : DEFAULT_GENERATION_ROLE,
@@ -5617,6 +5845,7 @@ function App() {
           resourceId: activeCertificate.id,
           note: `整文改写：${activeCertificate.title}`,
         }, () => api.rewriteCertificateStream({
+          model: documentModel,
           certificateId: activeCertificate.id,
           evidenceIds: rewriteEvidenceIds,
           prompt: trimmedPrompt,
@@ -5683,17 +5912,14 @@ function App() {
 
   async function readImportedCertificateContent(file: File) {
     const lowerName = file.name.toLowerCase()
+    if (file.size > 20 * 1024 * 1024) throw new Error('文稿超过20MB，请拆分后导入。')
 
     if (lowerName.endsWith('.docx')) {
-      const arrayBuffer = await file.arrayBuffer()
-      const [textResult, htmlResult] = await Promise.all([
-        mammoth.extractRawText({ arrayBuffer }),
-        mammoth.convertToHtml({ arrayBuffer }),
-      ])
+      const result = await importWordContent(file)
 
       return {
-        content: textResult.value.trim(),
-        paragraphs: buildImportedParagraphDraftsFromHtml(htmlResult.value),
+        content: result.text.trim(),
+        paragraphs: buildImportedParagraphDraftsFromHtml(result.html),
       }
     }
 
@@ -5951,22 +6177,32 @@ function App() {
     }
   }
 
-  async function handleUpdateParagraphById(paragraphId: string, patch: Partial<CertificateParagraph>) {
+  async function handleUpdateParagraphById(paragraphId: string, patch: Partial<CertificateParagraph>, quiet = false, expected?: { text: string; richText?: string }) {
     if (!activeCertificate) {
       return false
     }
 
+    const account = sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY)
+    const certificate = activeCertificate
     // Enqueue before awaiting so a following click cannot overtake the blur save.
     const saving = documentTaskQueueRef.current.run(async () => {
-      const { workspace } = await api.updateParagraph(activeCertificate.id, paragraphId, patch)
+      if (sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY) !== account) throw new Error('Account changed')
+      const { workspace } = await api.updateParagraph(certificate.id, paragraphId, patch, expected)
+      if (sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY) !== account) throw new Error('Account changed')
+      if (quiet) {
+        backgroundWorkspaceHandler.current(workspace)
+        return
+      }
       applyWorkspace(workspace, {
-        selectedCaseId: activeCertificate.caseId,
-        selectedCertificateId: activeCertificate.id,
+        selectedCaseId: certificate.caseId,
+        selectedCertificateId: certificate.id,
         activeParagraphId: paragraphId,
         selectedEvidenceIds,
       })
     })
-    const saved = await runMutation(() => saving)
+    const saved = quiet
+      ? await saving.then(() => true, () => false)
+      : await runMutation(() => saving)
     if (!saved) documentTaskQueueRef.current.recover()
     return saved
   }
@@ -6309,8 +6545,16 @@ function App() {
         </button>
       )
     } else if (sourceType === 'word') {
-      previewNode = <WordPreviewSurface key={previewEvidence.id} evidence={previewEvidence} sourceUrl={previewSource} />
-    } else if ((sourceType === 'pdf' || sourceType === 'ppt') && previewSource) {
+      previewNode = <StabilityBoundary module key={previewEvidence.id}>
+        <WordPreviewSurface evidence={previewEvidence} sourceUrl={previewSource} />
+      </StabilityBoundary>
+    } else if (sourceType === 'pdf' && previewSource) {
+      previewNode = <StabilityBoundary module key={previewSource}>
+        <Suspense fallback={<p role="status">正在读取原件...</p>}>
+          <PdfPreview sourceUrl={previewSource} name={previewEvidence.name} />
+        </Suspense>
+      </StabilityBoundary>
+    } else if (sourceType === 'ppt' && previewSource) {
       previewNode = (
         <iframe
           className="preview-frame"
@@ -6947,13 +7191,14 @@ function App() {
     }
 
     return (
-      <div className="knowledge-library-backdrop" onClick={handleCloseKnowledgeLibraryDialog}>
+      <div className="knowledge-library-backdrop ide-knowledge-backdrop" onClick={handleCloseKnowledgeLibraryDialog}>
         <div
           className="knowledge-library-dialog"
           onClick={(event) => event.stopPropagation()}
           role="dialog"
           aria-modal="true"
           aria-label="法律知识库模块"
+          tabIndex={-1}
         >
           <div className="knowledge-library-head">
             <div>
@@ -7050,7 +7295,7 @@ function App() {
   function renderAgentDock(inline = false): ReactNode {
     const isRewriteMode = Boolean(activeCertificate)
     const availableEvidenceCount = (selectedEvidenceIds.length ? selectedEvidenceIds : activeCertificateEvidenceIds).length
-    const canSubmit = Boolean(selectedCase && availableEvidenceCount && !isSubmitting)
+    const canSubmit = Boolean(selectedCase && availableEvidenceCount && !isSubmitting && !documentVoiceBusy)
     const estimatedDraftPoints = getEstimatedActionPoints('pleading_full')
 
     return (
@@ -7087,9 +7332,11 @@ function App() {
             </div>}
 
             <div className="agent-dock-body">
-              <div className="agent-dock-mode-switch" role="group" aria-label="助手模式">
-                <button aria-pressed={agentMode === 'case'} type="button" onClick={() => setAgentMode('case')}>案件沟通</button>
-                <button aria-pressed={agentMode === 'document'} type="button" onClick={() => setAgentMode('document')}>文书起草</button>
+              <div className="assistant-mode-row">
+                <AssistantPicker label={agentMode === 'case' ? '案件沟通' : '文书起草'} title="助手工作模式"
+                  items={[{ id: 'case', label: '案件沟通', description: '分析案情、证据与诉讼策略' }, { id: 'document', label: '文书起草', description: '结合本案证据起草与改写' }]}
+                  value={agentMode} disabled={isSubmitting || documentVoiceBusy}
+                  onSelect={id => setAgentMode(id as 'case' | 'document')} />
               </div>
               {agentMode === 'case' ? selectedCase && appState ? <CaseAgentPanel
                 key={`${loginAccount}:${selectedCase.id}`} folder={selectedCase} workspace={appState}
@@ -7111,7 +7358,7 @@ function App() {
               ) : null}
 
               {agentMode === 'document' ? <div className="agent-input-shell agent-dock-input-shell">
-                <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} disabled={isSubmitting}
+                <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} disabled={isSubmitting || documentVoiceBusy}
                   placeholder={isRewriteMode ? '输入需要调整的内容或改写要求…' : '描述文书类型与起草要求…'} />
                 <div className="agent-dock-submit-area">
                   <div className="agent-dock-composer-meta">
@@ -7119,11 +7366,16 @@ function App() {
                     <span className="agent-dock-cost">预计 <b>{estimatedDraftPoints}</b> 积分</span>
                   </div>
                   <div className="agent-composer-actions">
+                    <AssistantPicker label={documentModel || '默认模型'} title="选择模型"
+                      items={[{ id: '', label: '默认模型' }, ...assistantModels]} value={documentModel ?? ''}
+                      disabled={isSubmitting || documentVoiceBusy} onSelect={id => setDocumentModel(id || undefined)} />
+                    <VoiceInputButton disabled={isSubmitting} onBusy={setDocumentVoiceBusy} onError={setErrorMessage}
+                      onText={text => setAgentPrompt(`${agentPromptRef.current}${agentPromptRef.current ? '\n' : ''}${text}`.slice(0, 6000))} />
                     <button
                       className="agent-dock-clear"
                       type="button"
                       onClick={() => setAgentPrompt('')}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || documentVoiceBusy}
                     >
                       清空
                     </button>
@@ -7176,6 +7428,8 @@ function App() {
 
     return (
       <div className="knowledge-stack">
+        <LegalReview editor={activeParagraphId ? paragraphEditorsRef.current[activeParagraphId] ?? null : null}
+          active account={loginAccount} automatic={false} />
         {selectedStatuteReference && selectedStatuteReferenceBinding ? (
           <div className="insight-card">
             <div className="preview-section-head">
@@ -7321,6 +7575,9 @@ function App() {
   function renderCaseReferencePanel() {
     return (
       <div className="knowledge-stack">
+        <LegalReview editor={activeParagraphId ? paragraphEditorsRef.current[activeParagraphId] ?? null : null}
+          active account={loginAccount} automatic={false} />
+        <CaseSearchPanel onOpen={entry => { void handleOpenKnowledgeCaseDetail(entry) }} />
         {selectedCaseReference && selectedCaseReferenceBinding ? (
           <div className="insight-card">
             <div className="preview-section-head">
@@ -8480,7 +8737,10 @@ function App() {
                   >
                     <div className="word-paragraph-layout">
                       <ParagraphRichEditor
+                        key={draftKey(loginAccount, activeCertificate.id, paragraph.id)}
                         paragraph={paragraph}
+                        account={loginAccount}
+                        certificateId={activeCertificate.id}
                         editable={!isAutoLinkingActiveCertificate}
                         active={paragraph.id === activeParagraph?.id}
                         activeSentenceIndex={paragraph.id === activeParagraph?.id ? activeSentenceSelection.index : null}
@@ -8495,7 +8755,7 @@ function App() {
                             sentenceText,
                           }, { syncInsight: Boolean(userInitiated) || !manualPreviewEvidenceIdRef.current })
                         }}
-                        onCommit={(patch) => handleUpdateParagraphById(paragraph.id, patch)}
+                        onCommit={(patch, expected) => handleUpdateParagraphById(paragraph.id, patch, true, expected)}
                         onRegisterEditor={(editor) => {
                           paragraphEditorsRef.current[paragraph.id] = editor
                         }}
@@ -8569,7 +8829,7 @@ function App() {
         <div className="app-update-copy">
           <span>桌面端更新</span>
           <strong>{title}</strong>
-          <p>{detail}</p>
+          <p role="status" aria-live="polite">{detail}</p>
         </div>
 
         {appUpdateState.status === 'downloading' ? (
@@ -8590,14 +8850,24 @@ function App() {
           >
             {appUpdateState.status === 'checking' ? '检查中...' : '检查更新'}
           </button>
+          {window.lawVerifyDesktop?.platform === 'darwin' ? (
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => void checkForAppUpdate({ channel: 'test' })}
+              disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
+            >
+              检查测试版
+            </button>
+          ) : null}
           {hasAvailableUpdate ? (
             <button
               className="primary-button"
               type="button"
               onClick={() => void handleStartAppUpdate()}
-              disabled={appUpdateState.status === 'downloading'}
+              disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
             >
-              {appUpdateState.status === 'downloading' ? '正在更新...' : '一键更新'}
+              {appUpdateState.status === 'downloading' ? '正在更新...' : window.lawVerifyDesktop?.platform === 'darwin' ? '下载并安装' : '一键更新'}
             </button>
           ) : null}
         </div>
@@ -8692,28 +8962,15 @@ function App() {
     )
   }
 
-  function renderStreamlinedEvidenceTreeNode(node: EvidenceFolderTreeNode): ReactNode {
-    return (
-      <section className="streamlined-folder-node" key={node.key || 'root'}>
-        {node.key ? (
-          <div
-            className="streamlined-folder-node-label"
-            style={{ '--folder-depth': node.depth } as CSSProperties}
-          >
-            <span className="streamlined-folder-caret">▾</span>
-            <span>{node.label}</span>
-          </div>
-        ) : null}
-
-        <div
-          className="streamlined-folder-node-children"
-          style={{ '--folder-depth': node.key ? node.depth : 0 } as CSSProperties}
-        >
-          {node.folders.map((folder) => renderStreamlinedEvidenceTreeNode(folder))}
-          {node.evidences.map((evidence) => renderStreamlinedEvidenceItem(evidence))}
+  function renderEvidenceTreeRow(row: EvidenceTreeRow) {
+    return row.evidence
+      ? <div style={{ marginLeft: Math.min(row.depth * 14, 56), paddingBottom: 8 }}>
+          {renderStreamlinedEvidenceItem(row.evidence)}
         </div>
-      </section>
-    )
+      : <div className="streamlined-folder-node-label"
+          style={{ '--folder-depth': Math.min(row.depth, 4), paddingBottom: 8 } as CSSProperties}>
+          <span>{row.label}</span>
+        </div>
   }
 
   function renderCertificateVersionList(targetTab: CaseCenterTab) {
@@ -9139,7 +9396,8 @@ function App() {
   function renderCaseCenterSidebar() {
     if (streamlinedMode) {
       return (
-        <aside className={`sidebar streamlined-sidebar ${isStreamlinedSidebarCollapsed ? 'is-collapsed' : ''}`}>
+        <aside className={`sidebar streamlined-sidebar ${isStreamlinedSidebarCollapsed ? 'is-collapsed' : ''}`}
+          tabIndex={-1} aria-label="证据目录">
           <div className="streamlined-sidebar-toggle-row">
             {isStreamlinedSidebarCollapsed ? null : (
               <span className="eyebrow streamlined-sidebar-toggle-label">证据目录</span>
@@ -9346,7 +9604,9 @@ function App() {
                 ) : null}
                 <div className="streamlined-evidence-list">
                   {displayCaseEvidences.length ? (
-                    renderStreamlinedEvidenceTreeNode(evidenceFolderTree)
+                    <VirtualList items={evidenceTreeRows} itemKey={evidenceRowKey}
+                      estimateHeight={evidenceRowHeight} renderItem={renderEvidenceTreeRow}
+                      focusKey={manualPreviewEvidenceId} />
                   ) : (
                     <div className="empty-box compact-empty">
                       {selectedCase
@@ -9797,7 +10057,8 @@ function App() {
                 </button> : null}
               </div>
               {ideContentTab === 'evidence' && previewEvidence ? renderEvidencePreview('source') : null}
-              <div className="ide-document-view" hidden={ideContentTab === 'evidence' && Boolean(previewEvidence)}>
+              <div className="ide-document-view" tabIndex={-1} aria-label="文书工作区"
+                hidden={ideContentTab === 'evidence' && Boolean(previewEvidence)}>
               <div className="panel-header">
                 <div className="panel-header-title-group">
                   <div>
@@ -9880,7 +10141,7 @@ function App() {
               </div>
 
               <div className={`streamlined-insight-content ${isIdeAssistantVisible ? 'ide-assistant-content' : ''}`} ref={evidenceColumnRef}>
-                <div className="ide-assistant-view" hidden={!isIdeAssistantVisible}>
+                <div className="ide-assistant-view" tabIndex={-1} aria-label="案件助手" hidden={!isIdeAssistantVisible}>
                   {renderAgentDock(true)}
                 </div>
                 {isIdeAssistantVisible ? null : verifyInsightTab === 'evidence' && ideContentTab === 'evidence'
@@ -10158,6 +10419,11 @@ function App() {
                   </div>
                 </label>
 
+                <label>
+                  邀请码（选填）
+                  <input value={registerForm.inviteCode ?? ''} maxLength={16}
+                    onChange={event => setRegisterForm(current => ({ ...current, inviteCode: event.target.value }))} />
+                </label>
                 <button className="primary-button wide-button" type="button" onClick={handleRegister} disabled={isSubmitting}>
                   {isSubmitting ? '注册中...' : '注册并进入系统'}
                 </button>
@@ -10227,46 +10493,46 @@ function App() {
         className={`app-shell pro-shell streamlined-shell ide-shell ${isStreamlinedSidebarCollapsed ? 'streamlined-shell-sidebar-collapsed' : ''} ${isResizingStreamlinedSidebar ? 'is-sidebar-resizing' : ''}`}
         style={streamlinedShellStyle}
       >
-        <nav className="ide-activity-bar" aria-label="功能导航">
-          <div className="ide-brand-mark" title="LawVerify">L</div>
-          {([
-            ['files', '资源管理器', 'M3 5h6l2 2h10v13H3z M3 10h18'],
-            ['document', '文书工作区', 'M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6'],
-            ['assistant', '案件助手', 'M12 3l3 6 6 3-6 3-3 6-3-6-6-3 6-3z'],
-            ['knowledge', '知识库', 'M3 4h7l2 2 2-2h7v16h-7l-2 2-2-2H3z M12 6v16'],
-          ] as const).map(([key, label, path]) => (
-            <button key={key} type="button" aria-label={label} title={label}
-              aria-pressed={key === 'files' ? !isStreamlinedSidebarCollapsed
-                : key === 'document' ? ideContentTab === 'document'
-                  : key === 'assistant' ? isIdeAssistantVisible : isKnowledgeLibraryDialogOpen}
-              onClick={() => {
-                setIsIdeAccountOpen(false)
-                if (key === 'files') handleToggleStreamlinedSidebar()
-                if (key === 'document') setIdeContentTab('document')
-                if (key === 'assistant') { setIsIdeAssistantVisible(true); setAgentMode('case') }
-                if (key === 'knowledge') setIsKnowledgeLibraryDialogOpen(true)
-              }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
-                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>
-            </button>
-          ))}
-          <div className="ide-activity-spacer" />
-          <button type="button" title="产品反馈" aria-label="产品反馈" onClick={handleOpenFeedbackDialog}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
-              strokeLinejoin="round" aria-hidden="true"><path d="M4 4h16v12H9l-5 4z M8 8h8 M8 12h5" /></svg>
-          </button>
-          <button type="button" title={sidebarPrimaryIdentity} aria-label={`账户：${sidebarPrimaryIdentity}`}
-            aria-expanded={isIdeAccountOpen} onClick={() => setIsIdeAccountOpen(current => !current)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
-              aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg>
-          </button>
+        <IdeActivityBar identity={sidebarPrimaryIdentity} accountOpen={isIdeAccountOpen}
+          active={{ files: !isStreamlinedSidebarCollapsed, document: ideContentTab === 'document',
+            assistant: isIdeAssistantVisible && agentMode === 'case', knowledge: isKnowledgeLibraryDialogOpen }}
+          onNavigate={handleIdeNavigation}
+          onFeedback={() => { setIsIdeAccountOpen(false); handleOpenFeedbackDialog() }}
+          onAccount={() => setIsIdeAccountOpen(current => !current)}>
           {isIdeAccountOpen ? <div className="ide-account-backdrop" onClick={() => setIsIdeAccountOpen(false)}>
-            <section className="ide-account-popover" aria-label="当前账户" onClick={event => event.stopPropagation()}>
-              <button className="ghost-button" type="button" onClick={() => setIsIdeAccountOpen(false)}>关闭账户</button>
-              {renderSidebarFooter(true)}
+            <section className="ide-account-popover" aria-label="当前账户"
+              onClick={event => event.stopPropagation()}
+              onKeyDown={event => {
+                if (event.key === 'Escape') setIsIdeAccountOpen(false)
+              }}>
+              <header className="ide-account-header">
+                <span>当前账户</span>
+                <button className="ide-account-close" type="button" onClick={() => setIsIdeAccountOpen(false)}>收起</button>
+              </header>
+              <strong className="ide-account-identity">{sidebarPrimaryIdentity}</strong>
+              <div className="ide-account-balance">
+                <div className="ide-account-balance-copy">
+                  <span>积分余额</span>
+                  <strong className={appState!.user.points <= 0 ? 'is-depleted' : undefined}>
+                    {appState!.user.points}
+                  </strong>
+                </div>
+                <button className="primary-button ide-account-recharge" type="button"
+                  onClick={handleRecharge} disabled={isSubmitting}>充值</button>
+              </div>
+              <AccountFeatures />
+              <footer className="ide-account-actions">
+                <button className="ide-account-logout" type="button" onClick={handleLogout}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
+                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M10 4H5v16h5 M14 8l4 4-4 4 M9 12h9" />
+                  </svg>
+                  <span>退出登录</span>
+                </button>
+              </footer>
             </section>
           </div> : null}
-        </nav>
+        </IdeActivityBar>
         {renderCaseCenterSidebar()}
         <div
           className="streamlined-shell-resizer"

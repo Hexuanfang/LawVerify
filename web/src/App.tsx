@@ -740,7 +740,7 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
             <p className="home-hero-meta"><span>支持 Windows、Mac（Apple 芯片 / Intel）</span><span>注册送体验积分</span></p>
             <MobileRegisterHint />
             <ul className="home-hero-feats" aria-label="产品特点">
-              <li><b>超大文件材料处理</b><span>单份最大 100MB</span></li>
+              <li><b>超大文件材料处理</b><span>最大处理 10GB 数据</span></li>
               <li><b>语义级证据核验</b><span>每句陈述对回原件</span></li>
               <li><b>案例法条核验</b><span>核对官方来源</span></li>
             </ul>
@@ -945,7 +945,7 @@ function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; r
                 <>
                   <p className="dl-version">
                     LawVerify {release.version}
-                    {release.channel && release.channel !== 'stable' ? <span className="dl-beta">{release.channel === 'test' ? '未签名测试版' : '测试版'}</span> : null}
+                    {release.channel && release.channel !== 'stable' ? <span className="dl-beta">测试版</span> : null}
                   </p>
                   <p className="dl-meta">
                     {[formatDate(release.publishedAt) ? `${formatDate(release.publishedAt)} 发布` : '', release.platform === 'darwin' ? 'DMG 安装包' : 'EXE 安装包', release.sizeLabel].filter(Boolean).join(' · ')}
@@ -1114,7 +1114,7 @@ function ProductPage() {
         id="materials"
         kicker="超大文件材料处理"
         title="整个案卷文件夹，直接关联。"
-        lead="同一案件可以关联多个本地文件夹，材料增量导入、分批处理；单份材料最大 100MB。"
+        lead="同一案件可以关联多个本地文件夹，材料增量导入、分批处理；最大可处理 10GB 数据。"
         points={['支持 Word、PDF、图片、文本', '从原件提取证明目的、关键事实、金额、时间与证明局限', '材料变更后可以重新梳理']}
         bg="/media/files-binder.jpg"
       >
@@ -1168,7 +1168,7 @@ function ProductPage() {
       </FeatureChapter>
 
       <section className="pf-specs" aria-label="规格">
-        <div><strong>100<small>MB</small></strong><span>单份材料上限</span></div>
+        <div><strong>10<small>GB</small></strong><span>最大处理数据</span></div>
         <div><strong>4<small>种</small></strong><span>Word、PDF、图片、文本</span></div>
         <div><strong>3<small>个</small></strong><span>Windows / Mac Apple 芯片 / Mac Intel 安装包</span></div>
         <div><strong>4<small>种</small></strong><span>逐句核验结果</span></div>
@@ -1300,7 +1300,7 @@ const siteFaqs: Array<{ question: string; answer: string }> = [
   },
   {
     question: '能处理多大的案卷材料？',
-    answer: '单份材料最大 100MB，支持 Word、PDF、图片和文本，暂不支持录音、视频。材料较多时会排队分批处理，超过上限的文件需要拆分后再导入。扫描件的识别效果受清晰度影响，关键内容请核对原件。',
+    answer: '最大可处理 10GB 数据，支持 Word、PDF、图片和文本，暂不支持录音、视频。材料较多时会排队分批处理；单个文件超过 100MB 时，需要拆分后再导入。扫描件的识别效果受清晰度影响，关键内容请核对原件。',
   },
   {
     question: '能核对文书里引用的法条和案例吗？',

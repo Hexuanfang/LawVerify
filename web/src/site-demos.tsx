@@ -523,7 +523,7 @@ function SceneMaterials({ active }: { active: boolean }) {
       </div>
       <div className="sm-chips">
         <span>5 份材料 · 2 个文件夹</span>
-        <span>单份最大 100MB</span>
+        <span>最大处理 10GB 数据</span>
         <span>增量导入 · 分批处理</span>
         <span>Word、PDF、图片、文本</span>
       </div>
@@ -602,7 +602,7 @@ const storyChapters = [
   {
     kicker: '超大文件材料处理',
     title: '上千页的案卷，直接导入。',
-    body: '同一案件可链接多个本地文件夹，增量导入材料，保留原件并支持大文件分批处理。支持 Word、PDF、图片与文本，单份材料最大 100MB；暂不支持录音、视频。',
+    body: '同一案件可链接多个本地文件夹，增量导入材料，保留原件并支持大文件分批处理。支持 Word、PDF、图片与文本，最大可处理 10GB 数据；暂不支持录音、视频。',
     points: ['多目录材料增量导入', '保留原件，分批处理', '材料变更后可重新梳理'],
   },
   {

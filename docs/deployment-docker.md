@@ -77,6 +77,26 @@ echo '新密码' | ./admin.sh set-password admin --password-stdin   # 指定密�
 `LawVerify-Setup-x.y.z.exe` 或 `LawVerify-Mac-x.y.z-<arm64|x64>.dmg`，无需重启。
 也可设置 `RELEASE_DOWNLOAD_BASE_URL`（必须 HTTPS）改由 CDN 提供。
 
+## 绑定域名与 HTTPS（80/443 已被其他 nginx 占用时）
+
+同一台机器上已有 nginx 接管 80/443 时，不要再让 LawVerify 抢这两个端口，而是在现有 nginx 上加站点转发到 `WEB_PORT`：
+
+1. 域名 A 记录指向服务器。
+2. 参考 `deploy/nginx-outer-vhost.conf.example`，先在外层 nginx 加 80 端口的站点（含 `/.well-known/acme-challenge/`），`nginx -t` 后重载。
+3. 签发证书（证书状态保存在 `/opt/lawverify/letsencrypt`）：
+
+   ```bash
+   DOMAIN=域名 ACME_WEBROOT=外层nginx的acme目录 CERT_DIR=外层nginx证书目录 \
+   NGINX_CONTAINER=外层nginx容器名 /opt/lawverify/deploy/issue-cert.sh
+   ```
+
+4. 加 443 站点，80 端口改为跳转 HTTPS，重载。
+5. `.env` 中 `CLOUD_PUBLIC_BASE_URL`、`CLOUD_WEB_ORIGIN`、`VITE_SITE_URL` 改为 `https://域名`，执行
+   `docker compose build web && docker compose up -d`。
+6. 用 cron 每周执行一次第 3 步的命令完成续期，未到期时不会重复签发。
+
+此时 `WEB_PORT` 只需外层 nginx 能访问，安全组不必对公网开放。
+
 ## 运维
 
 ```bash

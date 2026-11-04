@@ -195,6 +195,7 @@ export const api = {
         name: string
         role: string
       }
+      isPlatformAdmin?: boolean
     }>('/api/account/login', {
       method: 'POST',
       body: JSON.stringify(payload),

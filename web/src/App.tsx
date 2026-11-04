@@ -3714,8 +3714,7 @@ export default function App() {
       authStorage.setToken(result.token)
       setAuthToken(result.token)
       
-      const adminEmails = ['admin', '972167580@qq.com']
-      if (adminEmails.includes(email.toLowerCase())) {
+      if (result.isPlatformAdmin) {
         window.location.assign('/admin')
       } else {
         window.location.assign('/console')

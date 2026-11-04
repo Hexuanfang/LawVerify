@@ -90,6 +90,13 @@ echo '新密码' | ./admin.sh set-password admin --password-stdin   # 指定密�
    NGINX_CONTAINER=外层nginx容器名 /opt/lawverify/deploy/issue-cert.sh
    ```
 
+   服务器拉不到 Docker Hub 镜像时，在本机拉取后传过去：
+
+   ```bash
+   docker pull --platform linux/amd64 certbot/certbot:v3.1.0
+   docker save --platform linux/amd64 certbot/certbot:v3.1.0 | gzip | ssh root@服务器 'gunzip | docker load'
+   ```
+
 4. 加 443 站点，80 端口改为跳转 HTTPS，重载。
 5. `.env` 中 `CLOUD_PUBLIC_BASE_URL`、`CLOUD_WEB_ORIGIN`、`VITE_SITE_URL` 改为 `https://域名`，执行
    `docker compose build web && docker compose up -d`。

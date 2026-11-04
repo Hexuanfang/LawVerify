@@ -114,7 +114,7 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence }: {
           if (event.key === 'Escape') setSkillOpen(false)
           if (skillOpen && (event.key === 'ArrowDown' || event.key === 'Enter') && !event.nativeEvent.isComposing) {
             event.preventDefault()
-            inputRef.current?.closest('form')?.querySelector<HTMLButtonElement>('.assistant-send-row .assistant-picker-menu button')?.focus()
+            inputRef.current?.closest('form')?.querySelector<HTMLButtonElement>('.assistant-picker-menu[aria-label="选择 Skill"] button')?.focus()
             return
           }
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !skillOpen) {
@@ -127,15 +127,15 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence }: {
             setSelection(current => ({ ...current, agent: id as AssistantSelection['agent'] }))
             setIntent('question'); setProposal(null)
           }} />
+        <AssistantPicker label="\ Skill" title="选择 Skill" items={assistantSkills.filter(item => {
+          const query = message.match(/\\([^\s\\]*)$/)?.[1]?.toLowerCase() || ''
+          return !query || item.label.includes(query) || item.id.includes(query)
+        })} value={selection.skill} disabled={blocked} open={skillOpen} onOpen={setSkillOpen} onSelect={chooseSkill} />
         <AssistantPicker label={selection.model || '默认模型'} title="选择模型"
           items={[{ id: '', label: '默认模型', description: '使用当前默认配置' }, ...models]}
           value={selection.model ?? ''} disabled={blocked} onSelect={id => setSelection(current => ({ ...current, model: id || undefined }))} />
       </div>
       <div className="assistant-send-row">
-        <AssistantPicker label="\ Skill" title="选择 Skill" items={assistantSkills.filter(item => {
-          const query = message.match(/\\([^\s\\]*)$/)?.[1]?.toLowerCase() || ''
-          return !query || item.label.includes(query) || item.id.includes(query)
-        })} value={selection.skill} disabled={blocked} open={skillOpen} onOpen={setSkillOpen} onSelect={chooseSkill} />
         <div className="assistant-send-actions">
           <VoiceInputButton disabled={busy} onBusy={setVoiceBusy} onError={setError} onText={text => {
             setMessage(current => `${current}${current && !/\s$/.test(current) ? '\n' : ''}${text}`.slice(0, 6000))

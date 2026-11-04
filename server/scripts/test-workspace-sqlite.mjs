@@ -142,6 +142,26 @@ test('same-field conflicts roll back the entire save and preserve committed resu
   assert.equal(read(store).cases[0].name, 'test case')
 })
 
+test('case-only mutations survive stale document saves and roll back invalid updates', t => {
+  const { store } = isolated(t)
+  const stale = read(store)
+  store.mutateCases((cases, hasEvidence) => {
+    assert.equal(hasEvidence('case'), true)
+    assert.equal(hasEvidence('missing'), false)
+    cases[0].name = 'Renamed'
+    cases.unshift({ id: 'new-case', name: 'New', description: '', status: 'draft', createdAt: '2026-11-03' })
+  })
+  stale.certificates[0].paragraphs[0].text = 'Updated document'
+  store.save(stale)
+  assert.equal(read(store).cases.find(c => c.id === 'case').name, 'Renamed')
+  assert.equal(read(store).cases.find(c => c.id === 'new-case').name, 'New')
+  assert.throws(() => store.mutateCases(cases => {
+    cases[0].name = 'Must roll back'
+    throw new Error('Invalid update')
+  }), /Invalid update/)
+  assert.equal(read(store).cases.find(c => c.id === 'new-case').name, 'New')
+})
+
 test('service-layer object spreads retain optimistic snapshots and JSON never exposes them', t => {
   const { store } = isolated(t)
   const spread = { ...read(store) }

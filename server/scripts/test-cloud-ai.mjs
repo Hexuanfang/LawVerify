@@ -14,7 +14,7 @@ env.LLM_BASE_URL = undefined
 env.EMBEDDING_API_KEY = undefined
 const { runWithWorkspaceAccount } = await import('../src/store.ts')
 const { rememberCloudAiToken } = await import('../src/integrations/cloud-ai.ts')
-const { createChatCompletion, createChatCompletionStream, isLlmConfigured } = await import('../src/integrations/llm-service.ts')
+const { createChatCompletion, createChatCompletionStream, getAssistantCapabilities, isLlmConfigured } = await import('../src/integrations/llm-service.ts')
 const { createEmbedding } = await import('../src/integrations/embedding-service.ts')
 const original = globalThis.fetch
 const calls = []
@@ -27,6 +27,10 @@ test('secret-free cloud transport authenticates per account, preserves stream an
     const headers = new Headers(init.headers)
     assert.equal(headers.get('authorization'), 'Bearer session-only-token')
     assert.match(headers.get('x-ai-request-id'), /^[a-f0-9-]{36}$/)
+    if (String(input).endsWith('/assistant/capabilities')) {
+      assert.equal(init.method, 'GET')
+      return Response.json({ models: [{ id: 'cloud-model', label: 'Cloud model' }], voice: true })
+    }
     const payload = JSON.parse(init.body)
     assert.equal(payload.model, undefined)
     assert.equal(payload.apiKey, undefined)
@@ -44,8 +48,10 @@ test('secret-free cloud transport authenticates per account, preserves stream an
   }
   assert.equal(isLlmConfigured(), true)
   await runWithWorkspaceAccount('one@test.invalid', async () => {
+    assert.deepEqual(await getAssistantCapabilities(), { models: [], voice: false })
     await assert.rejects(createChatCompletion({ messages: [{ role: 'user', content: 'test' }] }), /登录/)
     rememberCloudAiToken('session-only-token')
+    assert.deepEqual(await getAssistantCapabilities(), { models: [{ id: 'cloud-model', label: 'Cloud model' }], voice: true })
     assert.equal((await createChatCompletion({ messages: [{ role: 'user', content: 'test' }] })).content, 'ok')
     const chunks = []
     for await (const chunk of createChatCompletionStream({ messages: [{ role: 'user', content: 'test' }] })) chunks.push(chunk)
@@ -57,7 +63,8 @@ test('secret-free cloud transport authenticates per account, preserves stream an
     }, /中断/)
   })
   await runWithWorkspaceAccount('two@test.invalid', async () => {
+    assert.deepEqual(await getAssistantCapabilities(), { models: [], voice: false })
     await assert.rejects(createChatCompletion({ messages: [{ role: 'user', content: 'test' }] }), /登录/)
   })
-  assert.equal(calls.length, 4)
+  assert.equal(calls.length, 5)
 })

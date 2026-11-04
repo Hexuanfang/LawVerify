@@ -26,6 +26,7 @@ test('Mac builder does not reuse Windows runtimes or expose unsigned packages as
   assert.equal(config.mac.identity, '-')
   assert.equal(config.mac.notarize, false)
   assert.ok(config.mac.artifactName.includes('-unsigned'))
+  assert.ok(!config.files.includes('!electron/mac-test-channel.json'))
   assert.deepEqual(config.mac.target[0].arch, ['arm64', 'x64'])
   process.env.LAWVERIFY_MAC_SIGNED = '1'
   delete require.cache[require.resolve('./mac-builder.cjs')]
@@ -33,5 +34,6 @@ test('Mac builder does not reuse Windows runtimes or expose unsigned packages as
   assert.equal(signed.forceCodeSigning, true)
   assert.equal(signed.mac.notarize, true)
   assert.equal(signed.mac.artifactName.includes('-unsigned'), false)
+  assert.ok(signed.files.includes('!electron/mac-test-channel.json'))
   delete process.env.LAWVERIFY_MAC_SIGNED
 })

@@ -1,7 +1,8 @@
 param(
   [switch]$Signed,
   [switch]$Push,
-  [switch]$KeepDownloads
+  [switch]$KeepDownloads,
+  [string]$Ref
 )
 
 # One-shot LawVerify macOS builder (via GitHub Actions mac-desktop.yml).
@@ -70,6 +71,13 @@ if ($status.Count -gt 0) {
 }
 
 $branch = (Invoke-Checked 'git' @('rev-parse', '--abbrev-ref', 'HEAD') | Select-Object -First 1).Trim()
+if ($Ref) {
+  if ($Push) { throw '-Ref cannot be combined with -Push. Push the selected branch deliberately first.' }
+  $head = (Invoke-Checked 'git' @('rev-parse', 'HEAD') | Select-Object -First 1).Trim()
+  $refInfo = (Invoke-Checked 'gh' @('api', "repos/$repoSlug/commits/$Ref", '--jq', '.sha') | Select-Object -First 1).Trim()
+  if ($refInfo -ne $head) { throw "Selected remote ref $Ref does not match local HEAD $head." }
+  Write-Host "[ok] pinned remote ref $Ref => $head"
+} else {
 $division = (& 'git' 'rev-list' '--left-right' '--count' "origin/$branch...HEAD" 2>&1)
 if ($LASTEXITCODE -ne 0) {
   Write-Host "[warn] Cannot compare with origin/$branch (branch may be untracked). Trusting -Push flag." -ForegroundColor Yellow
@@ -89,16 +97,21 @@ if ($Push) {
   Invoke-Checked 'git' @('push', $remoteName, $branch)
   Start-Sleep -Seconds 2
 }
+}
 
 # -- trigger ----------------------------------------------------------------
 $signedFlag = if ($Signed) { 'true' } else { 'false' }
 Write-Host "Triggering workflow $workflowName (signed=$signedFlag)..."
-$trigger = Invoke-Checked 'gh' @('workflow', 'run', $workflowName, '--repo', $repoSlug, '-f', "signed=$signedFlag")
+$triggerArgs = @('workflow', 'run', $workflowName, '--repo', $repoSlug, '-f', "signed=$signedFlag")
+if ($Ref) { $triggerArgs += @('--ref', $Ref) }
+$trigger = Invoke-Checked 'gh' $triggerArgs
 Write-Host ($trigger -join "`n")
 
 # -- wait for the newest run of this workflow ------------------------------
 Start-Sleep -Seconds 6
-$runInfo = (Invoke-Checked 'gh' @('run', 'list', '--workflow', $workflowName, '--repo', $repoSlug, '--limit', '1', '--json', 'databaseId,status,conclusion,headBranch') | Out-String | ConvertFrom-Json)
+$listArgs = @('run', 'list', '--workflow', $workflowName, '--repo', $repoSlug, '--limit', '1', '--json', 'databaseId,status,conclusion,headBranch')
+if ($Ref) { $listArgs += @('--branch', $Ref) }
+$runInfo = (Invoke-Checked 'gh' $listArgs | Out-String | ConvertFrom-Json)
 if (-not $runInfo -or -not $runInfo.databaseId) { throw 'Could not find the triggered workflow run.' }
 $runId = $runInfo.databaseId
 Write-Host "Watching run #$runId (branch=$($runInfo.headBranch), status=$($runInfo.status))..."
@@ -109,6 +122,7 @@ if ($runFinal.conclusion -ne 'success') { throw "Workflow run #$runId ended with
 
 # -- download ---------------------------------------------------------------
 $destDir = Join-Path $appRoot ($(if ($Signed) { 'release-mac' } else { 'release-mac-unsigned' }))
+$destDir = Join-Path $destDir "$version-run-$runId"
 if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir | Out-Null }
 Write-Host "Downloading artifacts to $destDir ..."
 Invoke-Checked 'gh' @('run', 'download', $runId, '--repo', $repoSlug, '--dir', $destDir)

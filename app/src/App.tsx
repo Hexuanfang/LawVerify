@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useStat
 import QRCode from 'qrcode'
 import { Extension } from '@tiptap/core'
 import TextAlign from '@tiptap/extension-text-align'
-import Underline from '@tiptap/extension-underline'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
@@ -67,10 +66,10 @@ const COLLAPSED_STREAMLINED_SIDEBAR_WIDTH = 56
 const STREAMLINED_SIDEBAR_COLLAPSE_THRESHOLD = 120
 const MIN_STREAMLINED_MAIN_WIDTH = 720
 const STREAMLINED_SIDEBAR_RESIZER_WIDTH = 6
-const DEFAULT_INSIGHT_PANEL_WIDTH = 380
+const DEFAULT_INSIGHT_PANEL_WIDTH = 440
 const PROGRESS_UPDATE_INTERVAL_MS = 80
 const MAIN_THREAD_YIELD_INTERVAL_MS = 24
-const MIN_INSIGHT_PANEL_WIDTH = 280
+const MIN_INSIGHT_PANEL_WIDTH = 320
 const MIN_DOCUMENT_PANEL_WIDTH = 360
 const WORKBENCH_RESIZER_WIDTH = 6
 const DEFAULT_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 320
@@ -134,7 +133,7 @@ interface FeedbackDialogState {
 }
 
 interface AppUpdateState {
-  status: 'idle' | 'checking' | 'unavailable' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error'
+  status: 'idle' | 'checking' | 'unavailable' | 'available' | 'up-to-date' | 'downloading' | 'installing' | 'ready' | 'error'
   latestRelease: ReleaseItem | null
   progress: number | null
   message: string
@@ -1867,7 +1866,6 @@ export function ParagraphRichEditor({
         blockquote: false,
         codeBlock: false,
       }),
-      Underline,
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
@@ -1929,8 +1927,26 @@ export function ParagraphRichEditor({
     })
     const flush = () => { if (!editor.isDestroyed && editedRef.current) captureDraftRef.current(editor) }
     const retry = () => { if (!editor.isDestroyed && pendingDraftRef.current) void commitDraftRef.current(editor) }
+    let editingBeforeUpdate: boolean | null = null
+    const prepareUpdate = (event: Event) => {
+      const writes = (event as CustomEvent<Promise<void>[]>).detail
+      if (!Array.isArray(writes) || editor.isDestroyed) return
+      editingBeforeUpdate = editor.isEditable
+      editor.setEditable(false)
+      clearTimeout(saveTimerRef.current)
+      clearTimeout(snapshotTimerRef.current)
+      flush()
+      if (pendingDraftRef.current) writes.push(writeDraft(pendingDraftRef.current))
+    }
+    const resumeEditing = () => {
+      if (editingBeforeUpdate !== null && !editor.isDestroyed) editor.setEditable(editingBeforeUpdate)
+      if (editingBeforeUpdate === true) retry()
+      editingBeforeUpdate = null
+    }
     const handleVisibility = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('pagehide', flush)
+    window.addEventListener('lawverify:prepare-update', prepareUpdate)
+    window.addEventListener('lawverify:cancel-update', resumeEditing)
     window.addEventListener('lawverify:service-ready', retry)
     document.addEventListener('visibilitychange', handleVisibility)
     return () => {
@@ -1939,6 +1955,8 @@ export function ParagraphRichEditor({
       clearTimeout(saveTimerRef.current)
       clearTimeout(snapshotTimerRef.current)
       window.removeEventListener('pagehide', flush)
+      window.removeEventListener('lawverify:prepare-update', prepareUpdate)
+      window.removeEventListener('lawverify:cancel-update', resumeEditing)
       window.removeEventListener('lawverify:service-ready', retry)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
@@ -2240,12 +2258,17 @@ function App() {
   const [assistantModels, setAssistantModels] = useState<Array<{ id: string; label: string }>>([])
   const [documentVoiceBusy, setDocumentVoiceBusy] = useState(false)
   useEffect(() => {
-    if (agentMode !== 'document') return
+    if (agentMode !== 'document' || !authToken || !loginAccount || !appState
+      || (appState.aiBillingMode === 'cloud' && !cloudAuthToken)) {
+      setAssistantModels([])
+      setDocumentModel(undefined)
+      return
+    }
     let active = true
     void api.assistantCapabilities().then(result => { if (active) setAssistantModels(result.models) })
       .catch(error => { if (active) setErrorMessage(error instanceof Error ? error.message : '无法获取可用模型。') })
     return () => { active = false }
-  }, [agentMode])
+  }, [agentMode, authToken, loginAccount, cloudAuthToken, appState?.aiBillingMode])
   const [evidenceImportProgress, setEvidenceImportProgress] = useState<EvidenceImportProgress | null>(null)
   const [evidenceImportResult, setEvidenceImportResult] = useState<{ caseId: string; message: string } | null>(null)
   const [directoryImportRetry, setDirectoryImportRetry] = useState<{ caseId: string; directory: CaseDirectoryManifest; message: string } | null>(null)
@@ -2432,11 +2455,12 @@ function App() {
     }))
 
     try {
-      const latestRelease = await api.getLatestPublicRelease(options.channel)
+      const channel = options.channel ?? window.lawVerifyDesktop?.updateChannel ?? 'stable'
+      const latestRelease = await api.getLatestPublicRelease(channel)
       if (!latestRelease) {
         setAppUpdateState({
           status: 'unavailable', latestRelease: null, progress: null,
-          message: options.channel === 'test'
+          message: channel === 'test'
             ? '暂未发布适用于此 Mac 的测试版。'
             : '暂未发布适用于此设备的正式版更新。',
         })
@@ -2444,7 +2468,7 @@ function App() {
       }
       if (latestRelease.platform !== window.lawVerifyDesktop?.platform
         || latestRelease.arch !== window.lawVerifyDesktop?.arch
-        || latestRelease.channel !== (options.channel ?? 'stable')) {
+        || latestRelease.channel !== channel) {
         throw new Error('更新版本与当前设备或更新通道不匹配，请前往官网下载。')
       }
       const hasNewerVersion = latestRelease && compareAppVersions(__APP_VERSION__, latestRelease.version) < 0
@@ -2478,13 +2502,17 @@ function App() {
 
     if (window.lawVerifyDesktop?.startAppUpdate) {
       appUpdateBusyRef.current = true
+      setAppUpdateState(current => ({ ...current, status: 'checking', message: '正在核实更新信息…' }))
       try {
-        await window.lawVerifyDesktop.startAppUpdate({
+        const result = await window.lawVerifyDesktop.startAppUpdate({
           version: latestRelease.version,
           downloadUrl: latestRelease.downloadUrl,
           sha256: latestRelease.sha256,
           channel: latestRelease.channel === 'test' ? 'test' : 'stable',
         })
+        if (!result.ok) {
+          setAppUpdateState(current => ({ ...current, status: 'available', message: '已取消更新，当前版本保持不变。' }))
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : '更新失败，请稍后重试。'
         setAppUpdateState((current) => ({
@@ -2527,7 +2555,14 @@ function App() {
     }
 
     hasCheckedAppUpdateOnLaunchRef.current = true
-    void checkForAppUpdate({ silent: true })
+    void (async () => {
+      const result = await window.lawVerifyDesktop?.getAppUpdateResult?.().catch(() => null)
+      if (result) {
+        setAppUpdateState(current => ({ ...current, status: result.status, message: result.message }))
+        return
+      }
+      await checkForAppUpdate({ silent: true })
+    })()
   }, [checkForAppUpdate, isDesktopClient])
 
   useEffect(() => {
@@ -3817,43 +3852,6 @@ function App() {
       ?? getEvidenceSourceUrl(previewEvidence.id, previewWorkspaceAccount)
     )
   }, [appState?.user.email, localPreviewSourceMap, loginAccount, previewEvidence])
-  useEffect(() => {
-    // #region debug-point D:preview-state
-    fetch('http://127.0.0.1:7777/event', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sessionId: 'backend-file-load',
-        runId: 'pre-fix',
-        hypothesisId: 'D',
-        location: 'app/src/App.tsx',
-        msg: '[DEBUG] preview-state-changed',
-        data: {
-          previewEvidenceId: previewEvidence?.id ?? null,
-          previewFileName: previewEvidence?.fileName ?? null,
-          previewType: previewEvidence?.type ?? null,
-          previewSource: previewSource ?? null,
-          previewPanelMode,
-          manualPreviewEvidenceId,
-          activeParagraphId,
-          activeReferenceIndex,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
-  }, [
-    activeParagraphId,
-    activeReferenceIndex,
-    manualPreviewEvidenceId,
-    previewEvidence?.fileName,
-    previewEvidence?.id,
-    previewEvidence?.type,
-    previewPanelMode,
-    previewSource,
-  ])
   const evidenceInsightByEvidenceId = useMemo(() => {
     return new Map(caseEvidenceInsights.map((item) => [item.evidenceId, item]))
   }, [caseEvidenceInsights])
@@ -4843,6 +4841,11 @@ function App() {
     handleOpenAgentWindow(undefined, 'case')
   }
 
+  function applyCaseList(cases: CaseFolder[], nextSelection: Partial<SelectionState> = {}) {
+    const workspace = localWorkspaceRef.current
+    if (workspace) applyWorkspace({ ...workspace, cases }, nextSelection)
+  }
+
   async function handleCreateCase() {
     const name = caseDialogState?.value.trim()
     if (!name) {
@@ -4853,8 +4856,8 @@ function App() {
     const shouldAdvanceEntryOnboarding = entryOnboardingStep === 'create-case'
 
     await runMutation(async () => {
-      const { workspace, caseFolder } = await api.createCase(name)
-      applyWorkspace(workspace, {
+      const { cases, caseFolder } = await api.createCase(name)
+      applyCaseList(cases, {
         selectedCaseId: caseFolder.id,
         selectedCertificateId: null,
         activeParagraphId: null,
@@ -4876,8 +4879,8 @@ function App() {
     }
 
     await runMutation(async () => {
-      const { workspace } = await api.updateCase(caseFolder.id, { name })
-      applyWorkspace(workspace, { selectedCaseId: caseFolder.id })
+      const { cases } = await api.updateCase(caseFolder.id, { name })
+      applyCaseList(cases, { selectedCaseId: caseFolder.id })
       setCaseDialogState(null)
     })
   }
@@ -4920,8 +4923,8 @@ function App() {
     }
 
     await runMutation(async () => {
-      const { workspace } = await api.updateCase(selectedCase.id, { description })
-      applyWorkspace(workspace, { selectedCaseId: selectedCase.id })
+      const { cases } = await api.updateCase(selectedCase.id, { description })
+      applyCaseList(cases, { selectedCaseId: selectedCase.id })
     })
   }
 
@@ -4931,8 +4934,8 @@ function App() {
     }
 
     await runMutation(async () => {
-      const { workspace } = await api.updateCase(selectedCase.id, { status })
-      applyWorkspace(workspace, { selectedCaseId: selectedCase.id, selectedEvidenceIds })
+      const { cases } = await api.updateCase(selectedCase.id, { status })
+      applyCaseList(cases, { selectedCaseId: selectedCase.id, selectedEvidenceIds })
     })
   }
 
@@ -8815,6 +8818,7 @@ function App() {
     }
 
     const latestRelease = appUpdateState.latestRelease
+    const updateBusy = ['checking', 'downloading', 'installing'].includes(appUpdateState.status)
     const hasAvailableUpdate = latestRelease && compareAppVersions(__APP_VERSION__, latestRelease.version) < 0
     const title = hasAvailableUpdate
       ? `发现新版本 v${latestRelease.version}`
@@ -8846,28 +8850,18 @@ function App() {
             className="ghost-button"
             type="button"
             onClick={() => void checkForAppUpdate()}
-            disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
+            disabled={updateBusy}
           >
             {appUpdateState.status === 'checking' ? '检查中...' : '检查更新'}
           </button>
-          {window.lawVerifyDesktop?.platform === 'darwin' ? (
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => void checkForAppUpdate({ channel: 'test' })}
-              disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
-            >
-              检查测试版
-            </button>
-          ) : null}
           {hasAvailableUpdate ? (
             <button
               className="primary-button"
               type="button"
               onClick={() => void handleStartAppUpdate()}
-              disabled={appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'}
+              disabled={updateBusy}
             >
-              {appUpdateState.status === 'downloading' ? '正在更新...' : window.lawVerifyDesktop?.platform === 'darwin' ? '下载并安装' : '一键更新'}
+              {appUpdateState.status === 'installing' ? '正在安装...' : appUpdateState.status === 'downloading' ? '正在更新...' : window.lawVerifyDesktop?.platform === 'darwin' ? '更新并重启' : '一键更新'}
             </button>
           ) : null}
         </div>

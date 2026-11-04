@@ -17,10 +17,13 @@ databaseUrl.searchParams.set('options', `-c search_path=${schema},public`)
 config.DATABASE_URL = databaseUrl.toString()
 const originalFetch = globalThis.fetch
 let failed = false
+let primaryUnavailable = false
 let upstreamCalls = 0
 Object.assign(config, {
   AI_GATEWAY_ENABLED: true,
   LLM_BASE_URL: 'https://model.test.invalid/v1', LLM_API_KEY: 'test-secret', LLM_MODEL: 'test-model',
+  LLM_TEXT_FALLBACK_ENABLED: false,
+  LLM_VISION_BASE_URL: 'https://model.test.invalid/v1', LLM_VISION_API_KEY: 'test-secret', LLM_VISION_MODEL: 'fallback-model',
   EMBEDDING_BASE_URL: 'https://model.test.invalid/v1', EMBEDDING_API_KEY: 'test-secret', EMBEDDING_MODEL: 'test-embedding',
   YUANDIAN_MCP_URL: 'https://model.test.invalid/mcp', YUANDIAN_API_KEY: 'test-secret',
 })
@@ -36,6 +39,7 @@ globalThis.fetch = async (input, init) => {
   }
   const body = JSON.parse(String(init?.body))
   if (failed) return new Response('upstream failed', { status: 503 })
+  if (primaryUnavailable && body.model === 'test-model') return new Response('primary busy', { status: 503 })
   if (String(input).endsWith('/mcp')) return new Response('{"jsonrpc":"2.0","id":1,"result":{}}',
     { headers: { 'content-type': 'not-a-media-type' } })
   if (String(input).endsWith('/embeddings')) return Response.json({
@@ -43,7 +47,7 @@ globalThis.fetch = async (input, init) => {
   })
   if (body.stream) return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\r\n\r\ndata: [DONE]\r\n\r\n',
     { headers: { 'content-type': 'text/event-stream' } })
-  assert.ok(['test-model', 'approved-model'].includes(body.model), 'only approved models reach provider')
+  assert.ok(['test-model', 'approved-model', 'fallback-model'].includes(body.model), 'only approved models reach provider')
   return Response.json({ choices: [{ message: { content: 'ok' } }] })
 }
 let server: ReturnType<ReturnType<typeof createApp>['listen']> | undefined
@@ -121,6 +125,21 @@ try {
   assert.equal(upstreamCalls, previous, 'duplicate request must not invoke provider')
   const stream = await request('chat/completions', { ...chat, stream: true })
   assert.match(await stream.text(), /\[DONE\]/)
+  primaryUnavailable = true
+  config.LLM_TEXT_FALLBACK_ENABLED = true
+  const failoverId = randomUUID()
+  const beforeFailover = upstreamCalls
+  const failover = await request('chat/completions', chat, session.token, failoverId)
+  assert.equal(failover.status, 200, await failover.clone().text())
+  assert.equal(upstreamCalls - beforeFailover, 2, 'one primary attempt and one fallback')
+  const failoverCharges = await query<{ count: string }>(
+    'SELECT count(*) FROM point_ledger_entries WHERE operation_key=$1', [`ai:${failoverId}`])
+  assert.equal(Number(failoverCharges.rows[0].count), 1, 'failover must not charge twice')
+  const failoverStream = await request('chat/completions', { ...chat, stream: true })
+  assert.equal(failoverStream.status, 200)
+  assert.match(await failoverStream.text(), /\[DONE\]/)
+  primaryUnavailable = false
+  config.LLM_TEXT_FALLBACK_ENABLED = false
   const embedding = await request('embeddings', { input: ['test'] })
   assert.equal((await embedding.json() as { data: Array<{ embedding: number[] }> }).data[0].embedding.length, 1024)
   const mcp = await request('mcp/yuandian', { jsonrpc: '2.0', id: 1, method: 'tools/list' })

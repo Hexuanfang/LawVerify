@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import type { Certificate, CertificateParagraph, WorkspaceState } from '../domain.js'
+import type { CaseFolder, Certificate, CertificateParagraph, WorkspaceState } from '../domain.js'
 import { AppError } from '../core/app-error.js'
 
 const collections = {
@@ -431,6 +431,38 @@ export class WorkspaceSqliteStore {
         const state = this.assemble(rows)
         db.exec('COMMIT')
         return attachSnapshot(state, { databasePath: this.databasePath, rows })
+      } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+      }
+    } catch (error) {
+      return storageError(error)
+    } finally {
+      db.close()
+    }
+  }
+
+  mutateCases(action: (cases: CaseFolder[], hasEvidence: (caseId: string) => boolean) => void): CaseFolder[] | null {
+    const db = this.open()
+    try {
+      if (!db.prepare("SELECT value FROM workspace_meta WHERE key = 'initialized'").get()) return null
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        const rows = db.prepare('SELECT id, position, payload FROM cases ORDER BY position, id').all()
+        const cases = rows.map(row => JSON.parse(String(row.payload)) as CaseFolder)
+        const evidenceQuery = db.prepare('SELECT 1 FROM evidences WHERE case_id = ? LIMIT 1')
+        action(cases, caseId => Boolean(evidenceQuery.get(caseId)))
+        const update = db.prepare('UPDATE cases SET position = ?, payload = ?, revision = revision + 1 WHERE id = ?')
+        const insert = db.prepare('INSERT INTO cases(id, parent_id, case_id, position, payload) VALUES (?, NULL, NULL, ?, ?)')
+        const existing = new Map(rows.map(row => [String(row.id), row]))
+        for (const [position, folder] of cases.entries()) {
+          const payload = JSON.stringify(folder)
+          const before = existing.get(folder.id)
+          if (!before) insert.run(folder.id, position, payload)
+          else if (before.position !== position || before.payload !== payload) update.run(position, payload, folder.id)
+        }
+        db.exec('COMMIT')
+        return cases
       } catch (error) {
         db.exec('ROLLBACK')
         throw error

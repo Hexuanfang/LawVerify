@@ -884,13 +884,13 @@ export const api = {
     })
   },
   createCase(name: string) {
-    return request<WorkspaceResponse & { caseFolder: { id: string } }>('/api/cases', {
+    return request<{ cases: AppState['cases']; caseFolder: { id: string } }>('/api/cases?response=compact', {
       method: 'POST',
       body: JSON.stringify({ name }),
     })
   },
   updateCase(caseId: string, patch: Record<string, unknown>) {
-    return request<WorkspaceResponse>(`/api/cases/${caseId}`, {
+    return request<{ cases: AppState['cases'] }>(`/api/cases/${caseId}?response=compact`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
     })

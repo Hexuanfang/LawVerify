@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import type { CertificateParagraph, EvidenceLink, ParagraphReference, WorkspaceState } from './domain.js'
+import type { CaseFolder, CertificateParagraph, EvidenceLink, ParagraphReference, WorkspaceState } from './domain.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { listKnowledgeFilesForWorkspace } from './commercial/knowledge-file-service.js'
 import { getWorkspaceDataDir } from './config/paths.js'
@@ -441,6 +441,20 @@ export async function writeWorkspace(state: WorkspaceState) {
   if (process.env.LAWVERIFY_DESKTOP === '1') {
     scheduleWorkspaceBackup(path.join(paths.dataDir, 'workspace.sqlite'))
   }
+}
+
+export async function mutateWorkspaceCases(action: (cases: CaseFolder[], hasEvidence: (caseId: string) => boolean) => void) {
+  const paths = resolveWorkspacePaths()
+  const store = new WorkspaceSqliteStore(paths.dataDir)
+  let cases = store.mutateCases(action)
+  if (!cases) {
+    await readWorkspace()
+    cases = store.mutateCases(action)
+  }
+  if (!cases) throw new Error('工作区初始化失败，请重试。')
+  notifyWorkspaceChanged(paths.account)
+  if (process.env.LAWVERIFY_DESKTOP === '1') scheduleWorkspaceBackup(store.databasePath)
+  return cases
 }
 
 export function runWithWorkspaceAccount<T>(account: string | null | undefined, callback: () => T) {

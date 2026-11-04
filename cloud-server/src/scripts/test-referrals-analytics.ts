@@ -46,6 +46,14 @@ test('邀请与埋点的隔离回归测试', async t => {
     const invitation = await getReferralSummary(inviter)
     const registration = await signup('invitee', invitation.code)
     const invitee = actorOf(registration.token)
+    await t.test('账户邀请码固定且唯一，邀请链接携带对应邀请码', async () => {
+      const repeated = await getReferralSummary(inviter)
+      const other = await getReferralSummary(invitee)
+      assert.equal(repeated.code, invitation.code)
+      assert.notEqual(other.code, invitation.code)
+      assert.equal(new URL(invitation.inviteUrl).searchParams.get('invite'), invitation.code)
+      assert.equal(new URL(other.inviteUrl).searchParams.get('invite'), other.code)
+    })
     await t.test('无效邀请码使整个注册回滚，不留下账号或赠送积分', async () => {
       const before = await readDevStore()
       await assert.rejects(signup('invalid', '0000000000000000'), /邀请码无效/)

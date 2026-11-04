@@ -11,6 +11,11 @@ export function rememberCloudAiToken(token: string | undefined) {
 }
 export function isCloudAiEnabled() { return env.AI_GATEWAY_MODE === 'cloud' }
 
+export function hasCloudAiToken() {
+  const account = getCurrentWorkspaceAccount()
+  return Boolean(account && tokens.get(account))
+}
+
 export async function cloudAiFetch(endpoint: string, payload?: unknown, extraHeaders: Record<string, string> = {}) {
   const account = getCurrentWorkspaceAccount()
   const token = account ? tokens.get(account) : undefined

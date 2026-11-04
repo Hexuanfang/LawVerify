@@ -1,9 +1,15 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('all', 'cloud', 'web')]
+    [string]$Service = 'all'
+)
+
 # LawVerify 平台服务常驻守护脚本
 # 由计划任务 LawVerifyPlatformServices 在用户登录时拉起，负责：
 #   1. 启动 cloud-server (8788) 与官网 preview-server (4273)
-#   2. 进程退出或健康检查失败时自动重启
+#   2. 阻塞等待进程退出，然后自动重启
 #   3. 日志写入 logs/platform/ 目录
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
 
 $root = Split-Path $PSScriptRoot -Parent
 $node = 'C:\nvm4w\nodejs\node.exe'
@@ -40,47 +46,43 @@ function Start-ManagedProcess {
     return $process
 }
 
-function Test-CloudHealthy {
-    try {
-        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8788/api/web/site/config' -UseBasicParsing -TimeoutSec 5
-        return $response.StatusCode -eq 200
-    } catch {
-        return $false
+if ($Service -eq 'all') {
+    $children = foreach ($name in @('cloud', 'web')) {
+        Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Service', $name) `
+            -WorkingDirectory $root -WindowStyle Hidden -PassThru
     }
+    foreach ($child in $children) { $child.WaitForExit() }
+    exit 1
 }
 
-function Start-CloudServer {
-    return Start-ManagedProcess -Name 'cloud-server' -WorkDir (Join-Path $root 'cloud-server') -Arguments @('dist\index.js')
-}
-
-function Start-PreviewServer {
-    return Start-ManagedProcess -Name 'preview-server' -WorkDir (Join-Path $root 'web') -Arguments @('preview-server.mjs', '--host', '0.0.0.0', '--port', '4273', '--api-base', 'http://127.0.0.1:8788')
-}
-
-Write-SupervisorLog '=== supervisor starting ==='
-
-$cloud = Start-CloudServer
-$preview = Start-PreviewServer
-$lastHealthProbe = Get-Date
-
-while ($true) {
-    Start-Sleep -Seconds 10
-
-    if ($cloud.HasExited) {
-        Write-SupervisorLog "cloud-server exited (code=$($cloud.ExitCode)), restarting"
-        $cloud = Start-CloudServer
-    } elseif (((Get-Date) - $lastHealthProbe).TotalSeconds -ge 60) {
-        $lastHealthProbe = Get-Date
-        if (-not (Test-CloudHealthy)) {
-            Write-SupervisorLog 'cloud-server health check failed, restarting'
-            Stop-Process -Id $cloud.Id -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-            $cloud = Start-CloudServer
+$name = if ($Service -eq 'cloud') { 'cloud-server' } else { 'preview-server' }
+$workDir = if ($Service -eq 'cloud') { Join-Path $root 'cloud-server' } else { Join-Path $root 'web' }
+$entry = if ($Service -eq 'cloud') { Join-Path $workDir 'dist\index.js' } else { Join-Path $workDir 'preview-server.mjs' }
+$port = if ($Service -eq 'cloud') { 8788 } else { 4273 }
+$arguments = if ($Service -eq 'cloud') { @($entry) } else { @($entry, '--host', '0.0.0.0', '--port', '4273', '--api-base', 'http://127.0.0.1:8788') }
+$mutex = New-Object System.Threading.Mutex($false, "Local\LawVerifySupervisor-$Service")
+if (-not $mutex.WaitOne(0)) { $mutex.Dispose(); exit 0 }
+try {
+    Write-SupervisorLog "$name supervisor starting"
+    while ($true) {
+        $owners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique)
+        $process = $null
+        foreach ($ownerId in $owners) {
+            $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerId"
+            if (!$owner -or $owner.Name -ne 'node.exe' -or !$owner.CommandLine.Contains($entry)) {
+                throw "Port $port belongs to another application; recovery cancelled."
+            }
+            $process = Get-Process -Id $ownerId -ErrorAction Stop
         }
+        if (!$process) { $process = Start-ManagedProcess -Name $name -WorkDir $workDir -Arguments $arguments }
+        $started = Get-Date
+        $process.WaitForExit()
+        Write-SupervisorLog "$name exited (code=$($process.ExitCode)), restarting"
+        if (((Get-Date) - $started).TotalSeconds -lt 5) { Start-Sleep -Seconds 5 }
     }
-
-    if ($preview.HasExited) {
-        Write-SupervisorLog "preview-server exited (code=$($preview.ExitCode)), restarting"
-        $preview = Start-PreviewServer
-    }
+} finally {
+    $mutex.ReleaseMutex()
+    $mutex.Dispose()
 }

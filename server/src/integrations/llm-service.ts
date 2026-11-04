@@ -1,7 +1,7 @@
 import { env } from '../config/env.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { z } from 'zod'
-import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
+import { cloudAiFetch, hasCloudAiToken, isCloudAiEnabled } from './cloud-ai.js'
 
 export interface LlmChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -69,6 +69,7 @@ export function configuredChatModels() {
 }
 
 export async function getAssistantCapabilities(): Promise<{ models: Array<{ id: string; label: string }>; voice: boolean }> {
+  if (isCloudAiEnabled() && !hasCloudAiToken()) return { models: [], voice: false }
   if (isCloudAiEnabled()) return z.object({
     models: z.array(z.object({ id: z.string(), label: z.string() })), voice: z.boolean(),
   }).parse(await (await cloudAiFetch('assistant/capabilities')).json())

@@ -61,33 +61,13 @@ import { isYuandianCaseSearchConfigured, searchYuandianCases } from './integrati
 import { shouldUseCommercialKnowledgeStore } from './knowledge-mode.js'
 import { OFFICIAL_LEGAL_SOURCES } from './legal-source-catalog.js'
 import { removeLocalKnowledgeFileIndex, replaceLocalKnowledgeFileIndex, searchLocalKnowledgeRagChunks } from './local-rag-store.js'
-import { getCurrentWorkspaceAccount, readWorkspace, runWithWorkspaceAccount, writeWorkspace } from './store.js'
+import { getCurrentWorkspaceAccount, mutateWorkspaceCases, readWorkspace, runWithWorkspaceAccount, writeWorkspace } from './store.js'
 import {
   CASE_AGENT_RULES, evidenceSourceNumber, normalizeStrategy, objectiveInputKey,
   positionSchema, strategyInputKey, type PositionDraft,
 } from './intelligence/case-agent.js'
 import { chargedCaseAgentTask, settleCaseAgentRefunds } from './case-agent-billing.js'
 import { isCloudAiEnabled } from './integrations/cloud-ai.js'
-
-// #region debug-point B-C:asset-reporting
-function reportServiceDebug(hypothesisId: string, msg: string, data: Record<string, unknown> = {}) {
-  void fetch('http://127.0.0.1:7777/event', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      sessionId: 'backend-file-load',
-      runId: 'pre-fix',
-      hypothesisId,
-      location: 'server/src/service.ts',
-      msg: `[DEBUG] ${msg}`,
-      data,
-      ts: Date.now(),
-    }),
-  }).catch(() => {})
-}
-// #endregion
 
 export type CertificateStreamEvent =
   | {
@@ -2243,14 +2223,18 @@ async function attachAutoStatuteReferencesToCertificate(workspace: WorkspaceStat
   }
 }
 
+export function sanitizeCaseForClient(folder: CaseFolder): CaseFolder {
+  return {
+    ...folder,
+    agent: folder.agent ? { ...folder.agent, archivedEvidence: undefined, pendingCharges: undefined, pendingRefunds: undefined } : undefined,
+  }
+}
+
 export function sanitizeWorkspaceForClient(workspace: WorkspaceState): WorkspaceState {
   return {
     ...workspace,
     aiBillingMode: isCloudAiEnabled() ? 'cloud' : 'client',
-    cases: workspace.cases.map(folder => ({
-      ...folder,
-      agent: folder.agent ? { ...folder.agent, archivedEvidence: undefined, pendingCharges: undefined, pendingRefunds: undefined } : undefined,
-    })),
+    cases: workspace.cases.map(sanitizeCaseForClient),
     evidences: workspace.evidences.map((evidence) => ({
       ...evidence,
       sourceDataUrl: undefined,
@@ -2263,13 +2247,6 @@ export function sanitizeWorkspaceForClient(workspace: WorkspaceState): Workspace
 export async function getEvidenceSourceAsset(evidenceId: string) {
   const workspace = await readWorkspace()
   const evidence = workspace.evidences.find((item) => item.id === evidenceId)
-
-  // #region debug-point C:asset-lookup
-  reportServiceDebug('C', 'get-evidence-source-asset-lookup', {
-    evidenceId,
-    found: Boolean(evidence),
-  })
-  // #endregion
 
   if (!evidence) {
     throw new Error('证据不存在。')
@@ -2285,29 +2262,11 @@ export async function getEvidenceSourceAsset(evidenceId: string) {
   }
 
   const dataUrl = evidence.sourceDataUrl ?? evidence.previewDataUrl
-  // #region debug-point B-C:asset-data-url-state
-  reportServiceDebug('C', 'get-evidence-source-asset-data-url-state', {
-    evidenceId,
-    hasSourceDataUrl: Boolean(evidence.sourceDataUrl),
-    hasPreviewDataUrl: Boolean(evidence.previewDataUrl),
-    selectedSource: evidence.sourceDataUrl ? 'sourceDataUrl' : evidence.previewDataUrl ? 'previewDataUrl' : 'none',
-    sourceMimeType: evidence.sourceMimeType ?? null,
-    evidenceType: evidence.type,
-    fileName: evidence.fileName,
-  })
-  // #endregion
   if (!dataUrl) {
     throw new Error('当前证据未保存可读取的原件数据。')
   }
 
   const { buffer, mimeType } = parseDataUrl(dataUrl)
-  // #region debug-point B:asset-parse-success
-  reportServiceDebug('B', 'get-evidence-source-asset-parse-success', {
-    evidenceId,
-    mimeType: evidence.sourceMimeType || mimeType,
-    bufferLength: buffer.length,
-  })
-  // #endregion
   return {
     buffer,
     mimeType: evidence.sourceMimeType || mimeType,
@@ -5133,8 +5092,7 @@ export async function recharge(amount = 100) {
   return { workspace }
 }
 
-export async function createCase(name: string) {
-  const workspace = await readWorkspace()
+export async function createCaseRecord(name: string) {
   const caseFolder: CaseFolder = {
     id: createId('case'),
     name: name.trim(),
@@ -5142,28 +5100,38 @@ export async function createCase(name: string) {
     createdAt: new Date().toISOString(),
     status: 'draft',
   }
-  workspace.cases.unshift(caseFolder)
-  await writeWorkspace(workspace)
-  return { workspace, caseFolder }
+  const cases = await mutateWorkspaceCases(items => { items.unshift(caseFolder) })
+  return { cases, caseFolder }
 }
 
-export async function updateCase(caseId: string, patch: Partial<Pick<CaseFolder, 'name' | 'description' | 'status'>>) {
-  const workspace = await readWorkspace()
-  const current = workspace.cases.find(c => c.id === caseId)
-  if (!current) throw new Error('案件不存在。')
+export async function updateCaseRecord(caseId: string, patch: Partial<Pick<CaseFolder, 'name' | 'description' | 'status'>>) {
   const safePatch: typeof patch = {}
   if (typeof patch.name === 'string' && patch.name.trim()) safePatch.name = patch.name.trim()
   if (typeof patch.description === 'string') safePatch.description = patch.description
   if (patch.status && ['draft', 'in_review', 'ready'].includes(patch.status)) safePatch.status = patch.status
-  workspace.cases = workspace.cases.map((item) =>
-    item.id === caseId ? { ...item, ...safePatch } : item,
-  )
-  const updated = workspace.cases.find(c => c.id === caseId)!
-  const changed = updated.name !== current.name || updated.description !== current.description
-  if (changed && workspace.evidences.some(e => e.caseId === caseId)) markCaseAgentQueued(updated, [])
-  await writeWorkspace(workspace)
-  if (changed && updated.agent?.task) queueBackgroundEvidenceProcessing(caseId, [])
-  return { workspace }
+  let queued = false
+  const cases = await mutateWorkspaceCases((items, hasEvidence) => {
+    const current = items.find(c => c.id === caseId)
+    if (!current) throw new Error('案件不存在。')
+    const descriptionChanged = safePatch.description !== undefined && safePatch.description !== current.description
+    Object.assign(current, safePatch)
+    if (descriptionChanged && hasEvidence(caseId)) {
+      markCaseAgentQueued(current, [])
+      queued = true
+    }
+  })
+  if (queued) queueBackgroundEvidenceProcessing(caseId, [])
+  return { cases }
+}
+
+export async function createCase(name: string) {
+  const { caseFolder } = await createCaseRecord(name)
+  return { workspace: await readWorkspace(), caseFolder }
+}
+
+export async function updateCase(caseId: string, patch: Partial<Pick<CaseFolder, 'name' | 'description' | 'status'>>) {
+  await updateCaseRecord(caseId, patch)
+  return { workspace: await readWorkspace() }
 }
 
 export async function rebuildCaseMemory(caseId: string) {

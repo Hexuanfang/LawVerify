@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('lawVerifyDesktop', {
   platform: process.platform,
   arch: process.arch,
   channel: 'electron',
+  updateChannel: process.argv.includes('--lawverify-update-channel=test') ? 'test' : 'stable',
+  getAppUpdateResult: () => ipcRenderer.invoke('lawverify:get-app-update-result'),
   requestAccount: (payload) => ipcRenderer.invoke(ACCOUNT_REQUEST_CHANNEL, payload),
   reportDiagnostic: (payload) => ipcRenderer.send('lawverify:renderer-diagnostic', payload),
   getServiceStatus: () => ipcRenderer.invoke('lawverify:get-service-status'),

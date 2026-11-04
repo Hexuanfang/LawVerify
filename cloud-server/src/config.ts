@@ -58,6 +58,7 @@ const schema = z.object({
   LLM_VISION_API_KEY: z.string().optional(),
   LLM_VISION_MODEL: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().positive().default(120000),
+  LLM_TEXT_FALLBACK_ENABLED: booleanFromEnv.default(true),
   EMBEDDING_BASE_URL: z.string().optional(),
   EMBEDDING_API_KEY: z.string().optional(),
   EMBEDDING_MODEL: z.string().optional(),

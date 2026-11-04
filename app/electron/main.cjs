@@ -6,9 +6,13 @@ const path = require('node:path')
 const { registerCaseDirectories } = require('./case-directories.cjs')
 const { getUpdateFileName, validateUpdateFileName } = require('./update-platform.cjs')
 const { downloadInstaller } = require('./update-download.cjs')
+const { verifyUpdateRelease } = require('./update-release.cjs')
+const {
+  prepareMacUpdate, launchMacUpdate, readStartupJob, acknowledgeMacUpdate, getMacUpdateResult,
+} = require('./mac-update.cjs')
 const { ServiceSupervisor } = require('./service-supervisor.cjs')
 const { createStabilityLog } = require('./stability-log.cjs')
-const { ACCOUNT_REQUEST_CHANNEL, createAccountRequestHandler } = require('./account-network.cjs')
+const { ACCOUNT_REQUEST_CHANNEL, ACCOUNT_BASE_URL, createAccountRequestHandler } = require('./account-network.cjs')
 
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
@@ -53,7 +57,12 @@ app.setPath('userData', resolveDesktopUserDataPath())
 const logStability = createStabilityLog(path.join(app.getPath('userData'), 'logs'))
 let quitting = false
 let serviceStatus = { state: 'idle' }
-const isDev = !app.isPackaged
+const isDev = !app.isPackaged && process.env.LAWVERIFY_DESKTOP_PREVIEW !== '1'
+const updateChannel = process.platform === 'darwin'
+  && fs.existsSync(path.join(__dirname, 'mac-test-channel.json')) ? 'test' : 'stable'
+const startupUpdateJob = process.platform === 'darwin' && app.isPackaged ? readStartupJob({
+  userData: app.getPath('userData'), execPath: process.execPath, version: app.getVersion(),
+}) : null
 const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
 let desktopServer
 let desktopServerUrl
@@ -156,6 +165,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: [`--lawverify-update-channel=${updateChannel}`],
     },
   })
 
@@ -310,16 +320,31 @@ async function downloadUpdateInstaller(downloadUrl, version, expectedSha256) {
   })
 }
 
-async function launchInstallerAndQuit(installerPath) {
+async function launchInstallerAndQuit(installerPath, version, channel) {
   if (process.platform === 'darwin') {
-    const error = await shell.openPath(installerPath)
-    if (error) throw new Error('无法打开更新安装包，请从官网下载后安装。')
-    await dialog.showMessageBox({
-      type: 'info', title: '安装 LawVerify 更新',
-      message: '更新安装包已打开',
-      detail: '请退出 LawVerify，将安装包中的 LawVerify 拖入“应用程序”，选择替换旧版，再从“应用程序”启动。已保存的本地案件材料会保留。',
-      buttons: ['退出并安装'], noLink: true,
+    broadcastAppUpdateStatus({ status: 'installing', version, progress: 100, message: '正在验证并准备自动安装…' })
+    const job = await prepareMacUpdate({
+      installerPath, version, arch: process.arch, channel,
+      execPath: process.execPath, userData: app.getPath('userData'),
     })
+    try {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue
+        await window.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('本地草稿尚未保存完成，请稍后重试。')), 15000);
+          const writes = [];
+          window.dispatchEvent(new CustomEvent('lawverify:prepare-update', { detail: writes }));
+          Promise.all(writes).then(() => { clearTimeout(timer); resolve(true); },
+            () => { clearTimeout(timer); reject(new Error('本地草稿保存失败，已取消自动安装。')); });
+        })`)
+      }
+      await launchMacUpdate(job)
+    } catch (error) {
+      fs.writeFileSync(path.join(job.directory, 'cancel-request'), 'cancel\n')
+      fs.writeFileSync(path.join(job.directory, 'status'), 'cancelled\n')
+      fs.rmSync(job.staged, { recursive: true, force: true })
+      throw error
+    }
     app.quit()
     return
   }
@@ -332,6 +357,15 @@ async function launchInstallerAndQuit(installerPath) {
 }
 
 async function handleStartAppUpdate(_event, payload) {
+  const sender = BrowserWindow.fromWebContents(_event.sender)
+  if (!sender || sender.isDestroyed() || _event.senderFrame !== _event.sender.mainFrame) {
+    throw new Error('更新请求来源无效。')
+  }
+  try {
+    if (new URL(_event.senderFrame.url).origin !== (isDev ? 'http://127.0.0.1:5173' : desktopServerUrl)) {
+      throw new Error('Invalid origin')
+    }
+  } catch { throw new Error('更新请求来源无效。') }
   const version = String(payload?.version || '').trim()
   const downloadUrl = String(payload?.downloadUrl || '').trim()
   const sha256 = String(payload?.sha256 || '').trim()
@@ -352,6 +386,14 @@ async function handleStartAppUpdate(_event, payload) {
   }
 
   appUpdateTask = (async () => {
+    const channel = payload?.channel === 'test' ? 'test' : 'stable'
+    const query = new URLSearchParams({ platform: process.platform, arch: process.arch, channel })
+    const response = await session.fromPartition('persist:lawverify-account').fetch(
+      `${ACCOUNT_BASE_URL}/api/web/releases/latest?${query}`, { signal: AbortSignal.timeout(30000), cache: 'no-store' },
+    )
+    if (!response.ok) throw new Error('无法核实最新更新，请检查网络后重试。')
+    const envelope = await response.json()
+    verifyUpdateRelease({ envelope, payload, currentVersion: app.getVersion(), platform: process.platform, arch: process.arch })
     if (payload?.channel === 'test' || /-unsigned\.dmg$/i.test(new URL(downloadUrl).pathname)) {
       const confirmation = await dialog.showMessageBox({
         type: 'warning', title: '安装测试版',
@@ -370,17 +412,24 @@ async function handleStartAppUpdate(_event, payload) {
 
     const installerPath = await downloadUpdateInstaller(downloadUrl, version, sha256)
     broadcastAppUpdateStatus({
-      status: 'ready',
+      status: process.platform === 'darwin' ? 'installing' : 'ready',
       version,
       progress: 100,
       message: process.platform === 'darwin'
-        ? `v${version} 已下载，请将 LawVerify 拖入“应用程序”替换旧版。`
+        ? `v${version} 已下载，即将自动安装并重启。`
         : `v${version} 更新安装包已准备完成，正在启动安装程序…`,
     })
-    await launchInstallerAndQuit(installerPath)
+    await launchInstallerAndQuit(installerPath, version, channel)
     return { ok: true }
   })()
     .catch((error) => {
+      if (process.platform === 'darwin') {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) void window.webContents.executeJavaScript(
+            "window.dispatchEvent(new Event('lawverify:cancel-update'))",
+          ).catch(() => {})
+        }
+      }
       const message = error instanceof Error ? error.message : '更新失败，请稍后重试。'
       broadcastAppUpdateStatus({
         status: 'error',
@@ -515,8 +564,24 @@ async function bootApplication() {
   const window = createWindow()
 
   try {
+    if (startupUpdateJob && !startupUpdateJob.eligible) {
+      throw new Error('新版被 macOS 隔离到临时目录，正在恢复原版本。请检查系统安全提示。')
+    }
     const appUrl = await getAppUrl()
     await window.loadURL(appUrl)
+    if (startupUpdateJob) {
+      const deadline = Date.now() + 15000
+      let mounted = false
+      while (Date.now() < deadline && !window.isDestroyed()) {
+        mounted = await window.webContents.executeJavaScript(
+          "Boolean(document.getElementById('root')?.childElementCount && !document.querySelector('#root > .stability-fallback'))",
+        )
+        if (mounted) break
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      if (!mounted) throw new Error('新版工作界面未能启动，正在恢复原版本。')
+      acknowledgeMacUpdate(startupUpdateJob, true)
+    }
 
     if (isDev) {
       window.webContents.openDevTools({ mode: 'detach' })
@@ -548,6 +613,7 @@ if (!gotSingleInstanceLock) {
   })
 
   app.whenReady().then(async () => {
+    acknowledgeMacUpdate(startupUpdateJob)
     await session.defaultSession.setProxy({ mode: 'direct' })
     const accountSession = session.fromPartition('persist:lawverify-account')
     await accountSession.setProxy({ mode: 'system' })
@@ -576,6 +642,17 @@ if (!gotSingleInstanceLock) {
     })
     ipcMain.handle(OPEN_EXTERNAL_CHANNEL, handleOpenExternal)
     ipcMain.handle(START_APP_UPDATE_CHANNEL, handleStartAppUpdate)
+    ipcMain.handle('lawverify:get-app-update-result', async () => {
+      if (process.platform !== 'darwin') return null
+      const deadline = Date.now() + (startupUpdateJob ? 10000 : 0)
+      let result
+      do {
+        result = getMacUpdateResult(app.getPath('userData'), true)
+        if (result || !startupUpdateJob) return result
+        await new Promise(resolve => setTimeout(resolve, 100))
+      } while (Date.now() < deadline)
+      return null
+    })
     void bootApplication()
 
     app.on('activate', () => {
@@ -590,6 +667,7 @@ app.on('before-quit', () => {
   quitting = true
   ipcMain.removeHandler(OPEN_EXTERNAL_CHANNEL)
   ipcMain.removeHandler(START_APP_UPDATE_CHANNEL)
+  ipcMain.removeHandler('lawverify:get-app-update-result')
   ipcMain.removeHandler(ACCOUNT_REQUEST_CHANNEL)
   ipcMain.removeHandler('lawverify:get-service-status')
   if (desktopServer) {

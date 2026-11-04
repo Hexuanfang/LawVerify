@@ -45,6 +45,11 @@ jobs:
           npm ci --prefix app
       - name: Verify desktop account networking
         run: npm run test:account --prefix app
+      - name: Verify Mac automatic update and rollback
+        working-directory: app
+        run: |
+          node --test electron/test-mac-update.cjs electron/test-update-download.cjs electron/test-update-release.cjs electron/test-mac-platform.cjs
+          node electron/test-mac-update-native.cjs
       - name: Build unsigned test package
         if: ${{ !inputs.signed }}
         working-directory: app

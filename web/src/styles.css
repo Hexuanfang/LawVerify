@@ -1572,3 +1572,33 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.account-invitation-code {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.account-invitation-code > span {
+  flex-shrink: 0;
+}
+
+.account-invitation-code > strong {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.account-invitation > p {
+  margin: 0;
+}
+
+.account-invitation > button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.account-invitation > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

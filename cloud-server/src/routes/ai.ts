@@ -8,6 +8,7 @@ import { authenticate, requirePermission } from '../middleware/authenticate.js'
 import { consumePointAction, refundPointAction } from '../point-service.js'
 import type { AuthenticatedActor } from '../commercial/types.js'
 import { beginAiRequest, updateAiRequest } from '../ai-request-store.js'
+import { requestChatProvider } from '../integrations/chat-provider.js'
 
 const pending = new Map<string, number>()
 const mcpSessions = new Map<string, string>()
@@ -150,7 +151,7 @@ aiRouter.post('/chat/completions', async (request, response) => {
   if (!base || !key || !model) throw new AppError('智能分析服务尚未配置。', 503, 'AI_NOT_CONFIGURED')
   await billedAiRequest(request.actor!, 'evidence_summary', async () => {
     const { mode: _mode, ...payload } = parsed
-    const upstreamResponse = await upstream(`${base.replace(/\/$/, '')}/chat/completions`, key, { ...payload, model })
+    const upstreamResponse = await requestChatProvider(payload, vision, parsed.model)
     if (!parsed.stream) {
       const result = await upstreamResponse.json() as { choices?: Array<{ message?: { content?: string } }> }
       if (!result.choices?.[0]?.message?.content?.trim()) throw new AppError('分析未返回有效内容。', 502, 'AI_EMPTY_RESPONSE')

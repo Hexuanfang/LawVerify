@@ -18,6 +18,7 @@ module.exports = {
     '!electron/export-*.cjs',
     '!electron/prepare-*.cjs',
     '!electron/*.ps1',
+    ...(signed ? ['!electron/mac-test-channel.json'] : []),
   ],
   mac: {
     target: [

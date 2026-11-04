@@ -6417,6 +6417,51 @@
   font-size: var(--font-body);
 }
 
+.account-invitation {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.account-invitation-code {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  font-size: var(--font-body);
+}
+
+.account-invitation-code > span {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.account-invitation-code > strong {
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.account-invitation > button {
+  width: 100%;
+}
+
+.account-invitation > button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.account-invitation > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.account-invitation > p {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-caption);
+}
+
 .ide-account-actions {
   margin-top: 16px;
   padding-top: 8px;
@@ -6526,7 +6571,7 @@
 
 .ide-shell .ide-workbench {
   --streamlined-resizer-width: 6px;
-  grid-template-columns: minmax(0, 1fr) 6px minmax(280px, min(38vw, var(--streamlined-insight-width)));
+  grid-template-columns: minmax(0, 1fr) 6px minmax(320px, min(42vw, var(--streamlined-insight-width)));
   gap: 0;
   align-items: stretch;
   height: 100%;
@@ -6727,10 +6772,13 @@
 .case-agent-composer textarea { border: 0; background: transparent; min-height: 96px; padding: 6px 2px 12px; resize: vertical; box-shadow: none; }
 .case-agent-composer textarea:focus { box-shadow: none; }
 .assistant-config-row, .assistant-send-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.assistant-config-row { padding: 7px 0; border-top: 1px solid var(--border, #edf0f5); }
+.assistant-config-row { flex-wrap: nowrap; padding: 7px 0; border-top: 1px solid var(--border, #edf0f5); }
+.assistant-config-row > .assistant-picker { flex: 0 1 auto; }
+.assistant-config-row > .assistant-picker:last-child { flex: 1 1 0; }
+.assistant-config-row .assistant-control { width: 100%; justify-content: flex-start; }
+.assistant-config-row .assistant-control > span:last-child { flex-shrink: 0; }
 .assistant-mode-row { flex: 0 0 auto; padding-bottom: 4px; }
 .assistant-mode-row .assistant-control { color: var(--text, #29334a); font-weight: 600; }
-.assistant-mode-row .assistant-picker-menu { bottom: auto; top: calc(100% + 6px); }
 .agent-composer-actions { flex-wrap: wrap; }
 .assistant-send-row { justify-content: space-between; padding-top: 4px; }
 .assistant-send-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -6746,12 +6794,11 @@
 .assistant-control:active, .assistant-voice:active, .assistant-send:active { transform: translateY(1px); }
 .assistant-control:focus-visible, .assistant-voice:focus-visible, .assistant-picker-menu button:focus-visible { outline: 2px solid #7c89f5; outline-offset: 2px; }
 .assistant-picker-menu {
-  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30;
-  width: min(260px, 65vw); max-height: 280px; overflow-y: auto;
+  position: fixed; inset: auto; margin: 0; z-index: 30;
+  width: min(260px, calc(100vw - 16px)); max-height: 280px; overflow-y: auto;
   padding: 7px; border: 1px solid var(--border, #e4e8f0); border-radius: 12px;
   background: var(--panel-bg, #fff); box-shadow: 0 12px 36px #18254c26;
 }
-.assistant-config-row .assistant-picker:last-child .assistant-picker-menu { left: auto; right: 0; }
 .assistant-picker-menu > strong { display: block; padding: 4px 8px 8px; color: #8490a4; font-size: 11px; }
 .assistant-picker-menu button { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 9px 28px 9px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text, #29334a); font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .assistant-picker-menu button:hover, .assistant-picker-menu button[aria-pressed="true"] { background: var(--panel-soft, #f0f2fc); }
@@ -6775,7 +6822,7 @@
     grid-template-columns: 52px minmax(180px, min(22vw, var(--streamlined-sidebar-width))) 6px minmax(0, 1fr);
   }
   .ide-shell .ide-workbench {
-    grid-template-columns: minmax(0, 1fr) 6px minmax(250px, min(30vw, var(--streamlined-insight-width)));
+    grid-template-columns: minmax(0, 1fr) 6px minmax(320px, min(36vw, var(--streamlined-insight-width)));
   }
   .ide-shell .word-page { padding: 20px 18px; }
 }

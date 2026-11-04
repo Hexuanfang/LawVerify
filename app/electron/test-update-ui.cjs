@@ -8,6 +8,7 @@ const path = require('node:path')
 const temporary = process.env.LAWVERIFY_TEST_USER_DATA || fs.mkdtempSync(path.join(os.tmpdir(), 'lawverify-update-ui-'))
 app.setPath('userData', temporary)
 app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('force-color-profile', 'srgb')
 const dist = path.resolve(__dirname, '../dist')
 
 function installFixture(platform) {
@@ -15,6 +16,8 @@ function installFixture(platform) {
   window.updateQueries = []
   window.lawVerifyDesktop = {
     platform, arch: platform === 'darwin' ? 'arm64' : 'x64', channel: 'electron',
+    updateChannel: platform === 'darwin' ? 'test' : 'stable',
+    getAppUpdateResult: async () => null,
     requestAccount: ({ path }) => {
       if (!path.startsWith('/api/web/releases/latest')) {
         return Promise.resolve({ status: 503, body: '{}' })
@@ -29,13 +32,16 @@ function installFixture(platform) {
       listeners.push(listener)
       return () => listeners.splice(listeners.indexOf(listener), 1)
     },
-    startAppUpdate: payload => new Promise(resolve => {
+    startAppUpdate: payload => new Promise((resolve, reject) => {
       window.updatePayload = payload
       listeners.forEach(listener => listener({ status: 'downloading', progress: 42, message: '正在下载更新安装包… 42%' }))
       window.failDownload = () => {
         listeners.forEach(listener => listener({ status: 'error', message: '安装包完整性校验失败，请重新下载更新。' }))
-        resolve({ ok: false })
+        reject(new Error('安装包完整性校验失败，请重新下载更新。'))
       }
+      window.cancelUpdate = () => resolve({ ok: false })
+      window.beginInstall = () => listeners.forEach(listener =>
+        listener({ status: 'installing', progress: 100, message: '正在自动安装并重启…' }))
     }),
   }
 }
@@ -79,8 +85,8 @@ app.whenReady().then(async () => {
     await wait("document.querySelector('.app-update-card')?.textContent.includes('暂未发布')")
     assert.equal(await evaluate("document.querySelector('.app-update-card').textContent.includes('已是最新')"), false)
     const isWindows = process.env.LAWVERIFY_TEST_PLATFORM === 'win32'
-    if (isWindows) assert.equal(await evaluate("document.querySelector('.app-update-card').textContent.includes('检查测试版')"), false)
-    await click(isWindows ? '检查更新' : '检查测试版')
+    assert.equal(await evaluate("document.querySelector('.app-update-card').textContent.includes('检查测试版')"), false)
+    await click('检查更新')
     await wait("document.querySelector('.app-update-card')?.textContent.includes('检查中...')")
     assert.match(await evaluate('window.updateQueries.at(-1)'), isWindows
       ? /platform=win32&arch=x64&channel=stable/ : /platform=darwin&arch=arm64&channel=test/)
@@ -93,19 +99,26 @@ app.whenReady().then(async () => {
     }
     await evaluate(`window.resolveUpdate(${JSON.stringify(release)})`)
     await wait("document.querySelector('.app-update-card')?.textContent.includes('0.1.99')")
-    await click(isWindows ? '一键更新' : '下载并安装')
+    await click(isWindows ? '一键更新' : '更新并重启')
     await wait("document.querySelector('.app-update-card')?.textContent.includes('42%')")
     assert.equal(await evaluate('window.updatePayload.channel'), isWindows ? 'stable' : 'test')
     assert.equal(await evaluate('window.updatePayload.downloadUrl'), release.downloadUrl)
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.app-update-card button')).every(button => button.disabled)"), true)
+    await evaluate('window.beginInstall()')
+    await wait("document.querySelector('.app-update-card')?.textContent.includes('正在安装...')")
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.app-update-card button')).every(button => button.disabled)"), true)
     await evaluate('window.failDownload()')
     await wait("document.querySelector('.app-update-card')?.textContent.includes('完整性校验失败')")
+    await click(isWindows ? '一键更新' : '更新并重启')
+    await wait("document.querySelector('.app-update-card')?.textContent.includes('42%')")
+    await evaluate('window.cancelUpdate()')
+    await wait("document.querySelector('.app-update-card')?.textContent.includes('已取消更新')")
     await click('检查更新')
     await wait("document.querySelector('.app-update-card')?.textContent.includes('检查中...')")
     await evaluate('window.failUpdate()')
     await wait("document.querySelector('.app-update-card')?.textContent.includes('检查更新失败')")
     assert.equal(await evaluate("document.querySelector('.app-update-card button').disabled"), false)
-    console.log(`PASS rendered ${isWindows ? 'Windows' : 'Mac'} UI: checking feedback, no false latest, correct release channel, download progress, checksum failure and network retry`)
+    console.log(`PASS rendered ${isWindows ? 'Windows' : 'Mac'} UI: default update channel, download/install busy state, cancellation, checksum failure and retry`)
     window.destroy()
     server.closeAllConnections()
     server.close()

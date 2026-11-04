@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from './api'
 
 export const assistantAgents = [
@@ -26,7 +26,42 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
   const open = controlledOpen ?? localOpen
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
   const setOpen = (next: boolean) => { setLocalOpen(next); onOpen?.(next) }
+  useLayoutEffect(() => {
+    if (!open || !menu.current || !button.current) return
+    const popup = menu.current
+    const anchor = button.current
+    // The browser top layer escapes scroll-container clipping without losing inherited styles.
+    popup.showPopover()
+    const place = () => {
+      const box = anchor.getBoundingClientRect()
+      const gap = 8
+      const above = Math.max(0, box.top - gap * 2)
+      const below = Math.max(0, window.innerHeight - box.bottom - gap * 2)
+      const preferBelow = !!anchor.closest('.assistant-mode-row')
+      const down = preferBelow ? below >= Math.min(above, 280) : above < Math.min(below, 280)
+      popup.style.maxHeight = `${Math.min(280, down ? below : above)}px`
+      const bounds = popup.getBoundingClientRect()
+      popup.style.left = `${Math.max(gap, Math.min(box.left, window.innerWidth - bounds.width - gap))}px`
+      popup.style.top = `${Math.max(gap, Math.min(window.innerHeight - bounds.height - gap,
+        down ? box.bottom + gap : box.top - bounds.height - gap))}px`
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(anchor)
+    observer.observe(popup)
+    const container = anchor.closest('.case-agent-composer, .agent-dock-body')
+    if (container) observer.observe(container)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      if (popup.matches(':popover-open')) popup.hidePopover()
+    }
+  }, [open])
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
@@ -48,7 +83,7 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
       aria-label={title} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(!open)}>
       <span>{label}</span><span aria-hidden="true">⌄</span>
     </button>
-    {open ? <div className="assistant-picker-menu" role="dialog" aria-label={title}>
+    {open ? <div ref={menu} popover="manual" className="assistant-picker-menu" role="dialog" aria-label={title}>
       <strong>{title}</strong>
       {items.length ? items.map(item => <button key={item.id} type="button" aria-pressed={value === item.id}
         onClick={() => { onSelect(item.id); setOpen(false); button.current?.focus() }}>

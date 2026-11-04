@@ -3,35 +3,30 @@ import { api } from './api'
 
 export function AccountFeatures() {
   const [referral, setReferral] = useState<Awaited<ReturnType<typeof api.getReferralSummary>> | null>(null)
-  const [enabled, setEnabled] = useState(false)
-  const [ready, setReady] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [notice, setNotice] = useState('')
   useEffect(() => {
     let live = true
     api.getReferralSummary().then(r => { if (live) setReferral(r) }).catch(() => { if (live) setNotice('邀请信息加载失败，请刷新重试。') })
-    api.getAnalyticsPreference().then(r => { if (live) { setEnabled(r.enabled); setReady(true) } })
-      .catch(() => { if (live) setNotice('隐私偏好暂不可用，请稍后重试。') })
     return () => { live = false }
   }, [])
-  return <section className="card form-grid">
+  return <section className="card form-grid account-invitation">
     <h3>邀请好友</h3>
-    {referral ? <>
-      <p>已邀请 {referral.invited} 人，已奖励 {referral.rewarded} 人，累计获得 {referral.earnedPoints} 积分。</p>
-      <p>{referral.enabled ? `好友首次真实付款满 ${(referral.minPaymentFen / 100).toFixed(2)} 元，您获 ${referral.inviterPoints} 积分，好友获 ${referral.inviteePoints} 积分。` : '邀请奖励暂未开启。'}</p>
-      <label>邀请链接<input readOnly value={referral.inviteUrl} /></label>
-      <button className="primary-button" type="button" onClick={() => {
-        void navigator.clipboard.writeText(referral.inviteUrl).then(() => setNotice('邀请链接已复制。')).catch(() => setNotice('复制失败，请选中链接后复制。'))
-      }}>复制邀请链接</button>
-    </> : null}
-    <h3>隐私偏好</h3>
-    <label><input type="checkbox" checked={enabled} disabled={!ready || busy} onChange={async e => {
-      setBusy(true); setNotice('')
-      try { const r = await api.setAnalyticsPreference(e.target.checked); setEnabled(r.enabled) }
-      catch { setNotice('偏好保存失败，请重试。') }
-      finally { setBusy(false) }
-    }} />分享功能使用统计</label>
-    <p className="muted">不包含案件名、正文或检索内容；关闭后删除已上传记录。</p>
+    <div className="account-invitation-code">
+      <span>邀请码</span>
+      <strong>{referral?.code ?? '加载中...'}</strong>
+    </div>
+    <button className="primary-button" type="button" disabled={!referral} onClick={async () => {
+      if (!referral) return
+      setNotice('')
+      try {
+        await navigator.clipboard.writeText(referral.inviteUrl)
+        setCopied(true)
+      } catch {
+        setCopied(false)
+        setNotice('复制失败，请重试。')
+      }
+    }}>{copied ? '已复制' : '复制邀请链接'}</button>
     {notice ? <p role="status">{notice}</p> : null}
   </section>
 }

@@ -19,6 +19,7 @@ import {
   confirmCasePosition,
   retryCaseAgent,
   createCase,
+  createCaseRecord,
   createCloudWorkspaceSession,
   deleteCase,
   deleteEvidence,
@@ -36,10 +37,12 @@ import {
   reviewParagraphMatches,
   rewriteCertificate,
   sanitizeWorkspaceForClient,
+  sanitizeCaseForClient,
   streamGenerateCertificate,
   streamRewriteCertificate,
   summarizeEvidence,
   updateCase,
+  updateCaseRecord,
   updateEvidence,
   updateParagraph,
 } from '../service.js'
@@ -61,7 +64,7 @@ const bindCloudAccountSchema = z.object({
 const createCloudSessionSchema = bindCloudAccountSchema
 
 const createCaseSchema = z.object({
-  name: z.string().min(1, '案件名称不能为空。'),
+  name: z.string().trim().min(1, '案件名称不能为空。'),
 })
 
 export function createLegacyRouter() {
@@ -72,26 +75,6 @@ export function createLegacyRouter() {
     ?? (typeof request.query.workspaceAccount === 'string'
       ? request.query.workspaceAccount.trim().toLowerCase()
       : null)
-
-  // #region debug-point A-B-C-D:route-reporting
-  const reportLegacyDebug = (hypothesisId: string, msg: string, data: Record<string, unknown> = {}) => {
-    void fetch('http://127.0.0.1:7777/event', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sessionId: 'backend-file-load',
-        runId: 'pre-fix',
-        hypothesisId,
-        location: 'server/src/routes/legacy.ts',
-        msg: `[DEBUG] ${msg}`,
-        data,
-        ts: Date.now(),
-      }),
-    }).catch(() => {})
-  }
-  // #endregion
 
   const sendWorkspacePayload = <T extends Record<string, unknown>>(response: Response, payload: T) => {
     const nextPayload = 'workspace' in payload && payload.workspace
@@ -256,32 +239,9 @@ export function createLegacyRouter() {
     }
   })
 
-  router.get('/workspace', async (request, response) => {
-    // #region debug-point A:workspace-route-enter
-    reportLegacyDebug('A', 'workspace-route-enter', {
-      requestId: request.headers['x-request-id'] ?? null,
-    })
-    // #endregion
-    try {
-      const result = await bootstrap()
-      // #region debug-point A:workspace-route-success
-      reportLegacyDebug('A', 'workspace-route-success', {
-        requestId: request.headers['x-request-id'] ?? null,
-        caseCount: result.workspace.cases.length,
-        evidenceCount: result.workspace.evidences.length,
-        certificateCount: result.workspace.certificates.length,
-      })
-      // #endregion
-      sendWorkspacePayload(response, result)
-    } catch (error) {
-      // #region debug-point A:workspace-route-error
-      reportLegacyDebug('A', 'workspace-route-error', {
-        requestId: request.headers['x-request-id'] ?? null,
-        message: error instanceof Error ? error.message : String(error),
-      })
-      // #endregion
-      throw error
-    }
+  router.get('/workspace', async (_request, response) => {
+    const result = await bootstrap()
+    sendWorkspacePayload(response, result)
   })
 
   router.post('/billing/recharge', async (request, response) => {
@@ -293,6 +253,11 @@ export function createLegacyRouter() {
   router.post('/cases', async (request, response) => {
     try {
       const payload = createCaseSchema.parse(request.body)
+      if (request.query.response === 'compact') {
+        const result = await createCaseRecord(payload.name)
+        response.json({ ...result, cases: result.cases.map(sanitizeCaseForClient), caseFolder: sanitizeCaseForClient(result.caseFolder) })
+        return
+      }
       const result = await createCase(payload.name)
       sendWorkspacePayload(response, result)
     } catch (error) {
@@ -302,6 +267,11 @@ export function createLegacyRouter() {
   })
 
   router.patch('/cases/:caseId', async (request, response) => {
+    if (request.query.response === 'compact') {
+      const result = await updateCaseRecord(request.params.caseId, request.body ?? {})
+      response.json({ cases: result.cases.map(sanitizeCaseForClient) })
+      return
+    }
     const result = await updateCase(request.params.caseId, request.body ?? {})
     sendWorkspacePayload(response, result)
   })
@@ -406,37 +376,12 @@ export function createLegacyRouter() {
 
   router.get('/evidences/:evidenceId/source', async (request, response) => {
     try {
-      // #region debug-point D:source-route-enter
-      reportLegacyDebug('D', 'source-route-enter', {
-        requestId: request.headers['x-request-id'] ?? null,
-        evidenceId: request.params.evidenceId,
-        workspaceAccount: resolveWorkspaceAccount(request),
-        accept: request.headers.accept ?? null,
-        secFetchDest: request.headers['sec-fetch-dest'] ?? null,
-      })
-      // #endregion
       const asset = await getEvidenceSourceAsset(request.params.evidenceId)
       response.setHeader('Content-Type', asset.mimeType)
       response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(asset.fileName)}"`)
       response.removeHeader('X-Frame-Options')
-      // #region debug-point B-C:source-route-success
-      reportLegacyDebug('B', 'source-route-success', {
-        requestId: request.headers['x-request-id'] ?? null,
-        evidenceId: request.params.evidenceId,
-        mimeType: asset.mimeType,
-        fileName: asset.fileName,
-        bufferLength: asset.buffer.length,
-      })
-      // #endregion
       response.send(asset.buffer)
     } catch (error) {
-      // #region debug-point C:source-route-error
-      reportLegacyDebug('C', 'source-route-error', {
-        requestId: request.headers['x-request-id'] ?? null,
-        evidenceId: request.params.evidenceId,
-        message: error instanceof Error ? error.message : String(error),
-      })
-      // #endregion
       const message = error instanceof Error ? error.message : '读取证据原件失败'
       sendLegacyError(response, 404, message)
     }

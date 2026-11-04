@@ -22,7 +22,9 @@ async function get(url: string, init: RequestInit = {}, timeout = 30_000) {
 }
 
 try {
-  const local = (await listPublicReleases()).filter((item) => item.platform === 'darwin' && item.channel === 'test')
+  const releases = (await listPublicReleases()).filter((item) => item.platform === 'darwin' && item.channel === 'test')
+  const local = ['arm64', 'x64'].map(arch => releases.find(item => item.arch === arch))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
   assert.equal(local.length, 2, 'Two real Mac test packages are required')
   const metadata = await get(`${base}/api/web/releases`)
   assert.equal(metadata.status, 200)
@@ -35,9 +37,17 @@ try {
     assert.equal(latest.status, 200)
     const update = await latest.json() as { data: { channel: string } | null }
     assert.ok(!update.data || update.data.channel === 'stable', 'Test packages must not become stable updates')
+    const testUpdate = await get(`${base}/api/web/releases/latest?platform=darwin&arch=${release.arch}&channel=test`)
+    assert.equal(testUpdate.status, 200)
+    assert.equal(testUpdate.headers.get('cache-control'), 'no-store')
+    const testPayload = await testUpdate.json() as { data: { id: string; sha256: string; arch: string } }
+    assert.equal(testPayload.data.id, release.id)
+    assert.equal(testPayload.data.sha256, release.sha256)
+    assert.equal(testPayload.data.arch, release.arch)
     const asset = await resolveReleaseDownloadAsset(release.id)
     const size = (await stat(asset.filePath)).size
-    const url = externalBase ? release.downloadUrl : `${base}/api/web/releases/${release.id}/download`
+    const isLocalBase = ['localhost', '127.0.0.1', '::1'].includes(new URL(base).hostname)
+    const url = externalBase && !isLocalBase ? release.downloadUrl : `${base}/api/web/releases/${release.id}/download`
     const head = await get(url, { method: 'HEAD' })
     assert.equal(head.status, 200)
     assert.equal(Number(head.headers.get('content-length')), size)
@@ -84,7 +94,7 @@ try {
       assert.equal(received, size)
       assert.equal(hash.digest('hex'), release.sha256)
     }
-    console.log(`PASS ${release.arch}: metadata, stable isolation, HEAD, Range, SHA256${full ? ', full download' : ''}${resume ? ' with safe continuation' : ''}`)
+    console.log(`PASS ${release.arch} v${release.version}: metadata, test updates, stable isolation, HEAD, Range, SHA256${full ? ', full download' : ''}${resume ? ' with safe continuation' : ''}`)
   }
 } finally {
   server?.closeAllConnections()

@@ -80,6 +80,19 @@ app.whenReady().then(async () => {
       await wait("window.commits.at(-1)?.text==='Latest update.'")
       await wait("window.stabilityTests.readDraft(window.stabilityTests.draftKey('stability@test.invalid','certificate','paragraph')).then(draft=>!draft)")
     })
+    await check('automatic update freezes editing and persists the latest draft before exit', async () => {
+      await evaluate("window.failSave=true;window.testEditor.commands.setContent('<p>Last edit before update.</p>')")
+      await evaluate(`(async()=>{
+        const writes=[];window.dispatchEvent(new CustomEvent('lawverify:prepare-update',{detail:writes}));
+        await Promise.all(writes);
+      })()`)
+      assert.equal(await evaluate('window.testEditor.isEditable'), false)
+      assert.equal(await evaluate("window.stabilityTests.readDraft(window.stabilityTests.draftKey('stability@test.invalid','certificate','paragraph')).then(draft=>draft?.text)"),
+        'Last edit before update.')
+      await evaluate("window.failSave=false;window.dispatchEvent(new Event('lawverify:cancel-update'))")
+      assert.equal(await evaluate('window.testEditor.isEditable'), true)
+      await wait("window.stabilityTests.readDraft(window.stabilityTests.draftKey('stability@test.invalid','certificate','paragraph')).then(draft=>!draft)")
+    })
     await check('Word import executes in a browser worker', async () => {
       const text = await evaluate(`(async()=>{
         const response=await fetch('/__fixture.docx');

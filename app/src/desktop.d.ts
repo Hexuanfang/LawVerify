@@ -11,7 +11,7 @@ declare global {
   }
 
   interface LawVerifyDesktopUpdateStatus {
-    status: 'downloading' | 'ready' | 'error'
+    status: 'downloading' | 'installing' | 'ready' | 'error'
     version?: string
     progress?: number
     message?: string
@@ -22,6 +22,8 @@ declare global {
       platform: string
       arch?: string
       channel: string
+      updateChannel?: 'stable' | 'test'
+      getAppUpdateResult?: () => Promise<{ status: 'ready' | 'error'; message: string } | null>
       requestAccount?: (payload: {
         path: string; method: string; headers: Record<string, string>; body?: string
       }) => Promise<{ status: number; body: string; code?: string }>

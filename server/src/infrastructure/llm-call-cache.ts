@@ -25,6 +25,12 @@ interface LlmCallCacheFile {
 }
 
 let hitCount = 0
+// 写回串行队列：并发模型调用同时回写缓存时，避免相互覆盖导致缓存条目丢失。
+let cacheWriteChain: Promise<void> = Promise.resolve()
+
+function scheduleCacheWrite(task: () => void) {
+  cacheWriteChain = cacheWriteChain.then(task, task)
+}
 
 function resolveCacheFile() {
   const account = getCurrentWorkspaceAccount()?.trim().toLowerCase()
@@ -117,16 +123,22 @@ export async function withLlmCallCache<T>(
 
   const value = await run()
 
-  try {
-    const latest = readCacheFile()
-    const entries = pruneEntries([
-      ...latest.entries.filter((entry) => entry.key !== key),
-      { key, namespace, value, savedAt: new Date().toISOString() },
-    ])
-    writeCacheFile({ version: CACHE_VERSION, entries })
-  } catch (error) {
-    console.error('LLM call cache update failed:', error instanceof Error ? error.message : String(error))
-  }
+  await new Promise<void>((resolve) => {
+    scheduleCacheWrite(() => {
+      try {
+        const latest = readCacheFile()
+        const entries = pruneEntries([
+          ...latest.entries.filter((entry) => entry.key !== key),
+          { key, namespace, value, savedAt: new Date().toISOString() },
+        ])
+        writeCacheFile({ version: CACHE_VERSION, entries })
+      } catch (error) {
+        // 缓存写入失败不应影响主流程。
+        console.error('LLM call cache update failed:', error instanceof Error ? error.message : String(error))
+      }
+      resolve()
+    })
+  })
 
   return { value, reused: false }
 }

@@ -48,6 +48,8 @@ export interface CaseAgentState {
     status: 'queued' | 'processing' | 'ready' | 'failed'
     stage: string
     evidenceIds: string[]
+    skippedEvidenceIds?: string[]
+    duplicateEvidenceIds?: string[]
     updatedAt: string
     error?: string
   }

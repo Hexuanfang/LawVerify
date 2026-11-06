@@ -55,6 +55,7 @@ import { readObject, storeObject } from './infrastructure/object-storage.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { createChatCompletion, createChatCompletionStream, isLlmConfigured, withRequestAbortSignal, type LlmChatMessage } from './integrations/llm-service.js'
 import { getLlmCallCacheHitCount, resetLlmCallCacheHitCount, withLlmCallCache } from './infrastructure/llm-call-cache.js'
+import { mapSettledWithConcurrency, mapWithConcurrency } from './infrastructure/concurrency.js'
 import { createEmbedding, createEmbeddings, isEmbeddingConfigured } from './integrations/embedding-service.js'
 import { isPkulawCaseSearchConfigured, searchPkulawCases } from './integrations/pkulaw-mcp.js'
 import { isWkCaseSearchConfigured, searchWkCases } from './integrations/wk-mcp.js'
@@ -121,6 +122,8 @@ function createId(prefix: string) {
 
 const MAX_BACKGROUND_VISION_PAGES = 3
 const MAX_INLINE_IMAGE_SOURCE_BYTES = 12_000_000
+// 逐页视觉与长文本分块的模型调用并发度；与云端网关单用户 3 个并发的上限保持一致。
+const EVIDENCE_VISION_CONCURRENCY = 3
 const backgroundEvidenceProcessingQueue = new Map<string, { account: string | null; caseId: string }>()
 let backgroundEvidenceProcessingActive = false
 let backgroundEvidenceProcessingTimer: ReturnType<typeof setTimeout> | undefined
@@ -206,6 +209,13 @@ function buildEvidenceSummaryFailureMessage(workspace: WorkspaceState, evidenceI
   return reason ? `部分材料理解失败：${reason}` : '部分材料理解失败，请检查原件后重试。'
 }
 
+// 材料既没有可读文本也没有可用图片时，只能提示补 OCR，这类材料应被排除而不是让整案梳理失败。
+const EVIDENCE_NO_CONTENT_REASON = '当前证据尚无可供模型理解的文本或图片原件。请先完成 OCR / 解析后再执行内容理解。'
+
+function isEvidenceNoContentFailure(reason: string | undefined | null) {
+  return Boolean(reason?.includes('尚无可供模型理解的文本或图片原件'))
+}
+
 async function drainBackgroundEvidenceProcessingQueue() {
   try {
     while (backgroundEvidenceProcessingQueue.size) {
@@ -226,6 +236,8 @@ async function drainBackgroundEvidenceProcessingQueue() {
         task.stage = '正在理解新增材料'
         task.updatedAt = new Date().toISOString()
         await writeWorkspace(initial)
+        const skippedEvidenceIds: string[] = []
+        const duplicateEvidenceIds: string[] = []
         try {
           if (!isLlmConfigured()) throw new Error('请先配置模型，再自动理解案件材料。')
           await settleCaseAgentRefunds(caseId)
@@ -235,6 +247,11 @@ async function drainBackgroundEvidenceProcessingQueue() {
             if (!currentFolder || currentFolder.agent?.autoAnalyze === false) break
             const material = current.evidences.find(e => e.id === evidenceId)
             if (!material) continue
+            // 重复文件只标记不理解，避免重复扣费并阻断整案梳理。
+            if (material.duplicateOf) {
+              duplicateEvidenceIds.push(evidenceId)
+              continue
+            }
             const run = async () => {
               const result = await summarizeEvidence(evidenceId, { background: true })
               if (result.workspace.evidences.find(e => e.id === evidenceId)?.summaryStatus === 'failed') {
@@ -242,20 +259,31 @@ async function drainBackgroundEvidenceProcessingQueue() {
               }
               return result
             }
-            const result = material.summaryStatus === 'ready'
-              ? await summarizeEvidence(evidenceId, { cacheOnly: true })
-              : await chargedCaseAgentTask(caseId, 'evidence_summary', material.contentHash ?? material.storageKey ?? evidenceId, run)
-            if (result.workspace.evidences.find(e => e.id === evidenceId)?.summaryStatus === 'failed') {
-              throw new Error(buildEvidenceSummaryFailureMessage(result.workspace, evidenceId))
+            try {
+              const result = material.summaryStatus === 'ready'
+                ? await summarizeEvidence(evidenceId, { cacheOnly: true })
+                : await chargedCaseAgentTask(caseId, 'evidence_summary', material.contentHash ?? material.storageKey ?? evidenceId, run)
+              if (result.workspace.evidences.find(e => e.id === evidenceId)?.summaryStatus === 'failed') {
+                throw new Error(buildEvidenceSummaryFailureMessage(result.workspace, evidenceId))
+              }
+            } catch (error) {
+              // 缺少文本与图片的材料只做排除处理，其余材料继续梳理。
+              if (!isEvidenceNoContentFailure(error instanceof Error ? error.message : '')) throw error
+              skippedEvidenceIds.push(evidenceId)
             }
           }
           await rebuildCaseMemoryAfterBackgroundProcessing(caseId, revision)
           const latest = await readWorkspace()
           const next = latest.cases.find(c => c.id === caseId)?.agent?.task
           if (next?.revision === revision) {
+            const notes: string[] = []
+            if (skippedEvidenceIds.length) notes.push(`已跳过 ${skippedEvidenceIds.length} 份待解析材料`)
+            if (duplicateEvidenceIds.length) notes.push(`已排除 ${duplicateEvidenceIds.length} 份重复文件`)
             next.status = 'ready'
-            next.stage = '案件理解已更新'
+            next.stage = notes.length ? `案件理解已更新（${notes.join('，')}）` : '案件理解已更新'
             next.evidenceIds = []
+            next.skippedEvidenceIds = skippedEvidenceIds
+            next.duplicateEvidenceIds = duplicateEvidenceIds
             next.updatedAt = new Date().toISOString()
             await writeWorkspace(latest)
           } else if (next) queueBackgroundEvidenceProcessing(caseId, next.evidenceIds)
@@ -266,6 +294,8 @@ async function drainBackgroundEvidenceProcessingQueue() {
             next.status = 'failed'
             next.error = error instanceof Error ? error.message : '案件梳理失败，请重试。'
             next.stage = '等待重试'
+            next.skippedEvidenceIds = skippedEvidenceIds
+            next.duplicateEvidenceIds = duplicateEvidenceIds
             next.updatedAt = new Date().toISOString()
             await writeWorkspace(latest)
           } else if (next) queueBackgroundEvidenceProcessing(caseId, next.evidenceIds)
@@ -2715,8 +2745,28 @@ async function buildEvidencePageInsightDraftWithVision(
   pageNumber: number,
   totalPages: number,
 ) {
-  const completion = await createChatCompletion({
-    ...resolveVisionLlmRuntime(),
+  const runtime = resolveVisionLlmRuntime()
+  // 逐页理解结果按输入内容缓存：失败重试或重复理解时直接复用，不再重复等待模型。
+  // 缓存键不包含凭据，只包含模型地址与模型名，变更模型后旧缓存自动失效。
+  const { value: completion } = await withLlmCallCache('evidence-page-vision', {
+    baseUrl: runtime.baseUrl,
+    model: runtime.model,
+    evidenceNumber: evidence.number,
+    evidenceName: evidence.name,
+    fileName: evidence.fileName,
+    pageNumber,
+    totalPages,
+    ocrText: meaningfulText || undefined,
+    fragments: fragments
+      .filter((fragment) => fragment.page == null || fragment.page === pageNumber)
+      .slice(0, 4)
+      .map((fragment) => ({
+        locator: fragment.locator,
+        text: summarizeForPrompt(fragment.text, 160),
+      })),
+    imageHash: createHash('sha256').update(pageImageDataUrl).digest('hex'),
+  }, async () => createChatCompletion({
+    ...runtime,
     messages: [
       {
         role: 'system',
@@ -2762,7 +2812,7 @@ async function buildEvidencePageInsightDraftWithVision(
     temperature: 0.1,
     maxTokens: 1500,
     responseFormat: 'json_object',
-  })
+  }))
 
   const parsed = tryParseLlmJsonObject<Partial<EvidenceInsightDraft>>(completion.content)
   if (!parsed) {
@@ -2815,7 +2865,30 @@ async function aggregateEvidencePageInsightsWithLlm(
     return fallback
   }
 
-  const completion = await createChatCompletion({
+  // 聚合结果按逐页理解内容缓存：重复理解同一份材料时无需再次汇总。
+  const { value: completion } = await withLlmCallCache('evidence-page-aggregate', {
+    model: env.LLM_MODEL,
+    evidenceNumber: evidence.number,
+    evidenceName: evidence.name,
+    fileName: evidence.fileName,
+    ocrText: meaningfulText || undefined,
+    fragments: fragments.slice(0, 6).map((fragment) => ({
+      locator: fragment.locator,
+      text: summarizeForPrompt(fragment.text, 180),
+    })),
+    pageInsights: pageDrafts.map((item) => ({
+      pageNumber: item.pageNumber,
+      summary: item.summary ?? '',
+      keyFacts: item.keyFacts ?? [],
+      entities: item.entities ?? [],
+      timelineEvents: item.timelineEvents ?? [],
+      amounts: item.amounts ?? [],
+      positions: item.positions ?? [],
+      issues: item.issues ?? [],
+      ...normalizeMaterialUnderstanding(item),
+      confidence: item.confidence ?? 0.7,
+    })),
+  }, async () => createChatCompletion({
     messages: [
       {
         role: 'system',
@@ -2858,7 +2931,7 @@ async function aggregateEvidencePageInsightsWithLlm(
     temperature: 0.1,
     maxTokens: 1800,
     responseFormat: 'json_object',
-  })
+  }))
 
   const parsed = tryParseLlmJsonObject<Partial<EvidenceInsightDraft>>(completion.content)
   const merged = mergeEvidencePageInsightDrafts(pageDrafts, fallback)
@@ -2889,25 +2962,20 @@ async function buildEvidenceInsightDraftWithLlm(
   const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
 
   if (canUseImageVision) {
-    const pageDrafts: EvidencePageInsightDraft[] = []
-
-    for (const [index, pageImageDataUrl] of visionImageDataUrls.entries()) {
-      try {
-        const pageDraft = await buildEvidencePageInsightDraftWithVision(
-          evidence,
-          fragments,
-          meaningfulText,
-          pageImageDataUrl,
-          index + 1,
-          visionImageDataUrls.length,
-        )
-        if (pageDraft) {
-          pageDrafts.push(pageDraft)
-        }
-      } catch {
-        continue
-      }
-    }
+    // 逐页视觉理解改为限流并发：串行调用会让多页材料的等待时间成倍增加。
+    const pageResults = await mapWithConcurrency<string, EvidencePageInsightDraft | null>(
+      visionImageDataUrls,
+      EVIDENCE_VISION_CONCURRENCY,
+      (pageImageDataUrl, index) => buildEvidencePageInsightDraftWithVision(
+        evidence,
+        fragments,
+        meaningfulText,
+        pageImageDataUrl,
+        index + 1,
+        visionImageDataUrls.length,
+      ),
+    )
+    const pageDrafts = pageResults.filter((draft): draft is EvidencePageInsightDraft => Boolean(draft))
 
     if (pageDrafts.length) {
       if (pageDrafts.length !== visionImageDataUrls.length) throw new Error('部分页面理解失败，请重试后再建立证据记忆。')
@@ -2942,7 +3010,18 @@ async function buildEvidenceInsightDraftWithLlm(
     },
   ]
 
-  const completion = await createChatCompletion({
+  // 文本理解结果按材料内容缓存：重试或重复理解同一份材料时直接复用。
+  const { value: completion } = await withLlmCallCache('evidence-text-understanding', {
+    model: env.LLM_MODEL,
+    evidenceNumber: evidence.number,
+    evidenceName: evidence.name,
+    fileName: evidence.fileName,
+    ocrText: meaningfulText,
+    fragments: fragments.slice(0, 4).map((fragment) => ({
+      locator: fragment.locator,
+      text: summarizeForPrompt(fragment.text, 180),
+    })),
+  }, async () => createChatCompletion({
     messages: [
       ...baseMessages,
       {
@@ -2962,7 +3041,7 @@ async function buildEvidenceInsightDraftWithLlm(
     temperature: 0.1,
     maxTokens: 1800,
     responseFormat: 'json_object',
-  })
+  }))
 
   const parsed = tryParseLlmJsonObject<Partial<EvidenceInsightDraft>>(completion.content)
   if (!parsed) throw new Error('证据理解未返回完整结构，请重试。')
@@ -3005,6 +3084,16 @@ function ensureEvidenceInsightsForCase(
     const existing = getLatestEvidenceInsight(workspace, evidence.id)
     if (existing?.status === 'ready') {
       ensured.push(existing)
+      continue
+    }
+
+    // 理解失败的材料保持失败状态并排除在案件记忆之外，避免被当成已理解材料。
+    if (existing?.status === 'failed') {
+      continue
+    }
+
+    // 重复文件不参与案件记忆，避免同一份内容被重复计算。
+    if (evidence.duplicateOf) {
       continue
     }
 
@@ -3151,7 +3240,36 @@ async function buildCaseContextMemoryDraftWithLlm(
   const evidenceByNumber = new Map(evidences.filter(e => insights.some(i =>
     i.evidenceId === e.id && i.status === 'ready' && i.materialRole === 'source_evidence',
   )).map((evidence) => [evidence.number.toLowerCase(), evidence]))
-  const completion = await createChatCompletion({
+  // 案件记忆重建的模型输入：缓存键与请求体共用同一份载荷，避免两边不一致。
+  const promptPayload = {
+    caseName: caseFolder.name,
+    caseDescription: caseFolder.description,
+    evidences: evidences.map((evidence) => {
+      const insight = insights.find((item) => item.evidenceId === evidence.id)
+      return {
+        number: evidence.number,
+        name: evidence.name,
+        type: evidence.type,
+        summary: insight?.summary ?? '',
+        keyFacts: insight?.keyFacts ?? [],
+        timelineEvents: insight?.timelineEvents ?? [],
+        amounts: insight?.amounts ?? [],
+        positions: insight?.positions ?? [],
+        issues: insight?.issues ?? [],
+        ...normalizeMaterialUnderstanding(insight ?? null),
+        parsedTextExcerpt: summarizeForPrompt(getMeaningfulEvidenceText(evidence.ocrText), 220),
+        parsedFragments: getEvidenceFragmentsForEvidence(workspace, evidence.id).slice(0, 3).map((fragment) => ({
+          locator: fragment.locator,
+          text: summarizeForPrompt(fragment.text, 140),
+        })),
+      }
+    }),
+  }
+  // 案件记忆按材料理解结果缓存：材料未变化时重跑不再重复调用模型。
+  const { value: completion } = await withLlmCallCache('case-context-memory', {
+    model: env.LLM_MODEL,
+    ...promptPayload,
+  }, async () => createChatCompletion({
     messages: [
       {
         role: 'system',
@@ -3173,36 +3291,13 @@ async function buildCaseContextMemoryDraftWithLlm(
       },
       {
         role: 'user',
-        content: JSON.stringify({
-          caseName: caseFolder.name,
-          caseDescription: caseFolder.description,
-          evidences: evidences.map((evidence) => {
-            const insight = insights.find((item) => item.evidenceId === evidence.id)
-            return {
-              number: evidence.number,
-              name: evidence.name,
-              type: evidence.type,
-              summary: insight?.summary ?? '',
-              keyFacts: insight?.keyFacts ?? [],
-              timelineEvents: insight?.timelineEvents ?? [],
-              amounts: insight?.amounts ?? [],
-              positions: insight?.positions ?? [],
-              issues: insight?.issues ?? [],
-              ...normalizeMaterialUnderstanding(insight ?? null),
-              parsedTextExcerpt: summarizeForPrompt(getMeaningfulEvidenceText(evidence.ocrText), 220),
-              parsedFragments: getEvidenceFragmentsForEvidence(workspace, evidence.id).slice(0, 3).map((fragment) => ({
-                locator: fragment.locator,
-                text: summarizeForPrompt(fragment.text, 140),
-              })),
-            }
-          }),
-        }),
+        content: JSON.stringify(promptPayload),
       },
     ],
     temperature: 0.1,
     maxTokens: 5000,
     responseFormat: 'json_object',
-  })
+  }))
 
   const parsed = tryParseLlmJsonObject<{
     summary?: string
@@ -3651,19 +3746,38 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
   const canUseImageVision = canUseEvidenceVision(evidence)
 
   if (!meaningfulText && !canUseImageVision) {
-    throw new Error('当前证据尚无可供模型理解的文本或图片原件。请先完成 OCR / 解析后再执行内容理解。')
+    throw new Error(EVIDENCE_NO_CONTENT_REASON)
   }
 
   if (evidence.type === 'pdf' && evidence.storageKey) {
     return withDocumentSession(await readObject(evidence.storageKey), async session => {
       const total = await session.request<number>('info')
-      const drafts: EvidencePageInsightDraft[] = []
+      // 页面渲染保持串行（共用同一个文档解析进程），模型理解改为限流并发。
+      const pageImages: string[] = []
       for (let page = 1; page <= total; page += 1) {
         const image = await session.request<string>('page', page)
         if (!image) throw new Error(`第${page}页未能完成原件识别，请重试。`)
-        const draft = await buildEvidencePageInsightDraftWithVision(evidence, fragments, '', image, page, total)
-        if (!draft) throw new Error(`第${page}页未返回完整理解，请重试。`)
-        drafts.push(draft)
+        pageImages.push(image)
+      }
+      const pageResults = await mapSettledWithConcurrency<string, EvidencePageInsightDraft | null>(
+        pageImages,
+        EVIDENCE_VISION_CONCURRENCY,
+        (image, index) => buildEvidencePageInsightDraftWithVision(
+          evidence,
+          fragments,
+          '',
+          image,
+          index + 1,
+          total,
+        ),
+      )
+      const drafts: EvidencePageInsightDraft[] = []
+      for (const [index, result] of pageResults.entries()) {
+        if (!result.ok) {
+          throw result.error instanceof Error ? result.error : new Error(`第${index + 1}页理解失败，请重试。`)
+        }
+        if (!result.value) throw new Error(`第${index + 1}页未返回完整理解，请重试。`)
+        drafts.push(result.value)
       }
       const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
       return aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
@@ -3674,11 +3788,22 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
     for (let offset = 0; offset < meaningfulText.length; offset += 10000) {
       chunks.push(meaningfulText.slice(offset, offset + 12000))
     }
+    // 长文本分块同样改为限流并发，避免分块数多时等待时间成倍增加。
+    const chunkResults = await mapSettledWithConcurrency<string, EvidencePageInsightDraft>(
+      chunks,
+      EVIDENCE_VISION_CONCURRENCY,
+      async (text, index) => {
+        const chunkEvidence = { ...evidence, ocrText: text, pageImageDataUrls: [], previewDataUrl: undefined, sourceDataUrl: undefined }
+        const draft = await buildEvidenceInsightDraftWithLlm(chunkEvidence, [])
+        return { ...draft, pageNumber: index + 1 }
+      },
+    )
     const drafts: EvidencePageInsightDraft[] = []
-    for (const [index, text] of chunks.entries()) {
-      const chunkEvidence = { ...evidence, ocrText: text, pageImageDataUrls: [], previewDataUrl: undefined, sourceDataUrl: undefined }
-      const draft = await buildEvidenceInsightDraftWithLlm(chunkEvidence, [])
-      drafts.push({ ...draft, pageNumber: index + 1 })
+    for (const result of chunkResults) {
+      if (!result.ok) {
+        throw result.error instanceof Error ? result.error : new Error('长文本分段理解失败，请重试。')
+      }
+      drafts.push(result.value)
     }
     const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
     const merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
@@ -3694,6 +3819,59 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
 function normalizeEvidenceRelativePath(relativePath: string | undefined, fileName: string) {
   const normalized = relativePath?.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
   return normalized || fileName
+}
+
+// 同一案件内内容完全一致的材料只保留最早导入的一份，其余标记为重复并跳过理解。
+function getEvidenceDuplicateKey(evidence: Pick<Evidence, 'contentHash' | 'sourceFingerprint'>) {
+  const contentHash = evidence.contentHash?.trim().toLowerCase()
+  if (contentHash) {
+    return `hash:${contentHash}`
+  }
+
+  const fingerprint = evidence.sourceFingerprint?.trim().toLowerCase()
+  return fingerprint ? `fingerprint:${fingerprint}` : ''
+}
+
+function applyDuplicateMarks(workspace: WorkspaceState, caseId: string) {
+  const caseEvidences = workspace.evidences
+    .filter((item) => item.caseId === caseId)
+    .sort((left, right) => left.uploadedAt.localeCompare(right.uploadedAt) || left.number.localeCompare(right.number))
+  const originalByKey = new Map<string, string>()
+  const duplicateById = new Map<string, string>()
+
+  for (const evidence of caseEvidences) {
+    const key = getEvidenceDuplicateKey(evidence)
+    if (!key) {
+      continue
+    }
+
+    const originalId = originalByKey.get(key)
+    if (!originalId) {
+      originalByKey.set(key, evidence.id)
+      continue
+    }
+
+    duplicateById.set(evidence.id, originalId)
+  }
+
+  let changed = false
+  workspace.evidences = workspace.evidences.map((item) => {
+    if (item.caseId !== caseId) {
+      return item
+    }
+
+    const duplicateOf = duplicateById.get(item.id)
+    // 重复文件不进入理解流程，避免一直显示处理中。
+    const summaryStatus = duplicateOf && item.summaryStatus === 'processing' ? 'idle' : item.summaryStatus
+    if (duplicateOf === item.duplicateOf && summaryStatus === item.summaryStatus) {
+      return item
+    }
+
+    changed = true
+    return { ...item, duplicateOf, summaryStatus }
+  })
+
+  return changed
 }
 
 function getEvidenceFileStem(fileName: string) {
@@ -5107,6 +5285,20 @@ export async function bootstrap() {
   const workspace = hydrateWorkspaceStatutesFromKnowledgeFiles(
     await hydrateWorkspaceKnowledgeFiles(await readWorkspace()),
   )
+  let duplicatesChanged = false
+  for (const folder of workspace.cases) {
+    if (applyDuplicateMarks(workspace, folder.id)) {
+      duplicatesChanged = true
+    }
+  }
+  if (duplicatesChanged) {
+    try {
+      await writeWorkspace(workspace)
+    } catch (error) {
+      // 标记写入失败不应阻断工作区读取，下一次刷新会重试。
+      console.error('Duplicate marks could not be persisted:', error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
   for (const folder of workspace.cases) {
     if (folder.agent?.task && ['queued', 'processing'].includes(folder.agent.task.status)) {
       queueBackgroundEvidenceProcessing(folder.id, folder.agent.task.evidenceIds)
@@ -5135,20 +5327,97 @@ async function rebuildCaseStrategy(workspace: WorkspaceState, folder: CaseFolder
   if (!isLlmConfigured()) throw new Error('请先配置模型，再生成案件主张与举证思路。')
   const evidences = workspace.evidences.filter(e => e.caseId === folder.id)
   const insights = workspace.evidenceInsights.filter(i => i.caseId === folder.id)
-  const completion = await createChatCompletion({
+  const promptPayload = {
+    position,
+    memory: buildCaseMemoryPromptContext(memory),
+    evidences: evidences.map(e => ({
+      id: e.id, number: e.number, sourceNumber: e.sourceNumber, name: e.name,
+      insight: insights.find(i => i.evidenceId === e.id),
+    })),
+  }
+  // 案件策略按立场与案件记忆缓存：材料或立场未变化时重跑不再重复调用模型。
+  // 缓存键剔除随机 id、版本号与时间戳，避免同一份内容每次都生成新键。
+  const { value: completion } = await withLlmCallCache('case-strategy', {
+    model: env.LLM_MODEL,
+    position: promptPayload.position
+      ? {
+        party: promptPayload.position.party,
+        role: promptPayload.position.role,
+        goals: promptPayload.position.goals,
+        admissions: promptPayload.position.admissions,
+        disputes: promptPayload.position.disputes,
+        boundaries: promptPayload.position.boundaries,
+      }
+      : null,
+    memory: promptPayload.memory
+      ? {
+        agentPosition: promptPayload.memory.agentPosition
+          ? {
+            party: promptPayload.memory.agentPosition.party,
+            role: promptPayload.memory.agentPosition.role,
+            goals: promptPayload.memory.agentPosition.goals,
+            admissions: promptPayload.memory.agentPosition.admissions,
+            disputes: promptPayload.memory.agentPosition.disputes,
+            boundaries: promptPayload.memory.agentPosition.boundaries,
+          }
+          : null,
+        agentStrategy: promptPayload.memory.agentStrategy
+          ? {
+            summary: promptPayload.memory.agentStrategy.summary,
+            claims: promptPayload.memory.agentStrategy.claims,
+            nextSteps: promptPayload.memory.agentStrategy.nextSteps,
+            warnings: promptPayload.memory.agentStrategy.warnings,
+          }
+          : undefined,
+        summary: promptPayload.memory.summary,
+        parties: promptPayload.memory.parties,
+        disputeFocuses: promptPayload.memory.disputeFocuses,
+        claimsAndDefenses: promptPayload.memory.claimsAndDefenses,
+        disputedFacts: promptPayload.memory.disputedFacts,
+        timeline: promptPayload.memory.timeline,
+        paymentFlow: promptPayload.memory.paymentFlow,
+        keyPersons: promptPayload.memory.keyPersons,
+        keyAmounts: promptPayload.memory.keyAmounts,
+        lawyerFocuses: promptPayload.memory.lawyerFocuses,
+        evidenceWeaknesses: promptPayload.memory.evidenceWeaknesses,
+        proceduralRisks: promptPayload.memory.proceduralRisks,
+        contradictions: promptPayload.memory.contradictions,
+        openQuestions: promptPayload.memory.openQuestions,
+        supportMatrix: promptPayload.memory.supportMatrix,
+      }
+      : null,
+    evidences: promptPayload.evidences.map((item) => ({
+      id: item.id,
+      number: item.number,
+      sourceNumber: item.sourceNumber,
+      name: item.name,
+      insight: item.insight
+        ? {
+          summary: item.insight.summary,
+          keyFacts: item.insight.keyFacts,
+          entities: item.insight.entities,
+          timelineEvents: item.insight.timelineEvents,
+          amounts: item.insight.amounts,
+          positions: item.insight.positions,
+          issues: item.insight.issues,
+          materialRole: item.insight.materialRole,
+          proofPurposes: item.insight.proofPurposes,
+          proofLimitations: item.insight.proofLimitations,
+          disputedPoints: item.insight.disputedPoints,
+          keyExcerpts: item.insight.keyExcerpts,
+          confidence: item.insight.confidence,
+          status: item.insight.status,
+        }
+        : null,
+    })),
+  }, async () => createChatCompletion({
     messages: [
       { role: 'system', content: `${CASE_AGENT_RULES}
 请返回JSON：{"summary":"代理思路","claims":[{"claim":"主张或抗辩","requirements":["成立要件"],"burden":"证明责任及待核验依据","supportEvidenceIds":["材料ID"],"adverseEvidenceIds":["材料ID"],"gaps":["补证事项"],"counterargument":"对方可能反驳","response":"应对思路","status":"supported或needs_evidence或alternative"}],"nextSteps":["下一步"],"warnings":["风险"]}。
 先识别我方诉讼地位，再按目标、要件、证明责任、证据组合组织策略，不按文件逐个写摘要。supportEvidenceIds仅限原始证据，不得将底稿或单方陈述当作独立证明。无依据时明确补证，不勉强提出主张。` },
-      { role: 'user', content: JSON.stringify({
-        position, memory: buildCaseMemoryPromptContext(memory),
-        evidences: evidences.map(e => ({
-          id: e.id, number: e.number, sourceNumber: e.sourceNumber, name: e.name,
-          insight: insights.find(i => i.evidenceId === e.id),
-        })),
-      }) },
+      { role: 'user', content: JSON.stringify(promptPayload) },
     ], temperature: 0.1, maxTokens: 6000, responseFormat: 'json_object',
-  })
+  }))
   const draft = normalizeStrategy(tryParseLlmJsonObject(completion.content), evidences, insights)
   folder.agent!.strategy = {
     ...draft, inputKey, memoryVersion: memory.version, positionVersion: position.version,
@@ -5445,6 +5714,7 @@ export async function importEvidences(payload: EvidenceImportPayload) {
     ...workspace.evidences.filter((item) => item.caseId !== payload.caseId),
     ...nextEvidenceState,
   ]
+  applyDuplicateMarks(workspace, payload.caseId)
   workspace.cases = workspace.cases.map((item) =>
     item.id === caseFolder.id ? { ...item, status: item.status === 'ready' ? 'in_review' : item.status } : item,
   )
@@ -5531,6 +5801,7 @@ export async function replaceCaseEvidences(payload: EvidenceImportPayload) {
   })
 
   workspace.evidences.unshift(...created)
+  applyDuplicateMarks(workspace, caseFolder.id)
   workspace.cases = workspace.cases.map((item) =>
     item.id === caseFolder.id ? { ...item, status: 'in_review' } : item,
   )
@@ -5862,6 +6133,9 @@ export async function deleteEvidence(evidenceId: string) {
   }
   workspace.evidences = workspace.evidences.filter((item) => item.id !== evidenceId)
   workspace.evidenceInsights = workspace.evidenceInsights.filter((item) => item.evidenceId !== evidenceId)
+  if (evidence) {
+    applyDuplicateMarks(workspace, evidence.caseId)
+  }
   workspace.certificates = workspace.certificates.map((certificate) => ({
     ...certificate,
     paragraphs: certificate.paragraphs.map((paragraph) => {

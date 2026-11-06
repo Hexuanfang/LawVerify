@@ -79,6 +79,7 @@ export interface Evidence {
   relativePath?: string
   contentHash?: string
   sourceFingerprint?: string
+  duplicateOf?: string
   sourceNumber?: string
   directoryId?: string
   uploadedAt: string

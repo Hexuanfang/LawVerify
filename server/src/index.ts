@@ -4,8 +4,14 @@ import { env } from './config/env.js'
 const { app, attachUpgrade } = createApp()
 
 // #region debug-point A:process-lifecycle
+// 启用方式：设置环境变量 DEBUG_EVENT_URL=http://127.0.0.1:7777/event 后重启服务；未设置则不发送任何调试请求。
 function reportDebug(hypothesisId: string, msg: string, data: Record<string, unknown> = {}) {
-  void fetch('http://127.0.0.1:7777/event', {
+  const debugEventUrl = env.DEBUG_EVENT_URL?.trim()
+  if (!debugEventUrl) {
+    return
+  }
+
+  void fetch(debugEventUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

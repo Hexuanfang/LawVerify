@@ -65,6 +65,10 @@ const envSchema = z.object({
   LLM_VISION_API_KEY: z.string().optional(),
   LLM_VISION_MODEL: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+  // 推理模型预留的正文 token 预算（与 LLM_TIMEOUT_MS 配合使用）。
+  LLM_MIN_MAX_TOKENS: z.coerce.number().int().positive().optional(),
+  // 支持 reasoning.effort 的供应商可配置推理强度，例如 none / minimal / low。
+  LLM_REASONING_EFFORT: z.enum(['none', 'minimal', 'low', 'medium', 'high']).optional(),
   EMBEDDING_PROVIDER: z.enum(['openai-compatible']).default('openai-compatible'),
   EMBEDDING_BASE_URL: z.string().optional(),
   EMBEDDING_API_KEY: z.string().optional(),
@@ -101,6 +105,10 @@ const envSchema = z.object({
   COLLABORA_PROXY_PATH: z.string().default('/collabora'),
   COLLABORA_PROXY_TARGET: z.string().default('http://127.0.0.1:9980'),
   COLLABORA_WOPI_ALLOW_EDIT: booleanFromEnv.default(true),
+  // 调试埋点上报地址：留空表示不发送任何调试请求。
+  // 启用方式：在 server/.env.local 或系统环境变量中设置
+  // DEBUG_EVENT_URL=http://127.0.0.1:7777/event，并自行启动对应调试收集器。
+  DEBUG_EVENT_URL: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

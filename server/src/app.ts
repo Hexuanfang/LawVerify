@@ -34,6 +34,9 @@ export function createApp() {
   })
 
   app.disable('x-powered-by')
+  // API 响应不生成 ETag：工作区等接口按 x-workspace-account 请求头区分账号，
+  // 浏览器缓存校验命中后会拿到 304 空响应，前端无法将其当作工作区数据使用。
+  app.disable('etag')
   app.use(requestContext)
   app.use(
     helmet({
@@ -58,6 +61,11 @@ export function createApp() {
     app.use(express.static(frontendDist))
   }
 
+  // API 一律不走浏览器缓存，避免工作区快照被复用或串到其它账号。
+  app.use(env.API_PREFIX, (_request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store')
+    next()
+  })
   app.use(env.API_V1_PREFIX, createV1Router())
   app.use(env.API_PREFIX, createLegacyRouter())
   app.use((request, response, next) => {

@@ -18,7 +18,12 @@ function loadFunctions(file, names, mocks = {}) {
     ts.forEachChild(node, visit)
   }
   visit(ast)
-  const context = vm.createContext({ ...policy, ...mocks })
+  // 默认桩：模型调用缓存直通（缓存本身由 test-llm-call-cache.mjs 覆盖），并提供浏览器的 AbortController。
+  const defaultMocks = {
+    withLlmCallCache: async (_namespace, _payload, run) => ({ value: await run(), reused: false }),
+    AbortController,
+  }
+  const context = vm.createContext({ ...policy, ...defaultMocks, ...mocks })
   vm.runInContext(ts.transpileModule(
     snippets.join('\n') + '\nthis.exports={' + names.join(',') + '};',
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
@@ -73,6 +78,7 @@ test('真实界面处理函数在编辑保存后调用联动，并拦截重复�
     previewEvidence: null,
     documentTaskQueueRef: { current: createDocumentTaskQueue() },
     documentAnalysisRunningRef: { current: false },
+    autoLinkAbortRef: { current: null },
     api: {
       updateParagraph: async () => { events.push('save'); await gate; return { workspace: {} } },
       autoLinkCertificate: async () => {

@@ -30,9 +30,24 @@ interface ChatCompletionOptions {
 }
 
 const assistantModel = new AsyncLocalStorage<string>()
+// 请求级中止信号：客户端断开或用户点击“停止”后，让正在进行的 LLM 调用立即中断。
+const requestAbort = new AsyncLocalStorage<AbortSignal>()
+
+export async function withRequestAbortSignal<T>(signal: AbortSignal | undefined, action: () => T): Promise<T> {
+  if (!signal) return action()
+  return requestAbort.run(signal, action)
+}
+
+function currentRequestAbortSignal() {
+  return requestAbort.getStore()
+}
+
 export async function withAssistantModel<T>(model: unknown, action: () => T): Promise<T> {
   if (model === undefined || model === '') return action()
-  if (typeof model !== 'string' || !(await getAssistantCapabilities()).models.some(m => m.id === model)) {
+  if (typeof model !== 'string') throw new Error('所选模型不可用，请重新选择。')
+  const capabilities = await getAssistantCapabilities()
+  // 模型目录为空说明上游网关未启用或未配置模型，交由上游返回准确错误，不再本地拦截。
+  if (capabilities.models.length > 0 && !capabilities.models.some(m => m.id === model)) {
     throw new Error('所选模型不可用，请重新选择。')
   }
   return assistantModel.run(model, action)
@@ -69,9 +84,17 @@ export function configuredChatModels() {
 }
 
 export async function getAssistantCapabilities(): Promise<{ models: Array<{ id: string; label: string }>; voice: boolean }> {
-  if (isCloudAiEnabled()) return z.object({
-    models: z.array(z.object({ id: z.string(), label: z.string() })), voice: z.boolean(),
-  }).parse(await (await cloudAiFetch('assistant/capabilities')).json())
+  if (isCloudAiEnabled()) {
+    try {
+      return z.object({
+        models: z.array(z.object({ id: z.string(), label: z.string() })), voice: z.boolean(),
+      }).parse(await (await cloudAiFetch('assistant/capabilities')).json())
+    } catch (error) {
+      // 上游网关未启用或不可用时返回空目录：能力探测失败不应让整个请求报错。
+      console.error('Assistant capabilities unavailable:', error instanceof Error ? error.message : String(error))
+      return { models: [], voice: false }
+    }
+  }
   return { models: configuredChatModels().map(id => ({ id, label: id })),
     voice: Boolean(env.ASR_BASE_URL && env.ASR_API_KEY && env.ASR_MODEL) }
 }
@@ -101,21 +124,32 @@ export async function transcribeAssistantAudio(buffer: Buffer, mime: string) {
 async function requestChat(options: ChatCompletionOptions, stream: boolean) {
   const hasImages = options.messages.some(m => Array.isArray(m.content) && m.content.some(c => c.type === 'image_url'))
   const selectedModel = options.model || (!hasImages ? assistantModel.getStore() : undefined)
+  const requestedMaxTokens = options.maxTokens ?? 3000
+  // 推理模型（thinking）会把 max_tokens 优先消耗在推理阶段，正文可能被挤为空。
+  // LLM_MIN_MAX_TOKENS 为推理模型预留出正文的 token 预算。
+  const maxTokens = env.LLM_MIN_MAX_TOKENS
+    ? Math.max(requestedMaxTokens, env.LLM_MIN_MAX_TOKENS)
+    : requestedMaxTokens
   const payload = {
     messages: options.messages, temperature: options.temperature ?? 0.1,
-    max_tokens: options.maxTokens ?? 3000, stream,
+    max_tokens: maxTokens, stream,
     response_format: options.responseFormat === 'json_object' ? { type: 'json_object' } : undefined,
+    // 仅在显式配置时下发，兼容支持 reasoning.effort 的供应商。
+    reasoning: env.LLM_REASONING_EFFORT ? { effort: env.LLM_REASONING_EFFORT } : undefined,
   }
   if (isCloudAiEnabled()) return cloudAiFetch('chat/completions', {
     ...payload, model: selectedModel, mode: hasImages ? 'vision' : 'text',
-  })
+  }, {}, currentRequestAbortSignal())
   const baseUrl = options.baseUrl || env.LLM_BASE_URL
   const apiKey = options.apiKey || env.LLM_API_KEY
   const model = selectedModel || env.LLM_MODEL
   if (!baseUrl || !apiKey || !model) throw new Error('LLM 请求缺少 baseUrl、apiKey 或 model。')
+  const timeoutSignal = AbortSignal.timeout(env.LLM_TIMEOUT_MS)
+  const abortSignal = currentRequestAbortSignal()
   const response = await fetch(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ ...payload, model }), signal: AbortSignal.timeout(env.LLM_TIMEOUT_MS),
+    body: JSON.stringify({ ...payload, model }),
+    signal: abortSignal ? AbortSignal.any([timeoutSignal, abortSignal]) : timeoutSignal,
   })
   if (!response.ok) throw new Error('智能分析服务暂不可用，请稍后重试。')
   return response

@@ -9,7 +9,7 @@ import { storeObject } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
-import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel } from '../integrations/llm-service.js'
+import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel, withRequestAbortSignal } from '../integrations/llm-service.js'
 import { assistantOptionsSchema } from '../intelligence/assistant-options.js'
 import { subscribeWorkspaceChanges } from '../infrastructure/workspace-events.js'
 import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
@@ -62,6 +62,7 @@ const createCloudSessionSchema = bindCloudAccountSchema
 
 const createCaseSchema = z.object({
   name: z.string().min(1, '案件名称不能为空。'),
+  description: z.string().optional(),
 })
 
 export function createLegacyRouter() {
@@ -74,8 +75,14 @@ export function createLegacyRouter() {
       : null)
 
   // #region debug-point A-B-C-D:route-reporting
+  // 启用方式：设置环境变量 DEBUG_EVENT_URL=http://127.0.0.1:7777/event 后重启服务；未设置则不发送任何调试请求。
   const reportLegacyDebug = (hypothesisId: string, msg: string, data: Record<string, unknown> = {}) => {
-    void fetch('http://127.0.0.1:7777/event', {
+    const debugEventUrl = env.DEBUG_EVENT_URL?.trim()
+    if (!debugEventUrl) {
+      return
+    }
+
+    void fetch(debugEventUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -293,7 +300,7 @@ export function createLegacyRouter() {
   router.post('/cases', async (request, response) => {
     try {
       const payload = createCaseSchema.parse(request.body)
-      const result = await createCase(payload.name)
+      const result = await createCase(payload.name, payload.description)
       sendWorkspacePayload(response, result)
     } catch (error) {
       const message = error instanceof Error ? error.message : '案件创建失败'
@@ -463,9 +470,12 @@ export function createLegacyRouter() {
 
   router.post('/certificates/generate/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（用户点击“停止”）时中断模型生成，避免服务端继续消耗调用。
+    const abortController = new AbortController()
+    response.once('close', () => abortController.abort())
 
     try {
-      await streamGenerateCertificate(request.body, async (event) => {
+      await withRequestAbortSignal(abortController.signal, () => streamGenerateCertificate(request.body, async (event) => {
         if (event.type === 'done') {
           sendStreamEvent(response, 'done', {
             ...event,
@@ -475,12 +485,14 @@ export function createLegacyRouter() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '生成失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !abortController.signal.aborted) {
+        const message = error instanceof Error ? error.message : '生成失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 
@@ -500,9 +512,12 @@ export function createLegacyRouter() {
 
   router.post('/certificates/:certificateId/rewrite/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（用户点击“停止”）时中断模型改写，避免服务端继续消耗调用。
+    const abortController = new AbortController()
+    response.once('close', () => abortController.abort())
 
     try {
-      await streamRewriteCertificate({
+      await withRequestAbortSignal(abortController.signal, () => streamRewriteCertificate({
         certificateId: request.params.certificateId,
         evidenceIds: Array.isArray(request.body?.evidenceIds) ? request.body.evidenceIds : [],
         prompt: typeof request.body?.prompt === 'string' ? request.body.prompt : '',
@@ -516,12 +531,14 @@ export function createLegacyRouter() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '改写失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !abortController.signal.aborted) {
+        const message = error instanceof Error ? error.message : '改写失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 
@@ -546,6 +563,10 @@ export function createLegacyRouter() {
 
   router.post('/certificates/:certificateId/auto-link/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（用户点击“停止”或关闭窗口）时中止联动，避免服务端继续消耗模型调用。
+    const abortController = new AbortController()
+    const abortOnDisconnect = () => abortController.abort()
+    response.once('close', abortOnDisconnect)
     const heartbeat = setInterval(() => {
       if (!response.destroyed) {
         response.write(': heartbeat\n\n')
@@ -557,7 +578,7 @@ export function createLegacyRouter() {
     try {
       const result = await autoLinkCertificate(request.params.certificateId, (text) => {
         if (!response.destroyed) sendStreamEvent(response, 'progress', { text })
-      })
+      }, { signal: abortController.signal })
       if (!response.destroyed) {
         sendStreamEvent(response, 'done', {
           ...result,
@@ -565,15 +586,16 @@ export function createLegacyRouter() {
         })
       }
     } catch (error) {
-      if (!response.destroyed) {
+      if (!response.destroyed && !abortController.signal.aborted) {
         sendStreamEvent(response, 'error', {
           message: error instanceof Error ? error.message : '证据联动未完成，请稍后重试。',
         })
       }
     } finally {
       stopHeartbeat()
+      response.off('close', abortOnDisconnect)
       response.off('close', stopHeartbeat)
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 

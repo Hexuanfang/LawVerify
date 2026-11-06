@@ -73,6 +73,8 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence }: {
       {evidence.number} {evidence.fileName}
     </button> : null
   })
+  const skippedEvidenceIds = folder.agent?.task?.skippedEvidenceIds ?? []
+  const duplicateEvidenceIds = folder.agent?.task?.duplicateEvidenceIds ?? []
   return <section className="case-agent-panel" aria-label="案件代理助手" aria-busy={busy}>
     <div className="case-agent-position">
       <strong>{position ? `代理${roleLabels[position.role]}：${position.party}` : '尚未设置代理立场'}</strong>
@@ -82,21 +84,18 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence }: {
           onClick={() => { setIntent('position'); setProposal(null); setSelection(current => ({ ...current, skill: undefined })) }} disabled={blocked}>代理设置</button>
         <button className={intent === 'question' ? 'primary-button' : 'ghost-button'} type="button"
           onClick={() => { setIntent('question'); setProposal(null) }} disabled={blocked}>讨论案情</button>
-        <button className="ghost-button" type="button" disabled={blocked} onClick={() => void run(async () => {
-          const result = await api.retryCaseAgent(folder.id, folder.agent?.autoAnalyze === false)
-          if (mounted.current) onWorkspace(result.workspace)
-        })}>{folder.agent?.autoAnalyze === false ? '恢复自动梳理' : '暂停自动梳理'}</button>
       </div>
     </div>
-    {folder.agent?.task ? <div className="case-agent-task" role="status">
-      <span>{busy ? '正在分析你的说明...' : folder.agent.task.stage}</span>
-      {folder.agent.task.status === 'failed' ? <>
-        <p>{folder.agent.task.error}</p>
-        <button className="ghost-button" type="button" disabled={blocked} onClick={() => void run(async () => {
-          const result = await api.retryCaseAgent(folder.id)
-          if (mounted.current) onWorkspace(result.workspace)
-        })}>重试梳理</button>
-      </> : null}
+    {/* 梳理状态与失败提示统一由左侧证据目录展示，这里只保留侧栏没有的「被排除材料明细」。 */}
+    {skippedEvidenceIds.length || duplicateEvidenceIds.length ? <div className="case-agent-task" role="status">
+      {skippedEvidenceIds.length ? <div className="case-agent-task-skipped">
+        <p>已排除 {skippedEvidenceIds.length} 份未完成 OCR / 解析的材料，未参与本次梳理：</p>
+        <div className="case-agent-actions">{evidenceButtons(skippedEvidenceIds)}</div>
+      </div> : null}
+      {duplicateEvidenceIds.length ? <div className="case-agent-task-skipped">
+        <p>已排除 {duplicateEvidenceIds.length} 份重复文件（内容与已有材料相同）：</p>
+        <div className="case-agent-actions">{evidenceButtons(duplicateEvidenceIds)}</div>
+      </div> : null}
     </div> : null}
     {(folder.agent?.messages ?? []).slice(-8).map(item => <article className={`agent-message ${item.role}`} key={item.id}>
       <strong>{item.role === 'user' ? '你' : '助手'}</strong><p>{item.content}</p>
@@ -114,14 +113,14 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence }: {
           if (event.key === 'Escape') setSkillOpen(false)
           if (skillOpen && (event.key === 'ArrowDown' || event.key === 'Enter') && !event.nativeEvent.isComposing) {
             event.preventDefault()
-            inputRef.current?.closest('form')?.querySelector<HTMLButtonElement>('.assistant-send-row .assistant-picker-menu button')?.focus()
+            inputRef.current?.closest('form')?.querySelector<HTMLButtonElement>('.assistant-composer-row .assistant-picker-menu button')?.focus()
             return
           }
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !skillOpen) {
             event.preventDefault(); submitMessage()
           }
         }} />
-      <div className="assistant-config-row">
+      <div className="assistant-composer-row">
         <AssistantPicker label={selectedAgent.label} title="选择 Agent" items={assistantAgents}
           value={selection.agent} disabled={blocked} onSelect={id => {
             setSelection(current => ({ ...current, agent: id as AssistantSelection['agent'] }))
@@ -130,14 +129,12 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence }: {
         <AssistantPicker label={selection.model || '默认模型'} title="选择模型"
           items={[{ id: '', label: '默认模型', description: '使用当前默认配置' }, ...models]}
           value={selection.model ?? ''} disabled={blocked} onSelect={id => setSelection(current => ({ ...current, model: id || undefined }))} />
-      </div>
-      <div className="assistant-send-row">
         <AssistantPicker label="\ Skill" title="选择 Skill" items={assistantSkills.filter(item => {
           const query = message.match(/\\([^\s\\]*)$/)?.[1]?.toLowerCase() || ''
           return !query || item.label.includes(query) || item.id.includes(query)
         })} value={selection.skill} disabled={blocked} open={skillOpen} onOpen={setSkillOpen} onSelect={chooseSkill} />
         <div className="assistant-send-actions">
-          <VoiceInputButton disabled={busy} onBusy={setVoiceBusy} onError={setError} onText={text => {
+          <VoiceInputButton iconOnly disabled={busy} onBusy={setVoiceBusy} onError={setError} onText={text => {
             setMessage(current => `${current}${current && !/\s$/.test(current) ? '\n' : ''}${text}`.slice(0, 6000))
             requestAnimationFrame(() => inputRef.current?.focus())
           }} />

@@ -1570,14 +1570,6 @@ function countEvidenceFolderTree(node: EvidenceFolderTreeNode): number {
   return node.folders.reduce((total, folder) => total + 1 + countEvidenceFolderTree(folder), 0)
 }
 
-function collectEvidenceFolderKeys(node: EvidenceFolderTreeNode, keys: string[] = []) {
-  for (const folder of node.folders) {
-    keys.push(folder.key)
-    collectEvidenceFolderKeys(folder, keys)
-  }
-  return keys
-}
-
 function getParagraphLinks(paragraph: CertificateParagraph | null | undefined) {
   if (!paragraph) {
     return []
@@ -3638,15 +3630,11 @@ function App() {
   const normalizedLoginAccount = loginAccount.trim()
   const sidebarPrimaryIdentity = appState?.user.email?.trim() || normalizedLoginAccount || appState?.user.name?.trim() || '未登录'
   const evidenceFolderCount = useMemo(() => countEvidenceFolderTree(evidenceFolderTree), [evidenceFolderTree])
-  const evidenceFolderKeys = useMemo(() => collectEvidenceFolderKeys(evidenceFolderTree), [evidenceFolderTree])
-  const allEvidenceFoldersCollapsed = evidenceFolderKeys.length > 0
-    && evidenceFolderKeys.every((key) => collapsedFolderKeys.has(key))
-  const handleToggleAllEvidenceFolders = () => {
-    setCollapsedFolderKeys((current) => {
-      if (evidenceFolderKeys.length && evidenceFolderKeys.every((key) => current.has(key))) {
-        return new Set<string>()
-      }
-      return new Set(evidenceFolderKeys)
+  const handleToggleCaseAutoAnalyze = () => {
+    if (!selectedCase) return
+    void runMutation(async () => {
+      const { workspace } = await api.retryCaseAgent(selectedCase.id, selectedCase.agent?.autoAnalyze === false)
+      applyWorkspace(workspace, { selectedCaseId }, { preserveManualPreview: true })
     })
   }
   const linkedFolderSummary = useMemo(() => {
@@ -7688,7 +7676,7 @@ function App() {
                     <AssistantPicker label={documentModel || '默认模型'} title="选择模型"
                       items={[{ id: '', label: '默认模型' }, ...assistantModels]} value={documentModel ?? ''}
                       disabled={isSubmitting || documentVoiceBusy} onSelect={id => setDocumentModel(id || undefined)} />
-                    <VoiceInputButton disabled={isSubmitting} onBusy={setDocumentVoiceBusy} onError={setErrorMessage}
+                    <VoiceInputButton iconOnly disabled={isSubmitting} onBusy={setDocumentVoiceBusy} onError={setErrorMessage}
                       onText={text => setAgentPrompt(`${agentPromptRef.current}${agentPromptRef.current ? '\n' : ''}${text}`.slice(0, 6000))} />
                     <button
                       className="agent-dock-clear"
@@ -9305,6 +9293,74 @@ function App() {
   }
 
 
+  function renderEvidenceTreeStatus(evidence: Evidence) {
+    if (evidence.duplicateOf) {
+      const original = caseEvidences.find((item) => item.id === evidence.duplicateOf)
+      const originalLabel = original
+        ? `${original.number} ${getEvidenceDisplayFileName(original)}`
+        : '另一份材料'
+      return (
+        <span
+          className="evidence-tree-status evidence-tree-status-duplicate"
+          title={`重复文件：与 ${originalLabel} 内容相同，已跳过理解。`}
+          aria-label="重复文件"
+        >
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3v5.6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            <circle cx="8" cy="11.8" r="1.05" fill="currentColor" />
+          </svg>
+        </span>
+      )
+    }
+
+    if (evidence.summaryStatus === 'processing') {
+      return (
+        <span
+          className="evidence-tree-status evidence-tree-status-processing"
+          title="理解中"
+          aria-label="理解中"
+        >
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.8" />
+            <path d="M8 2.6a5.4 5.4 0 0 1 5.4 5.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        </span>
+      )
+    }
+
+    if (evidence.summaryStatus === 'failed') {
+      return (
+        <span
+          className="evidence-tree-status evidence-tree-status-failed"
+          title={`理解失败：${evidence.summaryError?.trim() || '请检查原件后重试。'}`}
+          aria-label="理解失败"
+        >
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </span>
+      )
+    }
+
+    if (evidence.summaryStatus === 'ready') {
+      return (
+        <span className="evidence-tree-status evidence-tree-status-ready" title="理解完成" aria-label="理解完成">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M3.4 8.4l3 3 6.2-7"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      )
+    }
+
+    return null
+  }
+
   function renderStreamlinedEvidenceItem(evidence: Evidence) {
     const displayName = getEvidenceDisplayFileName(evidence)
     return (
@@ -9349,6 +9405,7 @@ function App() {
             {getEvidenceExtension(evidence.fileName)}
           </span>
           <span className="streamlined-evidence-number">{evidence.number}</span>
+          {renderEvidenceTreeStatus(evidence)}
         </div>
       </div>
     )
@@ -9652,11 +9709,84 @@ function App() {
                   <span className="streamlined-case-metric" title="已人工核验的段落数量">
                     已核验 <b>{verifiedParagraphCount}</b>
                   </span>
-                  <span className="streamlined-case-metric" title="仍待补齐证据锚点的段落数量">
+                  <span className={`streamlined-case-metric${unlinkedParagraphCount ? ' is-alert' : ''}`} title="仍待补齐证据锚点的段落数量">
                     待补锚点 <b>{unlinkedParagraphCount}</b>
                   </span>
                 </div>
               ) : null}
+              <div className="case-selector-row streamlined-case-selector-row">
+                <span className="select-chevron-wrap">
+                  <select
+                    className="streamlined-case-select"
+                    aria-label="选择案件"
+                    disabled={!appState?.cases.length}
+                    value={selectedCaseId ?? ''}
+                    onChange={(event) => {
+                      const caseId = event.target.value
+                      if (caseId) {
+                        handleSelectCase(caseId)
+                      }
+                    }}
+                  >
+                    {!appState?.cases.length ? <option value="">请先新建案件</option> : null}
+                    {appState?.cases.map((caseFolder) => (
+                      <option key={caseFolder.id} value={caseFolder.id}>
+                        {caseFolder.name}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronIcon />
+                </span>
+                <button
+                  className="ghost-button case-action-icon-button"
+                  type="button"
+                  onClick={() => selectedCase && handleOpenRenameCaseDialog(selectedCase)}
+                  disabled={!selectedCase || isSubmitting}
+                  title={selectedCase ? `重命名：${selectedCase.name}` : '请先选择案件'}
+                  aria-label={selectedCase ? `重命名：${selectedCase.name}` : '请先选择案件'}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M11.4 2.3a1.8 1.8 0 0 1 2.5 2.5L6.2 12.5l-3.3.9.9-3.3 7.6-7.8z"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path d="M9.9 3.8l2.5 2.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                  </svg>
+                </button>
+                <button
+                  className="ghost-button case-action-icon-button"
+                  type="button"
+                  onClick={handleOpenCreateCaseDialog}
+                  disabled={isSubmitting}
+                  title="新建案件"
+                  aria-label="新建案件"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+                  </svg>
+                </button>
+                <button
+                  className="ghost-button case-action-icon-button is-danger"
+                  type="button"
+                  onClick={() => selectedCase && void handleDeleteCase(selectedCase)}
+                  disabled={!selectedCase || isSubmitting}
+                  title={selectedCase ? `删除案件：${selectedCase.name}` : '请先选择案件'}
+                  aria-label={selectedCase ? `删除案件：${selectedCase.name}` : '请先选择案件'}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M2.9 4.4h10.2M6.4 4.4V3.2h3.2v1.2M4.3 4.4l.6 8.2h6.2l.6-8.2"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
               {selectedCase ? (
                 <details className="streamlined-case-brief" open={isCaseBriefOpen} onToggle={event => {
                   const next = (event.currentTarget as HTMLDetailsElement).open
@@ -9688,95 +9818,8 @@ function App() {
                       放弃
                     </button>
                   </div>
-                  <div className="streamlined-case-brief-danger">
-                    <button
-                      className="text-link danger"
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() => void handleDeleteCase(selectedCase)}
-                    >
-                      删除本案
-                    </button>
-                    <span>将同时移除本案的全部证据、质证书与核验记录。</span>
-                  </div>
                 </details>
               ) : null}
-              <div className="case-selector-row streamlined-case-selector-row">
-                <span className="select-chevron-wrap">
-                  <select
-                    className="streamlined-case-select"
-                    aria-label="选择案件"
-                    disabled={!appState?.cases.length}
-                    value={selectedCaseId ?? ''}
-                    onContextMenu={(event) => {
-                      if (!selectedCase) return
-                      openContextMenu(event, [
-                        {
-                          id: 'rename',
-                          label: '重命名案件',
-                          onSelect: () => handleOpenRenameCaseDialog(selectedCase),
-                        },
-                        {
-                          id: 'brief',
-                          label: '编辑案件背景',
-                          onSelect: () => setIsCaseBriefOpen(true),
-                        },
-                        {
-                          id: 'delete',
-                          label: '删除案件',
-                          danger: true,
-                          dividerBefore: true,
-                          onSelect: () => {
-                            void handleDeleteCase(selectedCase)
-                          },
-                        },
-                      ])
-                    }}
-                    onChange={(event) => {
-                      const caseId = event.target.value
-                      if (caseId) {
-                        handleSelectCase(caseId)
-                      }
-                    }}
-                  >
-                    {!appState?.cases.length ? <option value="">请先新建案件</option> : null}
-                    {appState?.cases.map((caseFolder) => (
-                      <option key={caseFolder.id} value={caseFolder.id}>
-                        {caseFolder.name}
-                      </option>
-                    ))}
-                  </select>
-                  <SelectChevronIcon />
-                </span>
-                <button
-                  className="ghost-button case-action-icon-button"
-                  type="button"
-                  onClick={() => selectedCase && handleOpenRenameCaseDialog(selectedCase)}
-                  disabled={!selectedCase || isSubmitting}
-                  title={selectedCase ? `重命名：${selectedCase.name}` : '请先选择案件'}
-                  aria-label={selectedCase ? `重命名：${selectedCase.name}` : '请先选择案件'}
-                >
-                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M11.4 2.1a1.9 1.9 0 0 1 2.5 2.5L5 13.5 1.9 14.4l.9-3.1z"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-                <button
-                  className="ghost-button case-action-icon-button"
-                  type="button"
-                  onClick={handleOpenCreateCaseDialog}
-                  disabled={isSubmitting}
-                  title="新建案件"
-                  aria-label="新建案件"
-                >
-                  <span aria-hidden="true">+</span>
-                </button>
-              </div>
               <input
                 ref={folderUploadRef}
                 className="hidden-file-input"
@@ -9789,28 +9832,47 @@ function App() {
                 <span className="streamlined-evidence-summary" title={linkedFolderSummary}>
                   {linkedFolderSummary}
                 </span>
-                <div className="folder-link-trigger" ref={folderLinkTriggerRef}>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => void handleLinkFolder()}
-                    disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress)}
-                  >
-                    {evidenceImportProgress ? '正在链接...' : '链接文件夹'}
+                <div className="evidence-toolbar-actions">
+                  <div className="folder-link-trigger" ref={folderLinkTriggerRef}>
+                    <button
+                      className="ghost-button evidence-toolbar-button is-primary"
+                      type="button"
+                      onClick={() => void handleLinkFolder()}
+                      disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress)}
+                    >
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M1.9 4.7c0-.66.54-1.2 1.2-1.2h2.4c.33 0 .64.13.87.36l.87.88h4.87c.66 0 1.2.54 1.2 1.2v5.5c0 .66-.54 1.2-1.2 1.2H3.1c-.66 0-1.2-.54-1.2-1.2V4.7z"
+                          stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                      </svg>
+                      <span className="evidence-toolbar-label">{evidenceImportProgress ? '正在链接...' : '链接目录'}</span>
+                    </button>
+                    {renderFolderLinkGuidePopup()}
+                  </div>
+                  <button className="ghost-button evidence-toolbar-button" type="button"
+                    onClick={() => void handleClearFolderLinks()}
+                    disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress) || Boolean(directoryPreparation)}>
+                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M6.3 9.7 4.8 11.2a2.5 2.5 0 0 1-3.5-3.5l1.9-1.9M9.7 6.3l1.5-1.5a2.5 2.5 0 0 1 3.5 3.5l-1.9 1.9M3.9 3.9l8.2 8.2"
+                        stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                    <span className="evidence-toolbar-label">清除链接</span>
                   </button>
-                  {renderFolderLinkGuidePopup()}
+                  <button className={`ghost-button evidence-toolbar-button${selectedCase?.agent?.autoAnalyze === false ? ' is-toggle-on' : ''}`} type="button"
+                    onClick={handleToggleCaseAutoAnalyze}
+                    disabled={!selectedCase || isSubmitting}
+                    title={selectedCase?.agent?.autoAnalyze === false ? '恢复自动梳理' : '暂停自动梳理'}>
+                    {selectedCase?.agent?.autoAnalyze === false ? (
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M5.6 3.4 12.4 8l-6.8 4.6V3.4z" fill="currentColor" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M6.2 3.8v8.4M9.8 3.8v8.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                      </svg>
+                    )}
+                    <span className="evidence-toolbar-label">自动梳理</span>
+                  </button>
                 </div>
-                <button className="ghost-button" type="button"
-                  onClick={() => void handleClearFolderLinks()}
-                  disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress) || Boolean(directoryPreparation)}>
-                  清除链接
-                </button>
-                <button className="ghost-button" type="button"
-                  onClick={handleToggleAllEvidenceFolders}
-                  disabled={!evidenceFolderKeys.length}
-                  title={allEvidenceFoldersCollapsed ? '展开全部目录' : '收起全部目录'}>
-                  {allEvidenceFoldersCollapsed ? '展开全部' : '收起全部'}
-                </button>
               </div>
               {!selectedCase && shouldShowEmptyCaseOnboarding ? (
                 <div className="entry-onboarding-inline-card">
@@ -9903,16 +9965,32 @@ function App() {
                     ? '可随时预览原件' : '正在梳理案件要点'}</p>
                 </div>
               ) : !evidenceImportProgress && understandingTask?.status === 'ready' ? (
-                <div className="evidence-import-result" role="status">整理理解完成</div>
+                <div className="evidence-import-result" role="status">
+                  {understandingTask.skippedEvidenceIds?.length || understandingTask.duplicateEvidenceIds?.length
+                    ? `整理理解完成，已排除 ${understandingTask.skippedEvidenceIds?.length ?? 0} 份待解析材料、${understandingTask.duplicateEvidenceIds?.length ?? 0} 份重复文件`
+                    : '整理理解完成'}
+                </div>
               ) : !evidenceImportProgress && understandingTask?.status === 'failed' ? (
-                <div className="evidence-progress-card" role="alert">
-                  <p className="evidence-progress-copy">理解暂未完成，原件可正常预览。</p>
+                <div className="evidence-progress-card evidence-alert-card" role="alert">
+                  <div className="evidence-alert-head">
+                    <span className="evidence-alert-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" fill="none">
+                        <path d="M8 2.4 14.6 13.6H1.4L8 2.4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                        <path d="M8 6.4v2.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                        <circle cx="8" cy="11.2" r="0.8" fill="currentColor" />
+                      </svg>
+                    </span>
+                    <strong>材料理解未完成</strong>
+                  </div>
                   <p className="evidence-progress-copy">{understandingTask.error}</p>
-                  <button className="ghost-button" type="button" disabled={isSubmitting}
-                    onClick={() => void runMutation(async () => {
-                      const { workspace } = await api.retryCaseAgent(selectedCase!.id)
-                      applyWorkspace(workspace, { selectedCaseId }, { preserveManualPreview: true })
-                    })}>重试理解</button>
+                  <div className="evidence-alert-actions">
+                    <span className="evidence-alert-note">原件可正常预览，不影响查看与定位。</span>
+                    <button className="ghost-button evidence-alert-retry" type="button" disabled={isSubmitting}
+                      onClick={() => void runMutation(async () => {
+                        const { workspace } = await api.retryCaseAgent(selectedCase!.id)
+                        applyWorkspace(workspace, { selectedCaseId }, { preserveManualPreview: true })
+                      })}>重试理解</button>
+                  </div>
                 </div>
               ) : null}
               <div className="streamlined-evidence-list">

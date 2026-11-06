@@ -144,8 +144,9 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
   </div>
 }
 
-export function VoiceInputButton({ disabled, onText, onError, onBusy }: {
+export function VoiceInputButton({ disabled, onText, onError, onBusy, iconOnly }: {
   disabled?: boolean; onText: (text: string) => void; onError: (error: string) => void; onBusy?: (busy: boolean) => void
+  iconOnly?: boolean
 }) {
   const [phase, setPhase] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const active = useRef(true)
@@ -233,6 +234,6 @@ export function VoiceInputButton({ disabled, onText, onError, onBusy }: {
       <rect x="7" y="2" width="6" height="10" rx="3" stroke="currentColor" strokeWidth="1.5" />
       <path d="M4 9a6 6 0 0 0 12 0M10 15v3m-3 0h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
-    {phase === 'recording' ? '结束录音' : phase === 'transcribing' ? '处理中…' : '语音'}
+    {iconOnly ? null : phase === 'recording' ? '结束录音' : phase === 'transcribing' ? '处理中…' : '语音'}
   </button>
 }

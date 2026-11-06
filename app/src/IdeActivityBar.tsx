@@ -1,6 +1,7 @@
 import { useState, useTransition, type ReactNode } from 'react'
+import type { ThemeMode } from './theme'
 
-export type IdeNavigationTarget = 'files' | 'document' | 'assistant' | 'knowledge'
+export type IdeNavigationTarget = 'files' | 'document' | 'assistant' | 'knowledge' | 'settings'
 
 const navigationItems = [
   ['files', '资源管理器', 'M3 5h6l2 2h10v13H3z M3 10h18'],
@@ -9,13 +10,16 @@ const navigationItems = [
   ['knowledge', '知识库', 'M3 4h7l2 2 2-2h7v16h-7l-2 2-2-2H3z M12 6v16'],
 ] as const
 
-export function IdeActivityBar({ active, identity, accountOpen, onNavigate, onFeedback, onAccount, children }: {
+export function IdeActivityBar({ active, identity, accountOpen, theme, onNavigate, onFeedback, onAccount, onSettings, onToggleTheme, children }: {
   active: Record<IdeNavigationTarget, boolean>
   identity: string
   accountOpen: boolean
+  theme: ThemeMode
   onNavigate: (target: IdeNavigationTarget) => void
   onFeedback: () => void
   onAccount: () => void
+  onSettings: () => void
+  onToggleTheme: () => void
   children?: ReactNode
 }) {
   const [pendingTarget, setPendingTarget] = useState<IdeNavigationTarget | null>(null)
@@ -36,6 +40,29 @@ export function IdeActivityBar({ active, identity, accountOpen, onNavigate, onFe
       </button>
     ))}
     <div className="ide-activity-spacer" />
+    <button type="button" className="ide-theme-toggle" title={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
+      aria-label={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'} aria-pressed={theme === 'dark'} onClick={onToggleTheme}>
+      {theme === 'dark' ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+        </svg>
+      )}
+    </button>
+    <button type="button" title="设置" aria-label="设置" aria-pressed={active.settings} onClick={onSettings}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+        strokeLinecap="round" aria-hidden="true">
+        <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+        <circle cx="15" cy="7" r="2" />
+        <circle cx="9" cy="17" r="2" />
+      </svg>
+    </button>
     <button type="button" title="产品反馈" aria-label="产品反馈" onClick={onFeedback}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
         strokeLinejoin="round" aria-hidden="true"><path d="M4 4h16v12H9l-5 4z M8 8h8 M8 12h5" /></svg>

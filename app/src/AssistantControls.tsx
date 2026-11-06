@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from './api'
 
 export const assistantAgents = [
@@ -26,18 +27,67 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
   const open = controlledOpen ?? localOpen
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
-  const setOpen = (next: boolean) => { setLocalOpen(next); onOpen?.(next) }
+  const menu = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  // 面板内的绝对定位菜单会被祖先 overflow 裁剪、并被 sticky 层叠上下文限制，
+  // 统一挂到 body 上用 fixed 定位，避免被文书区或相邻面板盖住。
+  const reposition = useCallback(() => {
+    const rect = button.current?.getBoundingClientRect()
+    if (!rect) return
+    const width = Math.min(260, Math.max(200, window.innerWidth - 24))
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
+    const menuHeight = Math.min(280, Math.max(120, items.length * 46 + 44))
+    const below = window.innerHeight - rect.bottom
+    const top = below >= menuHeight + 12
+      ? rect.bottom + 6
+      : Math.max(12, rect.top - menuHeight - 6)
+    setPosition({ top, left, width })
+  }, [items.length])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    reposition()
+    const sync = () => reposition()
+    window.addEventListener('scroll', sync, true)
+    window.addEventListener('resize', sync)
+    return () => {
+      window.removeEventListener('scroll', sync, true)
+      window.removeEventListener('resize', sync)
+    }
+  }, [open, reposition])
+
   useEffect(() => {
     if (!open) return
-    const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (root.current?.contains(target)) return
+      if (menu.current?.contains(target)) return
+      setLocalOpen(false)
+      onOpen?.(false)
+    }
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
-  }, [open])
+  }, [open, onOpen])
+
+  const choose = (id: string) => {
+    onSelect(id)
+    setLocalOpen(false)
+    onOpen?.(false)
+    button.current?.focus()
+  }
+
   return <div className="assistant-picker" ref={root} onKeyDown={event => {
-    if (event.key === 'Escape') { setOpen(false); button.current?.focus(); event.stopPropagation() }
+    if (event.key === 'Escape' && open) {
+      setLocalOpen(false)
+      onOpen?.(false)
+      button.current?.focus()
+      event.stopPropagation()
+    }
     if (open && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault()
-      const choices = Array.from(root.current?.querySelectorAll<HTMLButtonElement>('.assistant-picker-menu button') ?? [])
+      const choices = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('.assistant-picker-menu button') ?? [])
+      if (!choices.length) return
       const index = choices.indexOf(document.activeElement as HTMLButtonElement)
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
         : event.key === 'ArrowDown' ? (index + 1) % choices.length : (index - 1 + choices.length) % choices.length
@@ -45,17 +95,52 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
     }
   }}>
     <button ref={button} className="assistant-control" type="button" disabled={disabled}
-      aria-label={title} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(!open)}>
-      <span>{label}</span><span aria-hidden="true">⌄</span>
+      aria-label={title} aria-expanded={open} aria-haspopup="dialog"
+      onClick={() => {
+        const next = !open
+        setLocalOpen(next)
+        onOpen?.(next)
+      }}>
+      <span>{label}</span>
+      <svg className="assistant-control-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </button>
-    {open ? <div className="assistant-picker-menu" role="dialog" aria-label={title}>
-      <strong>{title}</strong>
-      {items.length ? items.map(item => <button key={item.id} type="button" aria-pressed={value === item.id}
-        onClick={() => { onSelect(item.id); setOpen(false); button.current?.focus() }}>
-        <span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}
-        {value === item.id ? <b aria-hidden="true">✓</b> : null}
-      </button>) : <p>暂无可用模型，请联系管理员配置。</p>}
-    </div> : null}
+    {open && position ? createPortal(
+      <div
+        ref={menu}
+        className="assistant-picker-menu"
+        style={{ top: position.top, left: position.left, width: position.width }}
+        role="dialog"
+        aria-label={title}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            setLocalOpen(false)
+            onOpen?.(false)
+            button.current?.focus()
+            event.stopPropagation()
+          }
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            const choices = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('.assistant-picker-menu button') ?? [])
+            if (!choices.length) return
+            const index = choices.indexOf(document.activeElement as HTMLButtonElement)
+            const next = event.key === 'ArrowDown'
+              ? (index + 1) % choices.length
+              : (index - 1 + choices.length) % choices.length
+            choices[next]?.focus()
+          }
+        }}
+      >
+        <strong>{title}</strong>
+        {items.length ? items.map(item => <button key={item.id} type="button" aria-pressed={value === item.id}
+          onClick={() => choose(item.id)}>
+          <span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}
+          {value === item.id ? <b aria-hidden="true">✓</b> : null}
+        </button>) : <p>暂无可用模型，请联系管理员配置。</p>}
+      </div>,
+      document.body,
+    ) : null}
   </div>
 }
 

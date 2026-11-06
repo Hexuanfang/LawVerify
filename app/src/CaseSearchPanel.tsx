@@ -14,7 +14,8 @@ export function CaseSearchPanel({ onOpen }: { onOpen: (entry: KnowledgeCase) => 
   const revision = useRef(0)
   const changed = () => { revision.current++; setItems([]); setNotice(''); setBusy(false) }
   return <section className="insight-card">
-    <strong>法院、法官加权检索</strong>
+    <strong>外部案例检索</strong>
+    <p className="insight-card-hint">按法院、法官加权检索外部案例库（元典、威科、北大法宝）；内置类案请在知识库中检索。</p>
     <form className="legal-search-controls" onSubmit={async e => {
       e.preventDefault()
       const current = ++revision.current

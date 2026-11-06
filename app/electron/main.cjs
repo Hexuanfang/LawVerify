@@ -1,4 +1,4 @@
-const { app, BrowserWindow, crashReporter, dialog, ipcMain, session, shell, utilityProcess } = require('electron')
+const { app, BrowserWindow, crashReporter, dialog, ipcMain, nativeTheme, screen, session, shell, utilityProcess } = require('electron')
 const { spawn } = require('node:child_process')
 const net = require('node:net')
 const fs = require('node:fs')
@@ -143,11 +143,18 @@ function primeAuthInputFocus(window) {
 }
 
 function createWindow() {
+  // 窗口必须贴合屏幕工作区：固定 1440×960 在小屏或高缩放下会超出屏幕，
+  // 导致右侧与底部内容落在可视区之外被裁切。
+  const workArea = screen.getPrimaryDisplay().workArea
+  const width = Math.min(1440, workArea.width)
+  const height = Math.min(960, workArea.height)
   const window = new BrowserWindow({
-    width: 1440,
-    height: 960,
-    minWidth: 1080,
-    minHeight: 720,
+    width,
+    height,
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    minWidth: Math.min(1080, workArea.width),
+    minHeight: Math.min(720, workArea.height),
     title: '律师证据质证助手',
     autoHideMenuBar: true,
     show: false,
@@ -548,6 +555,9 @@ if (!gotSingleInstanceLock) {
   })
 
   app.whenReady().then(async () => {
+    // 深浅两套主题均已适配（配色统一走 index.css 的语义 token），
+    // 这里跟随系统主题，用户可在系统设置中切换。
+    nativeTheme.themeSource = 'system'
     await session.defaultSession.setProxy({ mode: 'direct' })
     const accountSession = session.fromPartition('persist:lawverify-account')
     await accountSession.setProxy({ mode: 'system' })

@@ -1,9 +1,20 @@
 :root {
   --text: #61708a;
   --text-h: #1f2937;
+  --text-muted: #788194;
+  --text-subtle: #929ab0;
   --bg: #f5f7fb;
   --panel-bg: #ffffff;
   --panel-soft: #f8faff;
+  --panel-glass: rgba(255, 255, 255, 0.72);
+  --panel-muted: #f4f6fa;
+  --text-brand: #3654d4;
+  --danger-text: #b42318;
+  --danger-soft: #fff1f0;
+  --success-text: #166534;
+  --success-soft: #f0fdf4;
+  --warn-text: #c37c05;
+  --warn-soft: #fff7ed;
   --sidebar-bg: #f9fbff;
   --border: #dde4f1;
   --accent: #3f63f3;
@@ -12,6 +23,8 @@
   --warn-bg: rgba(255, 236, 214, 0.78);
   --danger: #d25545;
   --success: #0f8b55;
+  /* 控件顶部内高光：浅色用白色亮边，深色必须弱化，否则深色底上会出现刺眼白线 */
+  --control-highlight: rgba(255, 255, 255, 0.72);
   --sans: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
   /* 全局字号梯队（UI 语义令牌）：层级靠字重与颜色区分，禁止新增散值 */
@@ -31,22 +44,33 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #a8b3ca;
-    --text-h: #edf2ff;
-    --bg: #0f1726;
-    --panel-bg: #121d31;
-    --panel-soft: #16233b;
-    --sidebar-bg: #0d1627;
-    --border: #22304b;
-    --accent: #7c99ff;
-    --accent-bg: rgba(124, 153, 255, 0.16);
-    --accent-border: rgba(124, 153, 255, 0.34);
-    --warn-bg: rgba(104, 67, 22, 0.45);
-    --danger: #ff8c7f;
-    --success: #57d39b;
-  }
+/* 深色色板：由 html[data-theme="dark"] 激活，配合活动栏的主题切换按钮使用。 */
+:root[data-theme='dark'] {
+  --text: #a8b3ca;
+  --text-h: #edf2ff;
+  --text-muted: #9aa6bd;
+  --text-subtle: #7f8ca3;
+  --bg: #0f1726;
+  --panel-bg: #121d31;
+  --panel-soft: #16233b;
+  --panel-glass: rgba(21, 31, 50, 0.72);
+  --panel-muted: #1a2740;
+  --text-brand: #9fb0ff;
+  --danger-text: #ff8c7f;
+  --danger-soft: rgba(210, 85, 69, 0.16);
+  --success-text: #57d39b;
+  --success-soft: rgba(15, 139, 85, 0.16);
+  --warn-text: #fbbf24;
+  --warn-soft: rgba(202, 138, 5, 0.16);
+  --sidebar-bg: #0d1627;
+  --border: #22304b;
+  --accent: #7c99ff;
+  --accent-bg: rgba(124, 153, 255, 0.16);
+  --accent-border: rgba(124, 153, 255, 0.34);
+  --warn-bg: rgba(104, 67, 22, 0.45);
+  --danger: #ff8c7f;
+  --success: #57d39b;
+  --control-highlight: rgba(255, 255, 255, 0.06);
 }
 
 #root {

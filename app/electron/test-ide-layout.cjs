@@ -16,7 +16,34 @@ const html = `<!doctype html><html><head><style>${css}</style></head><body>
     <section class="streamlined-workbench ide-workbench">
       <article class="streamlined-document-panel">Document</article>
       <div class="streamlined-workbench-resizer"></div>
-      <aside class="streamlined-insight-panel">Assistant</aside>
+      <aside class="streamlined-insight-panel">
+        <div class="ide-insight-tabs"><button class="active">助手</button></div>
+        <div class="streamlined-insight-content ide-assistant-content">
+          <div class="ide-assistant-view">
+            <div class="agent-dock ide-agent-panel is-open">
+              <div class="agent-dock-card">
+                <div class="agent-dock-body">
+                  <div class="assistant-mode-row">
+                    <div class="assistant-picker"><button class="assistant-control" type="button"><span>文书起草</span></button></div>
+                  </div>
+                  <div class="agent-input-shell agent-dock-input-shell">
+                    <textarea class="agent-dock-prompt-input" placeholder="描述文书类型与起草要求…"></textarea>
+                    <div class="agent-dock-submit-area">
+                      <div class="agent-dock-composer-meta"><span>请选择证据</span><span class="agent-dock-cost">预计 <b>15</b> 积分</span></div>
+                      <div class="agent-composer-actions">
+                        <div class="assistant-picker"><button class="assistant-control" type="button"><span>默认模型</span></button></div>
+                        <button class="assistant-voice" type="button">语音</button>
+                        <button class="agent-dock-clear" type="button">清空</button>
+                        <button class="agent-dock-submit" type="button">开始生成</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
     </section>
   </main>
 </div><script>
@@ -47,11 +74,19 @@ app.whenReady().then(async () => {
               return { x: box.x, y: box.y, width: box.width, height: box.height,
                 right: box.right, display: getComputedStyle(element).display };
             };
+            const overflow = selector => {
+              const element = document.querySelector(selector);
+              return { scrollWidth: element.scrollWidth, clientWidth: element.clientWidth };
+            };
             resolve({ viewport: innerWidth, collapsed: document.querySelector('.ide-shell')
               .classList.contains('streamlined-shell-sidebar-collapsed'),
               main: rect('main'), directory: rect('.streamlined-sidebar'),
               document: rect('.streamlined-document-panel'),
-              assistant: rect('.streamlined-insight-panel') });
+              assistant: rect('.streamlined-insight-panel'),
+              panelOverflow: overflow('.streamlined-insight-panel'),
+              composerOverflow: overflow('.agent-dock-submit-area'),
+              composerMeta: rect('.agent-dock-composer-meta'),
+              submitButton: rect('.agent-dock-submit') });
           }, 30);
         })`)
         try {
@@ -65,6 +100,13 @@ app.whenReady().then(async () => {
           assert.ok(state.document.width > 100, 'document must remain readable')
           assert.ok(state.assistant.width >= (mobile ? 100 : 250), 'assistant must remain readable')
           assert.equal(state.directory.display === 'none', state.collapsed, 'directory visibility must follow toggle')
+          assert.equal(state.panelOverflow.scrollWidth, state.panelOverflow.clientWidth,
+            'assistant panel must not overflow horizontally')
+          assert.equal(state.composerOverflow.scrollWidth, state.composerOverflow.clientWidth,
+            'composer must not overflow horizontally')
+          assert.ok(state.composerMeta.width >= 40, 'composer meta must stay on one line')
+          assert.ok(state.submitButton.right <= state.assistant.right + 1,
+            'submit button must stay inside the assistant panel')
         } catch (error) {
           failures.push({ width, step, state, error: error.message })
         }

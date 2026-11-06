@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { api } from './api'
+import { resolveEvidenceMimeType } from './evidence-mime'
 import type { AppState } from './types'
 
 const syncing = new Map<string, Promise<AppState>>()
@@ -71,7 +72,9 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
     const bytes = await window.lawVerifyDesktop!.readCaseDirectoryFile!({
       account, caseId, directoryId: directory.id, relativePath: item.relativePath, hash: item.hash,
     })
-    const file = new File([bytes], item.fileName) as File & { webkitRelativePath: string }
+    const file = new File([bytes], item.fileName, {
+      type: resolveEvidenceMimeType(item.fileName),
+    }) as File & { webkitRelativePath: string }
     Object.defineProperty(file, 'webkitRelativePath', { value: relativePath })
     const { assets } = await api.uploadEvidenceSourceFiles([file])
     const asset = assets[0]

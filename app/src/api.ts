@@ -1,5 +1,6 @@
 import { cloudErrorMessage } from './cloud-errors'
 import { boundedFetch } from './bounded-fetch'
+import { resolveEvidenceMimeType } from './evidence-mime'
 import type {
   AppState,
   CasePositionDraft,
@@ -450,6 +451,11 @@ export async function fetchWithWorkspaceAccount(input: string | URL, init?: Requ
   })
 }
 
+// 用户主动停止长耗时任务时使用的统一错误。
+export function createAbortError() {
+  return new DOMException('操作已停止。', 'AbortError')
+}
+
 export function watchWorkspace(onChange: () => void) {
   const account = sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY)?.trim().toLowerCase() ?? ''
   const source = new EventSource(`${API_BASE_URL}/api/workspace/events?${new URLSearchParams({ workspaceAccount: account })}`)
@@ -464,7 +470,9 @@ async function streamRequest<T = CertificateStreamDonePayload>(path: string, ini
     await baseStreamRequest(path, init, handlers)
     if (name) recordProductEvent(name, 'success', started)
   } catch (error) {
-    if (name) recordProductEvent(name, 'failure', started)
+    // 用户主动停止不算失败，不计入埋点。
+    const aborted = (error as { name?: string }).name === 'AbortError'
+    if (name && !aborted) recordProductEvent(name, 'failure', started)
     throw error
   }
 }
@@ -479,6 +487,8 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
     ...init,
     headers,
   }, 15 * 60 * 1000).catch(() => {
+    // 用户主动停止时要保留中止语义，避免被当成服务不可用。
+    if (init.signal?.aborted) throw createAbortError()
     throw new Error('暂时无法连接服务，请检查连接后重试。')
   })
 
@@ -549,6 +559,7 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
   try {
     while (true) {
       const { done, value } = await reader.read().catch(() => {
+        if (init.signal?.aborted) throw createAbortError()
         throw new Error('处理连接已中断，请稍后重试。')
       })
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
@@ -883,10 +894,10 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
-  createCase(name: string) {
+  createCase(name: string, description?: string) {
     return request<WorkspaceResponse & { caseFolder: { id: string } }>('/api/cases', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, description }),
     })
   },
   updateCase(caseId: string, patch: Record<string, unknown>) {
@@ -966,7 +977,7 @@ export const api = {
     const manifest = files.map((file) => ({
       relativePath: file.webkitRelativePath || file.name,
       fileName: file.name,
-      sourceMimeType: file.type,
+      sourceMimeType: resolveEvidenceMimeType(file.name, file.type),
     }))
 
     files.forEach((file) => {
@@ -1084,10 +1095,11 @@ export const api = {
     role: RoleType
     focus: string
     prompt?: string
-  }, handlers: CertificateStreamHandlers) {
+  }, handlers: CertificateStreamHandlers, signal?: AbortSignal) {
     return streamRequest('/api/certificates/generate/stream', {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal,
     }, handlers)
   },
   rewriteCertificate(payload: {
@@ -1116,7 +1128,7 @@ export const api = {
     certificateId: string
     evidenceIds: string[]
     prompt: string
-  }, handlers: CertificateStreamHandlers) {
+  }, handlers: CertificateStreamHandlers, signal?: AbortSignal) {
     return streamRequest(`/api/certificates/${payload.certificateId}/rewrite/stream`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1124,6 +1136,7 @@ export const api = {
         evidenceIds: payload.evidenceIds,
         prompt: payload.prompt,
       }),
+      signal,
     }, handlers)
   },
   importCertificate(payload: {
@@ -1158,7 +1171,7 @@ export const api = {
       },
     )
   },
-  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void) {
+  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void, signal?: AbortSignal) {
     type LinkageResult = WorkspaceResponse & {
       linkedParagraphCount: number
       evidenceLinkCount: number
@@ -1168,6 +1181,7 @@ export const api = {
     let result: LinkageResult | undefined
     await streamRequest<LinkageResult>(`/api/certificates/${certificateId}/auto-link/stream`, {
       method: 'POST',
+      signal,
     }, {
       onProgress: (event) => onProgress?.(event.text),
       onDone: (payload) => { result = payload },

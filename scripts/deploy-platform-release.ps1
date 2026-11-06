@@ -21,7 +21,8 @@ param(
   [int]$ValidationRetries = 5,
   [switch]$SkipCloudDeploy,
   [switch]$SkipValidation,
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [switch]$SkipCloudEnvCheck
 )
 
 Set-StrictMode -Version Latest
@@ -35,9 +36,17 @@ $cloudDistRoot = Join-Path $cloudRoot 'dist'
 $cloudMigrationsRoot = Join-Path $cloudRoot 'migrations'
 $appReleaseRoot = Join-Path $repoRoot 'app\release'
 $deployTempRoot = Join-Path $repoRoot 'tmp\deploy-platform'
-$npmCommand = 'npm.cmd'
+$npmCommand = $null
 $sshCommand = 'ssh.exe'
 $scpCommand = 'scp.exe'
+
+function Get-CommandPath([string[]]$Names) {
+  foreach ($name in $Names) {
+    $command = Get-Command $name -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+  }
+  throw "Command not found: $($Names -join ', ')"
+}
 
 function Assert-CommandExists([string]$CommandName) {
   if (-not (Get-Command $CommandName -ErrorAction SilentlyContinue)) {
@@ -167,9 +176,71 @@ function Test-ValidationEndpoint {
   throw "Validation failed for $Url. Last error: $lastError"
 }
 
-Assert-CommandExists $npmCommand
+function ConvertTo-CloudAiGatewayState {
+  param(
+    [string[]]$Lines
+  )
+
+  $files = @()
+  $keys = @()
+  $gatewayByFile = [ordered]@{}
+  $current = ''
+  foreach ($line in @($Lines | ForEach-Object { "$_" })) {
+    if ($line -like 'FILE=*') {
+      $current = $line.Substring(5)
+      $files += $current
+      continue
+    }
+    if ($line -like 'GATEWAY=*') {
+      $gatewayByFile[$current] = $line.Substring(8)
+      continue
+    }
+    if ($line -like 'KEY=*') {
+      $keys += $line.Substring(4)
+    }
+  }
+
+  if (!$files.Count) {
+    return [pscustomobject]@{ Checked = $false; GatewayEnabled = $false; SourceFile = ''; Keys = @() }
+  }
+
+  # dotenv loads .env first and .env.local afterwards with override, so the last file wins.
+  $sourceFile = @($gatewayByFile.Keys)[-1]
+  return [pscustomobject]@{
+    Checked = $true
+    GatewayEnabled = ($gatewayByFile[$sourceFile] -eq 'enabled')
+    SourceFile = $sourceFile
+    Keys = @($keys | Select-Object -Unique)
+  }
+}
+
+function Get-RemoteCloudAiGatewayState {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RemoteRoot
+  )
+
+  # The remote host may inject environment variables through .env / .env.local
+  # or through a systemd EnvironmentFile. Only explicit file values are visible
+  # here, so a miss is reported as a warning instead of failing the deployment.
+  $remoteScript = 'for f in "{0}/.env" "{0}/.env.local"; do if [ -f "$f" ]; then echo "FILE=$f"; if grep -Eq "^[[:space:]]*AI_GATEWAY_ENABLED[[:space:]]*=[[:space:]]*(true|1)[[:space:]]*$" "$f"; then echo "GATEWAY=enabled"; else echo "GATEWAY=disabled"; fi; for k in LLM_BASE_URL LLM_API_KEY LLM_MODEL; do if grep -Eq "^[[:space:]]*$k[[:space:]]*=[[:space:]]*[^[:space:]]" "$f"; then echo "KEY=$k"; fi; done; fi; done' -f $RemoteRoot
+
+  # PowerShell strips embedded double quotes when handing arguments to native
+  # executables, so the script travels base64 encoded and is decoded remotely.
+  $encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))
+  $remoteCommand = "echo $encodedScript | base64 -d | sh"
+
+  $output = & $sshCommand (New-SshArguments @($remoteTarget, $remoteCommand)) 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    return $null
+  }
+
+  return ConvertTo-CloudAiGatewayState -Lines @($output | ForEach-Object { "$_" })
+}
+
 Assert-CommandExists $sshCommand
 Assert-CommandExists $scpCommand
+$npmCommand = Get-CommandPath @('npm.cmd', 'npm.exe', 'npm')
 
 $deployCloud = -not $SkipCloudDeploy -and -not [string]::IsNullOrWhiteSpace($RemoteCloudRoot)
 
@@ -236,6 +307,23 @@ if ($deployCloud) {
   Write-Host ''
   Write-Host '== Install cloud-server production dependencies ==' -ForegroundColor Cyan
   Invoke-CheckedCommand -FilePath $sshCommand -Arguments (New-SshArguments @($remoteTarget, $resolvedCloudInstallCommand))
+
+  if (!$SkipCloudEnvCheck) {
+    Write-Host ''
+    Write-Host '== Check remote cloud AI gateway configuration ==' -ForegroundColor Cyan
+    $aiState = Get-RemoteCloudAiGatewayState -RemoteRoot $RemoteCloudRoot
+    if (!$aiState) {
+      Write-Warning 'Could not read the remote environment file; the AI gateway state is unknown. Verify AI_GATEWAY_ENABLED=true manually.'
+    } elseif ($aiState.GatewayEnabled) {
+      Write-Host "AI gateway enabled via $($aiState.SourceFile)"
+      $missingModelKeys = @('LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL') | Where-Object { $aiState.Keys -notcontains $_ }
+      if ($missingModelKeys.Count) {
+        Write-Warning "Not present in $($aiState.SourceFile): $($missingModelKeys -join ', '). They must be supplied by the process environment (for example a systemd EnvironmentFile)."
+      }
+    } else {
+      Write-Warning "AI_GATEWAY_ENABLED is not enabled in $($aiState.SourceFile). /api/ai/* keeps returning 503 (AI service is preparing) and every desktop AI feature stays unavailable."
+    }
+  }
 }
 
 if ($RestartCommand) {

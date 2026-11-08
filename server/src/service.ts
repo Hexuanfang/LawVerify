@@ -3895,7 +3895,7 @@ async function understandEvidenceWithRetrieval(
   meaningfulText: string,
   queries: string[],
   existingCoverage?: EvidenceInsightCoverage,
-) {
+): Promise<{ draft: EvidenceInsightDraft; coverage: EvidenceInsightCoverage } | null> {
   const searchQueries = [...new Set([...queries, ...DEFAULT_EVIDENCE_FOCUS_QUERIES])].filter(Boolean)
   const selection = selectEvidenceChunksForUnderstanding({
     text: meaningfulText,
@@ -3906,8 +3906,8 @@ async function understandEvidenceWithRetrieval(
   })
 
   if (!selection.chunks.length) {
-    // 没有命中任何内容块时退回常规理解，避免整份材料直接作废。
-    return buildEvidenceInsightDraftWithLlm(evidence, fragments, { skipVision: true })
+    // 没有新的内容块可理解：不做任何模型调用，避免把整份材料重新塞进模型。
+    return null
   }
 
   const scopedText = selection.chunks.map((chunk) => chunk.content).join('\n\n')
@@ -3921,9 +3921,7 @@ async function understandEvidenceWithRetrieval(
     ? `材料共 ${selection.totalChunks} 块（约 ${Math.round(selection.totalChars / 1000)} 千字），累计只理解被检索命中的 ${coveredChunkIndexes.length} 块，其余内容未逐块理解。`
     : `材料共 ${selection.totalChunks} 块（约 ${Math.round(selection.totalChars / 1000)} 千字），本次只理解被检索命中的 ${selection.coveredChunks} 块，其余内容未逐块理解。`
 
-  return {
-    ...withInsightIssues(draft, [coverageNote]),
-    coverage: {
+  const coverage: EvidenceInsightCoverage = {
       mode: 'retrieval' as const,
       totalChunks: selection.totalChunks,
       coveredChunks: coveredChunkIndexes.length,
@@ -3931,7 +3929,11 @@ async function understandEvidenceWithRetrieval(
       totalChars: selection.totalChars,
       coveredChunkIndexes,
       queries: searchQueries,
-    },
+  }
+
+  return {
+    draft: { ...withInsightIssues(draft, [coverageNote]), coverage },
+    coverage,
   }
 }
 
@@ -4015,7 +4017,15 @@ async function understandEvidenceWithLlm(
 
   // 超大材料走检索式理解：先建块级索引，只把被检索命中的内容块交给模型。
   if (mode === 'retrieval' && meaningfulText) {
-    return understandEvidenceWithRetrieval(evidence, fragments, meaningfulText, options.focusQueries ?? [])
+    const retrieval = await understandEvidenceWithRetrieval(evidence, fragments, meaningfulText, options.focusQueries ?? [])
+    if (retrieval) {
+      return retrieval.draft
+    }
+
+    // 检索没有命中任何内容块时退回规则化记忆：既不让整份材料作废，也不把全文塞进模型。
+    return withInsightIssues(buildFallbackEvidenceInsightDraft(evidence, fragments), [
+      '检索未命中可理解的内容块，本条记忆仅基于预处理文本生成，需人工核对。',
+    ])
   }
 
   // 有文本层的 PDF 直接走文本理解：逐页渲染加逐页视觉是几百页材料的主要耗时来源。
@@ -4031,8 +4041,8 @@ async function understandEvidenceWithLlm(
       const rendered = await withDocumentSession(await readObject(evidence.storageKey), async session => {
         const pageTotal = await session.request<number>('info')
         // 页面渲染保持串行（共用同一个文档解析进程），模型理解改为限流并发。
-        const images: string[] = []
-        for (let page = 1; page <= Math.min(pageTotal, pageLimit); page += 1) {
+        const images = [...cachedImages]
+        for (let page = cachedImages.length + 1; page <= Math.min(pageTotal, pageLimit); page += 1) {
           const image = await session.request<string>('page', page)
           if (!image) throw new Error(`第${page}页未能完成原件识别，请重试。`)
           images.push(image)
@@ -7169,15 +7179,18 @@ async function enrichRetrievalLimitedInsights(
     }
 
     try {
-      const draft = await understandEvidenceWithRetrieval(
+      const retrieval = await understandEvidenceWithRetrieval(
         evidence,
         getEvidenceFragmentsForEvidence(workspace, evidence.id),
         meaningfulText,
         focusQueries,
         existingCoverage,
       )
-      const coverage = draft.coverage
-      if (!coverage || coverage.coveredChunkIndexes.length === existingCoverage.coveredChunkIndexes.length) {
+      if (!retrieval) {
+        continue
+      }
+      const { draft, coverage } = retrieval
+      if (coverage.coveredChunkIndexes.length === existingCoverage.coveredChunkIndexes.length) {
         continue
       }
       updates.push({ evidenceId: evidence.id, draft, coverage })

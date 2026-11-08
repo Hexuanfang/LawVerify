@@ -19,10 +19,9 @@ interface LlmCallCacheEntry {
   savedAt: string
 }
 
-interface LlmCallCacheFile {
-  version: number
-  entries: LlmCallCacheEntry[]
-}
+// 缓存索引常驻内存：命中判断不需要读回文件再逐条比较，模型调用前后的等待不再
+// 受缓存文件大小影响。每个缓存文件一份索引，进程内懒加载，落盘仍写回同样的文件。
+const memoryIndexes = new Map<string, Map<string, LlmCallCacheEntry>>()
 
 let hitCount = 0
 // 写回串行队列：并发模型调用同时回写缓存时，避免相互覆盖导致缓存条目丢失。
@@ -40,25 +39,34 @@ function resolveCacheFile() {
   return path.join(getWorkspaceDataDir(), 'llm-cache', `${slug}.json`)
 }
 
-function readCacheFile(): LlmCallCacheFile {
-  try {
-    const raw = readFileSync(resolveCacheFile(), 'utf8')
-    const parsed = JSON.parse(raw) as LlmCallCacheFile
-    if (parsed?.version !== CACHE_VERSION || !Array.isArray(parsed.entries)) {
-      return { version: CACHE_VERSION, entries: [] }
-    }
-    return parsed
-  } catch {
-    return { version: CACHE_VERSION, entries: [] }
+function loadCacheIndex(filePath: string) {
+  const loaded = memoryIndexes.get(filePath)
+  if (loaded) {
+    return loaded
   }
+  const index = new Map<string, LlmCallCacheEntry>()
+  try {
+    const raw = readFileSync(filePath, 'utf8')
+    const parsed = JSON.parse(raw) as { version?: number; entries?: LlmCallCacheEntry[] }
+    if (parsed?.version === CACHE_VERSION && Array.isArray(parsed.entries)) {
+      for (const entry of parsed.entries) {
+        if (entry && typeof entry.key === 'string' && typeof entry.namespace === 'string') {
+          index.set(entry.key, entry)
+        }
+      }
+    }
+  } catch {
+    // 缓存文件缺失或损坏时按空缓存处理，不影响主流程。
+  }
+  memoryIndexes.set(filePath, index)
+  return index
 }
 
-function writeCacheFile(file: LlmCallCacheFile) {
+function writeCacheFile(filePath: string, index: Map<string, LlmCallCacheEntry>) {
   try {
-    const filePath = resolveCacheFile()
     mkdirSync(path.dirname(filePath), { recursive: true })
     const tempPath = `${filePath}.tmp`
-    writeFileSync(tempPath, JSON.stringify(file), 'utf8')
+    writeFileSync(tempPath, JSON.stringify({ version: CACHE_VERSION, entries: [...index.values()] }), 'utf8')
     renameSync(tempPath, filePath)
   } catch (error) {
     // 缓存写入失败不应影响主流程。
@@ -66,23 +74,33 @@ function writeCacheFile(file: LlmCallCacheFile) {
   }
 }
 
-function pruneEntries(entries: LlmCallCacheEntry[]) {
+function pruneIndex(index: Map<string, LlmCallCacheEntry>) {
   const byNamespace = new Map<string, LlmCallCacheEntry[]>()
-  for (const entry of entries) {
+  for (const entry of index.values()) {
     const list = byNamespace.get(entry.namespace) ?? []
     list.push(entry)
     byNamespace.set(entry.namespace, list)
   }
 
-  const pruned: LlmCallCacheEntry[] = []
+  const kept = new Set<string>()
   for (const [namespace, list] of byNamespace) {
     const sorted = [...list].sort((left, right) => right.savedAt.localeCompare(left.savedAt))
-    pruned.push(...sorted.slice(0, MAX_ENTRIES_PER_NAMESPACE))
+    for (const entry of sorted.slice(0, MAX_ENTRIES_PER_NAMESPACE)) {
+      kept.add(entry.key)
+    }
   }
 
-  return pruned
+  const survivors = [...index.values()]
+    .filter((entry) => kept.has(entry.key))
     .sort((left, right) => right.savedAt.localeCompare(left.savedAt))
     .slice(0, MAX_TOTAL_ENTRIES)
+  const survivorKeys = new Set(survivors.map((entry) => entry.key))
+  // 就地淘汰，避免替换索引对象时丢掉其它并发调用刚写入的条目。
+  for (const key of [...index.keys()]) {
+    if (!survivorKeys.has(key)) {
+      index.delete(key)
+    }
+  }
 }
 
 function buildCacheKey(namespace: string, payload: unknown) {
@@ -114,8 +132,9 @@ export async function withLlmCallCache<T>(
   run: () => Promise<T>,
 ): Promise<{ value: T; reused: boolean }> {
   const key = buildCacheKey(namespace, payload)
-  const file = readCacheFile()
-  const cached = file.entries.find((entry) => entry.key === key)
+  const filePath = resolveCacheFile()
+  const index = loadCacheIndex(filePath)
+  const cached = index.get(key)
   if (cached) {
     hitCount += 1
     return { value: cached.value as T, reused: true }
@@ -123,22 +142,11 @@ export async function withLlmCallCache<T>(
 
   const value = await run()
 
-  await new Promise<void>((resolve) => {
-    scheduleCacheWrite(() => {
-      try {
-        const latest = readCacheFile()
-        const entries = pruneEntries([
-          ...latest.entries.filter((entry) => entry.key !== key),
-          { key, namespace, value, savedAt: new Date().toISOString() },
-        ])
-        writeCacheFile({ version: CACHE_VERSION, entries })
-      } catch (error) {
-        // 缓存写入失败不应影响主流程。
-        console.error('LLM call cache update failed:', error instanceof Error ? error.message : String(error))
-      }
-      resolve()
-    })
-  })
+  // 内存索引立即写入：并发调用之间也能看到对方刚完成的条目。
+  index.set(key, { key, namespace, value, savedAt: new Date().toISOString() })
+  pruneIndex(index)
+  // 落盘不阻塞调用方：缓存只用于加速，进程退出前没写完也不影响结果。
+  scheduleCacheWrite(() => writeCacheFile(filePath, index))
 
   return { value, reused: false }
 }

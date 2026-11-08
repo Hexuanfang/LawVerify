@@ -1616,6 +1616,12 @@ function getReferenceKey(reference: ParagraphReference, index: number) {
   return reference.id ?? `${reference.type}-${reference.targetId}-${index}`
 }
 
+const PARAGRAPH_REFERENCE_WARNING_TEXT: Record<string, string> = {
+  'statute-repealed': '版本已废止，不可直接引用',
+  'statute-amended': '版本已修订，适用时点待核对',
+  'statute-content-missing': '条文正文待补，不能作为引文',
+}
+
 function getReferenceIdentity(reference: ParagraphReference) {
   return reference.id ?? `${reference.type}-${reference.targetId}`
 }
@@ -6410,17 +6416,20 @@ function App() {
           selectedEvidenceIds,
         })
 
-        const { linkedParagraphCount, evidenceLinkCount, statuteReferenceCount, caseReferenceCount } = result
+        const { linkedParagraphCount, evidenceLinkCount, statuteReferenceCount, statuteWarningCount, caseReferenceCount } = result
         const totalMatches = evidenceLinkCount + statuteReferenceCount + caseReferenceCount
+        const warningSuffix = statuteWarningCount > 0
+          ? `另有 ${statuteWarningCount} 条法条引用存在版本或正文警示，请人工核对后再引用。`
+          : ''
         setAutoLinkFeedback(
           totalMatches > 0
             ? {
               tone: 'success',
-              text: `联动完成：已关联 ${linkedParagraphCount} 段关键内容，材料 ${evidenceLinkCount} 条、法条 ${statuteReferenceCount} 条、案例 ${caseReferenceCount} 条。`,
+              text: `联动完成：已关联 ${linkedParagraphCount} 段关键内容，材料 ${evidenceLinkCount} 条、法条 ${statuteReferenceCount} 条、案例 ${caseReferenceCount} 条。${warningSuffix}`,
             }
             : {
               tone: 'info',
-              text: '核验完成，本次未发现需要新增关联的关键内容。',
+              text: `核验完成，本次未发现需要新增关联的关键内容。${warningSuffix}`,
             },
         )
       })
@@ -8530,12 +8539,16 @@ function App() {
             <div className="knowledge-reference-list">
               {activeParagraphReferences.length ? (
                 activeParagraphReferences.map((reference, index) => (
-                  <article className="knowledge-reference-card" key={getReferenceKey(reference, index)}>
+                  <article className={`knowledge-reference-card${reference.warning ? ' has-warning' : ''}`} key={getReferenceKey(reference, index)}>
                     <div>
                       <strong>{reference.sourceTitle}</strong>
                       <span>{reference.label}</span>
                     </div>
-                    <p>{reference.quote}</p>
+                    {reference.warning ? (
+                      <span className="reference-warning">{PARAGRAPH_REFERENCE_WARNING_TEXT[reference.warning] ?? '需人工核对'}</span>
+                    ) : null}
+                    <p>{reference.quote || (reference.warning === 'statute-content-missing' ? '条文正文待补充，请查阅法源原文后再引用。' : '')}</p>
+                    {reference.reason ? <p className="reference-note">{reference.reason}</p> : null}
                     <div className="inline-actions">
                       <span>{reference.locator}</span>
                       <div>
@@ -8857,12 +8870,16 @@ function App() {
               </div>
               {activeParagraphReferences.length ? (
                 activeParagraphReferences.map((reference, index) => (
-                  <article className="knowledge-reference-card" key={getReferenceKey(reference, index)}>
+                  <article className={`knowledge-reference-card${reference.warning ? ' has-warning' : ''}`} key={getReferenceKey(reference, index)}>
                     <div>
                       <strong>{reference.sourceTitle}</strong>
                       <span>{reference.label}</span>
                     </div>
-                    <p>{reference.quote}</p>
+                    {reference.warning ? (
+                      <span className="reference-warning">{PARAGRAPH_REFERENCE_WARNING_TEXT[reference.warning] ?? '需人工核对'}</span>
+                    ) : null}
+                    <p>{reference.quote || (reference.warning === 'statute-content-missing' ? '条文正文待补充，请查阅法源原文后再引用。' : '')}</p>
+                    {reference.reason ? <p className="reference-note">{reference.reason}</p> : null}
                     <div className="inline-actions">
                       <span>{reference.locator}</span>
                       <div>

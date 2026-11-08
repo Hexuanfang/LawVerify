@@ -130,6 +130,9 @@ export interface EvidenceLink {
 
 export type ParagraphReferenceType = 'case' | 'statute'
 
+// 引用警示：法条版本已废止/已修订，或条文正文缺失，不能当作可直接引用的依据。
+export type ParagraphReferenceWarning = 'statute-repealed' | 'statute-amended' | 'statute-content-missing'
+
 export interface ParagraphReference {
   id?: string
   type: ParagraphReferenceType
@@ -142,6 +145,7 @@ export interface ParagraphReference {
   sentenceText?: string
   note?: string
   reason?: string
+  warning?: ParagraphReferenceWarning
 }
 
 export interface CertificateParagraph {

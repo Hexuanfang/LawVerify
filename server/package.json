@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "test:linkage": "node --import tsx --test scripts/test-semantic-linkage.mjs scripts/test-llm-call-cache.mjs scripts/test-evidence-understanding-concurrency.mjs scripts/test-linkage-concurrency.mjs",
     "test:legal": "node --import tsx --test scripts/test-legal-verification.mjs",
+    "test:statute": "node --import tsx --test scripts/test-statute-version-guard.mjs",
     "test:workspace": "node --import tsx --test scripts/test-workspace-sqlite.mjs scripts/test-workspace-derived-cache.mjs",
     "test:stability": "node --import tsx --test scripts/test-document-stability.mjs scripts/test-draft-conflict.mjs scripts/test-workspace-backups.mjs scripts/test-stream-heartbeat.mjs scripts/test-long-task-commit.mjs",
     "test:agent": "node --import tsx --test scripts/test-case-agent.mjs scripts/test-case-agent-evidence-skip.mjs scripts/test-case-agent-duplicate-evidence.mjs scripts/test-case-agent-queue-race.mjs scripts/test-assistant-controls.mjs scripts/test-evidence-summary-concurrency.mjs && node --test ../app/electron/test-case-directories.cjs",

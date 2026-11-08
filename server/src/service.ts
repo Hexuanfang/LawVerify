@@ -51,6 +51,13 @@ import {
   normalizeSentenceLinkageFocus,
 } from './intelligence/linkage-policy.js'
 import { requestLinkageParagraphBatch } from './intelligence/linkage-response.js'
+import {
+  AUTO_STATUTE_REFERENCE_NOTE,
+  buildStatuteReference,
+  describeStatuteVersionStatus,
+  isPlaceholderStatuteContent,
+  pickPreferredStatuteBinding,
+} from './intelligence/statute-version.js'
 import { deleteObject, readObject, storeObject } from './infrastructure/object-storage.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { createChatCompletion, createChatCompletionStream, isLlmConfigured, withRequestAbortSignal, type LlmChatMessage } from './integrations/llm-service.js'
@@ -720,15 +727,10 @@ function normalizeReferences(references: CertificateParagraph['references']): Pa
 }
 
 const AUTO_EVIDENCE_LINK_NOTE = 'system:auto-evidence-linked'
-const AUTO_STATUTE_REFERENCE_NOTE = 'system:auto-statute-detected'
 const AUTO_CASE_REFERENCE_NOTE = 'system:auto-case-detected'
 const OFFICIAL_FETCH_TIMEOUT_MS = 10000
 const NPC_SEARCH_ENDPOINT = 'https://flk.npc.gov.cn/law-search/search/list'
 const NPC_DETAIL_ENDPOINT = 'https://flk.npc.gov.cn/law-search/search/flfgDetails'
-const STATUTE_PLACEHOLDER_SNIPPETS = [
-  '官方原文已定位',
-  '当前官方接口未直接返回结构化正文',
-] as const
 
 type KnowledgeStatuteEffectiveStatus = WorkspaceState['knowledgeStatutes'][number]['effectiveStatus']
 
@@ -819,14 +821,6 @@ function normalizeLawTitle(rawTitle: string) {
     .replace(/^(依据|根据|依照|按照|参照|适用|违反|依|按)+/u, '')
     .replace(/(规定|条款|规则|内容)+$/u, '')
     .trim()
-}
-
-function isPlaceholderStatuteContent(content: string | undefined) {
-  if (!content?.trim()) {
-    return true
-  }
-
-  return STATUTE_PLACEHOLDER_SNIPPETS.some((snippet) => content.includes(snippet))
 }
 
 function stripLawPrefix(title: string) {
@@ -1127,24 +1121,6 @@ export function extractStatuteMentions(text: string, limit = 3) {
   }
 
   return matches
-}
-
-function buildStatuteReference(
-  document: WorkspaceState['knowledgeStatutes'][number],
-  article: WorkspaceState['knowledgeStatutes'][number]['articles'][number],
-  sentenceAnchor?: Pick<ParagraphReference, 'sentenceIndex' | 'sentenceText'>,
-): ParagraphReference {
-  return {
-    id: `statute-${article.id}`,
-    type: 'statute',
-    targetId: article.id,
-    sourceTitle: document.title,
-    label: `${document.title} ${article.articleNumber}`,
-    locator: article.articleNumber,
-    quote: article.content,
-    ...sentenceAnchor,
-    note: AUTO_STATUTE_REFERENCE_NOTE,
-  }
 }
 
 function buildCaseReference(
@@ -2126,6 +2102,8 @@ function findLocalStatuteBinding(
   workspace: WorkspaceState,
   mention: StatuteMention,
 ): ResolvedStatuteReferenceBinding | null {
+  const candidates: ResolvedStatuteReferenceBinding[] = []
+
   for (const document of workspace.knowledgeStatutes) {
     if (!documentMatchesLawTitle(document, mention.lawTitle)) {
       continue
@@ -2133,11 +2111,15 @@ function findLocalStatuteBinding(
 
     const article = document.articles.find((item) => normalizeArticleNumber(item.articleNumber)?.articleNumber === mention.articleNumber)
     if (article) {
-      return hydrateResolvedStatuteBindingFromKnowledgeFiles(workspace, { document, article })
+      candidates.push(hydrateResolvedStatuteBindingFromKnowledgeFiles(workspace, { document, article }))
     }
   }
 
-  return null
+  if (!candidates.length) {
+    return null
+  }
+
+  return pickPreferredStatuteBinding(candidates)
 }
 
 async function fetchJsonWithTimeout<T>(url: string, init?: RequestInit) {
@@ -5197,9 +5179,10 @@ async function attachAutoStatuteReferencesToCertificateWithLlm(
         const binding = candidates.find(item => item.binding.article.id === selection.id)?.binding
         if (!binding || [...preservedReferences, ...nextReferences].some(item => item.type === 'statute'
           && item.targetId === binding.article.id && item.sentenceIndex === anchor.sentenceIndex)) continue
+        const reference = buildStatuteReference(binding.document, binding.article, anchor)
         nextReferences.push({
-          ...buildStatuteReference(binding.document, binding.article, anchor),
-          reason: selection.reason,
+          ...reference,
+          reason: reference.reason ? `${reference.reason}${selection.reason}` : selection.reason,
         })
       }
     }
@@ -7049,7 +7032,13 @@ export async function autoLinkCertificate(
         0,
       ),
       statuteReferenceCount: refreshedCertificate.paragraphs.reduce(
-        (total, paragraph) => total + (paragraph.references ?? []).filter((item) => item.note === AUTO_STATUTE_REFERENCE_NOTE).length,
+        (total, paragraph) => total + (paragraph.references ?? []).filter((item) =>
+          item.note === AUTO_STATUTE_REFERENCE_NOTE && !item.warning).length,
+        0,
+      ),
+      statuteWarningCount: refreshedCertificate.paragraphs.reduce(
+        (total, paragraph) => total + (paragraph.references ?? []).filter((item) =>
+          item.note === AUTO_STATUTE_REFERENCE_NOTE && item.warning).length,
         0,
       ),
       caseReferenceCount: refreshedCertificate.paragraphs.reduce(

@@ -1181,6 +1181,7 @@ export const api = {
       linkedParagraphCount: number
       evidenceLinkCount: number
       statuteReferenceCount: number
+      statuteWarningCount: number
       caseReferenceCount: number
     }
     let result: LinkageResult | undefined

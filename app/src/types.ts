@@ -161,6 +161,7 @@ export interface ParagraphReference {
   sentenceText?: string
   note?: string
   reason?: string
+  warning?: 'statute-repealed' | 'statute-amended' | 'statute-content-missing'
 }
 
 export interface CertificateParagraph {

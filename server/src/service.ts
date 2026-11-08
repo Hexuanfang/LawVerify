@@ -2684,7 +2684,7 @@ async function extractEvidenceContentFromSourceAsset(
   const normalizedMimeType = (asset.mimeType || evidence.sourceMimeType || '').toLowerCase()
 
   if (evidence.type === 'image' || normalizedMimeType.startsWith('image/')) {
-    const buffer = asset.buffer ?? await readObject(evidence.storageKey!.trim())
+    const buffer = asset.buffer ?? await readObject(evidence.storageKey?.trim() ?? '')
     const dataUrl = buffer.length <= MAX_INLINE_IMAGE_SOURCE_BYTES
       ? bufferToDataUrl(buffer, asset.mimeType)
       : undefined
@@ -2705,7 +2705,7 @@ async function extractEvidenceContentFromSourceAsset(
     || lowerName.endsWith('.markdown')
     || normalizedMimeType.startsWith('text/')
   ) {
-    const buffer = asset.buffer ?? await readObject(evidence.storageKey!.trim())
+    const buffer = asset.buffer ?? await readObject(evidence.storageKey?.trim() ?? '')
     return {
       sourceMimeType: asset.mimeType,
       ocrText: buffer.toString('utf8').trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
@@ -2713,7 +2713,7 @@ async function extractEvidenceContentFromSourceAsset(
   }
 
   if (lowerName.endsWith('.rtf') || normalizedMimeType.includes('rtf')) {
-    const buffer = asset.buffer ?? await readObject(evidence.storageKey!.trim())
+    const buffer = asset.buffer ?? await readObject(evidence.storageKey?.trim() ?? '')
     return {
       sourceMimeType: asset.mimeType,
       ocrText: stripRtfKnowledgeControlText(buffer.toString('utf8')).trim()

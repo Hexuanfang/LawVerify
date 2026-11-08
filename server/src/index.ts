@@ -1,5 +1,6 @@
 import { createApp, initializeCommercialInfrastructure } from './app.js'
 import { env } from './config/env.js'
+import { clearUploadTempFiles } from './middleware/bounded-upload.js'
 
 const { app, attachUpgrade } = createApp()
 
@@ -57,6 +58,8 @@ async function main() {
   })
   // #endregion
   await initializeCommercialInfrastructure()
+  // 上传中断留下的临时文件在启动时清空，避免大文件残留持续占用磁盘。
+  await clearUploadTempFiles()
 
   const server = app.listen(env.PORT, env.SERVER_HOST, () => {
     // #region debug-point A:listen-ready

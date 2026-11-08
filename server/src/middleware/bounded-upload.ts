@@ -129,3 +129,13 @@ export function boundedFileStorage(): multer.StorageEngine {
     },
   }
 }
+
+// 上传中断会留下临时文件：服务启动时清空，避免大文件残留持续占用磁盘。
+export async function clearUploadTempFiles() {
+  const tempDir = path.join(getWorkspaceDataDir(), 'upload-tmp')
+  try {
+    await rm(tempDir, { recursive: true, force: true })
+  } catch {
+    // 清理失败不影响启动：临时目录可由系统手工清理。
+  }
+}

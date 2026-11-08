@@ -475,6 +475,14 @@ export function createV1Router() {
 
   router.post('/certificates/generate/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（删除案件、手动停止）时中止模型调用，避免服务端继续生成。
+    const controller = new AbortController()
+    response.on('close', () => {
+      // 正常结束不算中断，只有连接提前断开才中止模型调用。
+      if (!response.writableEnded) {
+        controller.abort()
+      }
+    })
 
     try {
       await streamGenerateCertificate(request.body, async (event) => {
@@ -487,12 +495,14 @@ export function createV1Router() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }, { signal: controller.signal })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '生成失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !controller.signal.aborted) {
+        const message = error instanceof Error ? error.message : '生成失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 
@@ -507,6 +517,14 @@ export function createV1Router() {
 
   router.post('/certificates/:certificateId/rewrite/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（删除案件、手动停止）时中止模型调用，避免服务端继续生成。
+    const controller = new AbortController()
+    response.on('close', () => {
+      // 正常结束不算中断，只有连接提前断开才中止模型调用。
+      if (!response.writableEnded) {
+        controller.abort()
+      }
+    })
 
     try {
       await streamRewriteCertificate({
@@ -523,12 +541,14 @@ export function createV1Router() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }, { signal: controller.signal })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '改写失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !controller.signal.aborted) {
+        const message = error instanceof Error ? error.message : '改写失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 

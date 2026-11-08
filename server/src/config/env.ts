@@ -65,6 +65,14 @@ const envSchema = z.object({
   LLM_VISION_API_KEY: z.string().optional(),
   LLM_VISION_MODEL: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+  // 自动理解时同时处理的材料份数：多份材料并行理解，整体等待时间按批次数摊薄。
+  EVIDENCE_SUMMARY_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // 材料理解阶段对模型的全局并发上限：逐页理解与材料级并发共享同一配额，
+  // 避免并发叠加后请求过密被供应商限流，导致材料理解失败。
+  EVIDENCE_UNDERSTANDING_LLM_CONCURRENCY: z.coerce.number().int().positive().default(6),
+  // 云端智能分析网关按「组织 + 用户」限制并发请求数，桌面端按同一上限排队，
+  // 避免自己的请求数超过网关上限而被判为「当前分析任务较多」。
+  CLOUD_AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
   // 推理模型预留的正文 token 预算（与 LLM_TIMEOUT_MS 配合使用）。
   LLM_MIN_MAX_TOKENS: z.coerce.number().int().positive().optional(),
   // 支持 reasoning.effort 的供应商可配置推理强度，例如 none / minimal / low。

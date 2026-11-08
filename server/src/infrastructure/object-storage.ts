@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { env } from '../config/env.js'
@@ -38,4 +38,24 @@ export async function readObject(key: string) {
   const root = getStorageRoot()
   const fullPath = path.join(root, normalizedKey)
   return readFile(fullPath)
+}
+
+// 只允许回收证据桶里的上传原件：知识库文件与 Collabora 会话目录不在此列。
+const DELETABLE_OBJECT_KEY = /^evidence\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9._-]+$/
+
+export async function deleteObject(key: string) {
+  const normalizedKey = key.replace(/\\/g, '/').replace(/^\/+/, '')
+  if (!DELETABLE_OBJECT_KEY.test(normalizedKey)) {
+    throw new Error('存储对象 key 不合法，无法删除。')
+  }
+
+  const root = getStorageRoot()
+  const fullPath = path.join(root, normalizedKey)
+  // 二次校验绝对路径仍在存储根目录内，避免 key 越界删除其它文件。
+  const relative = path.relative(root, fullPath)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('存储对象路径越界，无法删除。')
+  }
+
+  await rm(fullPath, { force: true })
 }

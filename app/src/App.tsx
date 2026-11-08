@@ -17,7 +17,7 @@ import { ContextMenu, type ContextMenuItem } from './ContextMenu'
 import { AgentPromptInput, type AgentPromptInputHandle } from './AgentPromptInput'
 import { IdeActivityBar, type IdeNavigationTarget } from './IdeActivityBar'
 import { CaseAgentPanel } from './CaseAgentPanel'
-import { AssistantPicker, VoiceInputButton } from './AssistantControls'
+import { AssistantPicker, AssistantWorkModeSwitch, VoiceInputButton } from './AssistantControls'
 import { CaseDirectorySync, syncDesktopDirectory, stopCaseDirectorySync, resumeCaseDirectorySync } from './CaseDirectorySync'
 import { getAttentionTerms } from './evidence-attention'
 import { resolveEvidenceMimeType } from './evidence-mime'
@@ -74,16 +74,19 @@ const COLLAPSED_STREAMLINED_SIDEBAR_WIDTH = 56
 const STREAMLINED_SIDEBAR_COLLAPSE_THRESHOLD = 120
 const MIN_STREAMLINED_MAIN_WIDTH = 720
 const STREAMLINED_SIDEBAR_RESIZER_WIDTH = 6
-const DEFAULT_INSIGHT_PANEL_WIDTH = 380
+const DEFAULT_INSIGHT_PANEL_WIDTH = 460
 // 调试埋点上报地址：留空表示不发送任何调试请求。
 // 启用方式：在 app/.env.local 中设置 VITE_DEBUG_EVENT_URL=http://127.0.0.1:7777/event
 // 并重启 vite 开发服务；打包版则需在构建时注入同名变量。
 const DEBUG_EVENT_URL = (import.meta.env.VITE_DEBUG_EVENT_URL ?? '').trim()
 const PROGRESS_UPDATE_INTERVAL_MS = 80
 const MAIN_THREAD_YIELD_INTERVAL_MS = 24
-const MIN_INSIGHT_PANEL_WIDTH = 280
+// 案件助手面板最小宽度：保证提示词与控件文字完整显示、按钮不换行。
+const MIN_INSIGHT_PANEL_WIDTH = 420
 const MIN_DOCUMENT_PANEL_WIDTH = 360
 const WORKBENCH_RESIZER_WIDTH = 6
+// 后台工作区同步的最小间隔：全量快照动辄十几 MB，变更密集时必须合并。
+const WORKSPACE_SYNC_MIN_INTERVAL_MS = 1500
 const DEFAULT_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 320
 const MIN_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 240
 const MAX_KNOWLEDGE_FILES_SIDEBAR_WIDTH = 560
@@ -113,10 +116,6 @@ type ChargeablePointAction = Extract<PointActionType, 'evidence_summary' | 'plea
 type FeedbackType = 'bug' | 'suggestion' | 'experience' | 'other'
 type EntryOnboardingStep = 'idle' | 'create-case' | 'link-folder'
 
-const DEFAULT_POINT_POLICY_MAP: Record<ChargeablePointAction, number> = {
-  evidence_summary: 2,
-  pleading_full: 15,
-}
 const sentenceHighlightPluginKey = new PluginKey<{ activeSentenceIndex: number | null }>('lawverifySentenceHighlight')
 
 interface SelectionState {
@@ -249,10 +248,10 @@ function clamp(value: number, min: number, max: number) {
 }
 
 // 原生 select 的下拉指示器统一用 SVG chevron，避免渐变拼出的实心三角。
-function SelectChevronIcon() {
+function SelectChevronIcon({ className = 'select-chevron' }: { className?: string }) {
   return (
     <svg
-      className="select-chevron"
+      className={className}
       aria-hidden="true"
       viewBox="0 0 16 16"
       fill="none"
@@ -2401,6 +2400,7 @@ function App() {
   })
   const [isResizingStreamlinedSidebar, setIsResizingStreamlinedSidebar] = useState(false)
   const [insightPanelWidth, setInsightPanelWidth] = useState(DEFAULT_INSIGHT_PANEL_WIDTH)
+  const [isInsightPanelCollapsed, setIsInsightPanelCollapsed] = useState(false)
   const [isResizingWorkbench, setIsResizingWorkbench] = useState(false)
   const [knowledgeFilesSidebarWidth, setKnowledgeFilesSidebarWidth] = useState(DEFAULT_KNOWLEDGE_FILES_SIDEBAR_WIDTH)
   const [isResizingKnowledgeFilesSidebar, setIsResizingKnowledgeFilesSidebar] = useState(false)
@@ -2427,7 +2427,6 @@ function App() {
   }
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([])
   const [streamingCertificatePreview, setStreamingCertificatePreview] = useState<StreamingCertificatePreview | null>(null)
-  const [pointPolicyMap, setPointPolicyMap] = useState<Record<ChargeablePointAction, number>>(DEFAULT_POINT_POLICY_MAP)
   const folderUploadRef = useRef<HTMLInputElement | null>(null)
   const folderLinkTriggerRef = useRef<HTMLDivElement | null>(null)
   const knowledgeFolderUploadRef = useRef<HTMLInputElement | null>(null)
@@ -2442,6 +2441,7 @@ function App() {
   const workbenchRef = useRef<HTMLElement | null>(null)
   const workbenchResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const knowledgeLibraryBodyRef = useRef<HTMLDivElement | null>(null)
+  const knowledgeSearchInputRef = useRef<HTMLInputElement | null>(null)
   const knowledgeFilesSidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const knowledgeUploadProgressTimerRefs = useRef<number[]>([])
   const knowledgeUploadClearTimerRef = useRef<number | null>(null)
@@ -2463,6 +2463,8 @@ function App() {
   const autoLinkAbortRef = useRef<AbortController | null>(null)
   const documentStreamAbortRef = useRef<AbortController | null>(null)
   const streamingParagraphsRef = useRef<Array<{ id: string; text: string }>>([])
+  // 删除案件时标记该案件，避免被中断的生成/改写把结果写回已删除的案件。
+  const deletingCaseIdRef = useRef<string | null>(null)
   const localPreviewSourceMapRef = useRef<Record<string, string>>({})
   const localWorkspaceRef = useRef<AppState | null>(null)
   const cloudPointsSyncRef = useRef<CloudPointsSyncState | null>(null)
@@ -2989,7 +2991,6 @@ function App() {
   useEffect(() => {
     if (!cloudAuthToken) {
       cloudAccountProfileRef.current = null
-      setPointPolicyMap(DEFAULT_POINT_POLICY_MAP)
       return
     }
 
@@ -3031,26 +3032,6 @@ function App() {
 
         cloudAccountProfileRef.current = null
         persistCloudAuthToken(null)
-      })
-
-    void api.getCloudPointPolicies()
-      .then((payload) => {
-        if (!active) {
-          return
-        }
-
-        const nextMap = { ...DEFAULT_POINT_POLICY_MAP }
-        payload.items.forEach((item) => {
-          if (item.actionType === 'evidence_summary' || item.actionType === 'pleading_full') {
-            nextMap[item.actionType] = item.pointsPerUnit
-          }
-        })
-        setPointPolicyMap(nextMap)
-      })
-      .catch(() => {
-        if (active) {
-          setPointPolicyMap(DEFAULT_POINT_POLICY_MAP)
-        }
       })
 
     return () => {
@@ -3486,11 +3467,27 @@ function App() {
     let active = true
     let running = false
     let dirty = false
+    let lastSyncAt = 0
+    let syncTimer: number | undefined
     const controller = new AbortController()
     const syncWorkspace = async () => {
       if (!active || document.visibilityState === 'hidden') return
       if (!backgroundProcessingRef.current) return
       if (running) { dirty = true; return }
+      // 工作区变更密集时（自动理解并发落库）不必每次都全量拉取：
+      // 一次全量快照就有十几 MB，拉取本身会把本地服务压到无响应。
+      // 这里合并到下一个最小间隔，既能跟上进度，也不会和服务端写入互相拖慢。
+      const waitMs = lastSyncAt + WORKSPACE_SYNC_MIN_INTERVAL_MS - Date.now()
+      if (waitMs > 0) {
+        dirty = true
+        if (syncTimer === undefined) {
+          syncTimer = window.setTimeout(() => {
+            syncTimer = undefined
+            void syncWorkspace()
+          }, waitMs)
+        }
+        return
+      }
       running = true
       try {
         const { workspace } = await api.getWorkspace(controller.signal)
@@ -3498,6 +3495,7 @@ function App() {
           return
         }
 
+        lastSyncAt = Date.now()
         backgroundWorkspaceHandler.current(workspace)
       } catch {
         // 后台处理中时静默同步，避免打断当前操作。
@@ -3530,6 +3528,7 @@ function App() {
       controller.abort()
       unwatch()
       window.clearInterval(timer)
+      if (syncTimer !== undefined) window.clearTimeout(syncTimer)
       window.removeEventListener('focus', handleFocus)
       window.removeEventListener('lawverify:service-ready', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -4582,7 +4581,6 @@ function App() {
       setSelectedKnowledgeReferenceId(nextReference ? getReferenceIdentity(nextReference) : null)
       return
     }
-
     if (verifyInsightTab === 'case') {
       const nextReference = selectedCaseReference
       setSelectedKnowledgeReferenceId(nextReference ? getReferenceIdentity(nextReference) : null)
@@ -4591,6 +4589,15 @@ function App() {
 
     setSelectedKnowledgeReferenceId(null)
   }, [verifyInsightTab, selectedStatuteReference, selectedCaseReference])
+
+  // 打开知识库弹窗后直接聚焦检索框，让「去知识库检索」立刻有落点。
+  useEffect(() => {
+    if (!isKnowledgeLibraryDialogOpen || knowledgeLibraryView !== 'library') {
+      return
+    }
+    const timer = window.setTimeout(() => knowledgeSearchInputRef.current?.focus(), 60)
+    return () => window.clearTimeout(timer)
+  }, [isKnowledgeLibraryDialogOpen, knowledgeLibraryView, knowledgeTab])
 
   function isActionPending(action: string) {
     return pendingActions.includes(action)
@@ -4985,14 +4992,50 @@ function App() {
   }
 
   async function handleDeleteCase(caseFolder: CaseFolder) {
-    const confirmed = window.confirm(`确认删除案件“${caseFolder.name}”及其全部证据、质证书吗？`)
+    const confirmed = window.confirm(
+      `确认删除案件“${caseFolder.name}”吗？该案件的证据原件、文书、法条与案例引用、助手记录都会一并清除，电脑硬盘上的原始文件不会删除。`,
+    )
 
     if (!confirmed) {
       return
     }
 
     await runMutation(async () => {
+      const caseId = caseFolder.id
+      const account = loginAccount.trim().toLowerCase()
+      // 删除前先中断在途任务，避免生成结果或联动结果写回已删除的案件。
+      deletingCaseIdRef.current = caseId
+      streamingParagraphsRef.current = []
+      documentStreamAbortRef.current?.abort()
+      autoLinkAbortRef.current?.abort()
+      setStreamingCertificatePreview(null)
+      // 解除文件夹链接并停止目录同步，否则扫描器会把材料重新导回已删除的案件。
+      try {
+        await stopCaseDirectorySync(account, caseId)
+      } catch {
+        // 目录同步停止失败不阻断删除。
+      }
+      try {
+        await window.lawVerifyDesktop?.clearCaseDirectories?.({ account, caseId })
+      } catch {
+        // 文件夹链接清理失败不阻断删除。
+      }
+
       const { workspace } = await api.deleteCase(caseFolder.id)
+      // 清掉与该案件绑定的本地状态：预览、待导入材料、目录进度、助手会话与推荐法条/案例。
+      streamedDirectoryEvidencesRef.current = streamedDirectoryEvidencesRef.current.filter(item => item.caseId !== caseId)
+      setPendingCaseEvidences(current => current.filter(item => item.caseId !== caseId))
+      setManualPreviewEvidenceId(null)
+      setImageViewerState(null)
+      clearLocalPreviewSourceMap()
+      setDirectoryImportRetry(null)
+      setDirectoryPreparation(null)
+      setEvidenceImportProgress(null)
+      setEvidenceImportResult(null)
+      setAgentMessages([])
+      setRemoteRecommendedKnowledgeCases([])
+      setRemoteRecommendedKnowledgeStatutes([])
+      setSelectedKnowledgeReferenceId(null)
       applyWorkspace(workspace)
     })
   }
@@ -5569,10 +5612,6 @@ function App() {
     })
   }
 
-  function getEstimatedActionPoints(actionType: ChargeablePointAction) {
-    return pointPolicyMap[actionType] ?? DEFAULT_POINT_POLICY_MAP[actionType]
-  }
-
   async function runChargeableAction<T>(
     config: {
       actionType: ChargeablePointAction
@@ -5758,8 +5797,17 @@ function App() {
     } else if (target === 'document') {
       setIdeContentTab('document')
     } else if (target === 'assistant') {
-      setIsIdeAssistantVisible(true)
-      setAgentMode('case')
+      // 左侧“案件助手”按钮：面板收起时展开并切回助手；已在助手视图时整个收起详情栏。
+      if (isInsightPanelCollapsed) {
+        setIsInsightPanelCollapsed(false)
+        setIsIdeAssistantVisible(true)
+        setAgentMode('case')
+      } else if (isIdeAssistantVisible && agentMode === 'case') {
+        setIsInsightPanelCollapsed(true)
+      } else {
+        setIsIdeAssistantVisible(true)
+        setAgentMode('case')
+      }
     } else if (target === 'settings') {
       setIsSettingsDialogOpen(true)
     } else {
@@ -5891,6 +5939,10 @@ function App() {
       } catch (error) {
         // 用户点击“停止”：保留已生成的内容为草稿，避免下次从头再来。
         if (isAbortError(error)) {
+          // 案件已被删除时不再保存中断草稿，也不留下提示消息。
+          if (deletingCaseIdRef.current === selectedCase.id) {
+            return
+          }
           const saved = await saveInterruptedDraft(
             selectedCase.id,
             `${selectedCase.name}质证意见（生成中断草稿）`,
@@ -6011,6 +6063,10 @@ function App() {
       } catch (error) {
         // 用户点击“停止”：保留已生成的内容为草稿，避免下次从头再来。
         if (isAbortError(error)) {
+          // 案件已被删除时不再保存中断草稿，也不留下提示消息。
+          if (deletingCaseIdRef.current === activeCertificate.caseId) {
+            return
+          }
           const saved = await saveInterruptedDraft(
             activeCertificate.caseId,
             `${activeCertificate.title || '质证意见'}（改写中断草稿）`,
@@ -6306,10 +6362,10 @@ function App() {
 
   async function handleUpdateParagraph(patch: Partial<CertificateParagraph>) {
     if (!activeParagraph) {
-      return
+      return false
     }
 
-    await handleUpdateParagraphById(activeParagraph.id, patch)
+    return await handleUpdateParagraphById(activeParagraph.id, patch)
   }
 
   async function handleAutoLinkCertificate() {
@@ -6425,14 +6481,14 @@ function App() {
 
   async function handleUpdateActiveReference(patch: Partial<EvidenceLink>) {
     if (!activeParagraph || !activeLink) {
-      return
+      return false
     }
 
     const nextLinks = getParagraphLinks(activeParagraph).map((link, index) =>
       index === activeReferenceIndex ? { ...link, ...patch } : link,
     )
 
-    await handleUpdateParagraph({
+    return await handleUpdateParagraph({
       links: nextLinks,
     })
   }
@@ -6772,23 +6828,18 @@ function App() {
             </strong>
           </div>
           <div className="preview-meta-actions">
-            <span className="preview-format-badge">{evidenceFormatLabel}</span>
+            <span className="preview-meta-chip is-static">{evidenceFormatLabel}</span>
             <button
-              className="ghost-button"
+              className="preview-meta-chip"
               type="button"
               onClick={() => void handleSummarizeEvidence(previewEvidence.id, { force: Boolean(previewEvidence.summaryText?.trim()) })}
               disabled={isSummarizingCurrentEvidence}
             >
               {isSummarizingCurrentEvidence ? 'AI 理解中...' : previewEvidence.summaryText ? '重新理解原材料' : 'AI 理解原材料'}
             </button>
-            <span className="point-cost-hint">
-              {previewEvidence.summaryText?.trim()
-                ? '已理解 · 重新理解将扣分'
-                : `预计扣分 ${getEstimatedActionPoints('evidence_summary')} 积分`}
-            </span>
             {canOpenOriginal ? (
               <a
-                className="ghost-button viewer-link"
+                className="preview-meta-chip viewer-link"
                 href={previewSource}
                 download={previewEvidence.fileName}
                 target="_blank"
@@ -7603,7 +7654,6 @@ function App() {
     const isRewriteMode = Boolean(activeCertificate)
     const availableEvidenceCount = (selectedEvidenceIds.length ? selectedEvidenceIds : activeCertificateEvidenceIds).length
     const canSubmit = Boolean(selectedCase && availableEvidenceCount && !isSubmitting && !documentVoiceBusy)
-    const estimatedDraftPoints = getEstimatedActionPoints('pleading_full')
 
     return (
       <div
@@ -7639,12 +7689,6 @@ function App() {
             </div>}
 
             <div className="agent-dock-body">
-              <div className="assistant-mode-row">
-                <AssistantPicker label={agentMode === 'case' ? '案件沟通' : '文书起草'} title="助手工作模式"
-                  items={[{ id: 'case', label: '案件沟通', description: '分析案情、证据与诉讼策略' }, { id: 'document', label: '文书起草', description: '结合本案证据起草与改写' }]}
-                  value={agentMode} disabled={isSubmitting || documentVoiceBusy}
-                  onSelect={id => setAgentMode(id as 'case' | 'document')} />
-              </div>
               {agentMode === 'case' ? selectedCase && appState ? <CaseAgentPanel
                 key={`${loginAccount}:${selectedCase.id}`} folder={selectedCase} workspace={appState}
                 onWorkspace={workspace => applyWorkspace(workspace, { selectedCaseId: selectedCase.id }, { preserveManualPreview: true })}
@@ -7652,52 +7696,62 @@ function App() {
                   const evidence = appState.evidences.find(e => e.id === id)
                   if (evidence) handlePreviewEvidenceItem(evidence)
                 }}
-              /> : <p>请先选择案件。</p> : null}
-              {agentMode === 'document' && agentMessages.length ? (
-                <div className="agent-message-list">
-                  {agentMessages.map((message) => (
+                onModeChange={setAgentMode}
+                modeStatus={<span className="agent-mode-status-item">已选 {availableEvidenceCount} 份证据</span>}
+              /> : (
+                <div className="agent-input-shell agent-dock-input-shell">
+                  <AssistantWorkModeSwitch mode="case" onChange={setAgentMode} disabled={isSubmitting || documentVoiceBusy} />
+                  <p className="empty-box compact-empty">请先选择案件，再开始与案件助手沟通。</p>
+                </div>
+              ) : null}
+              {agentMode === 'document' ? (
+                <div className="agent-message-list case-agent-chat-body">
+                  {agentMessages.length ? agentMessages.map((message) => (
                     <article key={message.id} className={`agent-message ${message.role}`}>
-                      <strong>{message.role === 'assistant' ? '文书助手' : '你'}</strong>
-                      <p>{message.content}</p>
+                      <span className="agent-message-author">{message.role === 'assistant' ? '文书助手' : '你'}</span>
+                      <div className="agent-message-bubble"><p>{message.content}</p></div>
                     </article>
-                  ))}
+                  )) : <p className="agent-message-empty">暂无记录</p>}
                 </div>
               ) : null}
 
               {agentMode === 'document' ? <div className="agent-input-shell agent-dock-input-shell">
+                <AssistantWorkModeSwitch mode="document" onChange={setAgentMode} disabled={isSubmitting || documentVoiceBusy}
+                  status={<>
+                    <span className="agent-mode-status-item">{!selectedCase ? '请选择案件' : availableEvidenceCount ? `已选 ${availableEvidenceCount} 份证据` : '请选择证据'}</span>
+                  </>} />
                 <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} disabled={isSubmitting || documentVoiceBusy}
                   placeholder={isRewriteMode ? '输入需要调整的内容或改写要求…' : '描述文书类型与起草要求…'} />
                 <div className="agent-dock-submit-area">
-                  <div className="agent-dock-composer-meta">
-                    <span>{!selectedCase ? '请选择案件' : availableEvidenceCount ? `已选 ${availableEvidenceCount} 份证据` : '请选择证据'}</span>
-                    <span className="agent-dock-cost">预计 <b>{estimatedDraftPoints}</b> 积分</span>
-                  </div>
-                  <div className="agent-composer-actions">
-                    <AssistantPicker label={documentModel || '默认模型'} title="选择模型"
-                      items={[{ id: '', label: '默认模型' }, ...assistantModels]} value={documentModel ?? ''}
-                      disabled={isSubmitting || documentVoiceBusy} onSelect={id => setDocumentModel(id || undefined)} />
+                  <div className="assistant-composer-tools">
                     <VoiceInputButton iconOnly disabled={isSubmitting} onBusy={setDocumentVoiceBusy} onError={setErrorMessage}
                       onText={text => setAgentPrompt(`${agentPromptRef.current}${agentPromptRef.current ? '\n' : ''}${text}`.slice(0, 6000))} />
                     <button
-                      className="agent-dock-clear"
+                      className="assistant-control"
                       type="button"
                       onClick={() => setAgentPrompt('')}
                       disabled={isSubmitting || documentVoiceBusy}
                     >
                       清空
                     </button>
+                  </div>
+                  <div className="assistant-composer-actions">
+                    <AssistantPicker label={documentModel || '默认模型'} title="选择模型"
+                      items={[{ id: '', label: '默认模型' }, ...assistantModels]} value={documentModel ?? ''}
+                      disabled={isSubmitting || documentVoiceBusy} onSelect={id => setDocumentModel(id || undefined)} />
                     <button
-                      className={`agent-dock-submit ${isActionPending('document') ? 'is-busy' : ''}`}
+                      className="assistant-send"
                       type="button"
+                      aria-label={isRewriteMode ? '继续改写' : '开始生成'}
+                      title={isRewriteMode ? '继续改写当前文书' : '开始生成文书'}
                       onClick={() => void (isRewriteMode ? handleRewriteCertificate() : handleGenerateCertificate())}
                       disabled={!canSubmit}
                     >
-                      {isActionPending('document') ? (isRewriteMode ? '正在改写...' : '正在生成...') : (isRewriteMode ? '继续改写' : '开始生成')}
-                      {!isActionPending('document') ? <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
+                      {isActionPending('document') ? <span className="assistant-spinner" /> : <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                     </button>
                     {isActionPending('document') ? (
                       <button
-                        className="ghost-button agent-dock-stop"
+                        className="assistant-control"
                         type="button"
                         title="停止本次生成"
                         onClick={handleStopDocumentStream}
@@ -7893,6 +7947,7 @@ function App() {
               className="ghost-button"
               type="button"
               onClick={() => {
+                setActiveTab('knowledge')
                 setKnowledgeTab('statutes')
                 setKnowledgeLibraryView('library')
                 setIsKnowledgeLibraryDialogOpen(true)
@@ -7911,7 +7966,10 @@ function App() {
       <div className="knowledge-stack">
         <LegalReview editor={activeParagraphId ? paragraphEditorsRef.current[activeParagraphId] ?? null : null}
           active account={loginAccount} automatic={false} />
-        <CaseSearchPanel onOpen={entry => { void handleOpenKnowledgeCaseDetail(entry) }} />
+        <CaseSearchPanel
+          key={selectedCase?.id ?? 'no-case'}
+          onOpen={entry => { void handleOpenKnowledgeCaseDetail(entry) }}
+        />
         {selectedCaseReference && selectedCaseReferenceBinding ? (
           <div className="insight-card">
             <div className="preview-section-head">
@@ -7976,6 +8034,7 @@ function App() {
               className="ghost-button"
               type="button"
               onClick={() => {
+                setActiveTab('knowledge')
                 setKnowledgeTab('cases')
                 setKnowledgeLibraryView('library')
                 setIsKnowledgeLibraryDialogOpen(true)
@@ -8006,19 +8065,24 @@ function App() {
     return (
       <div className="knowledge-stack memory-stack">
         <div className="insight-card memory-overview-card">
-          <div className="preview-section-head">
-            <strong>案件记忆总览</strong>
-            <div className="memory-head-actions">
+          <div className="preview-section-head memory-overview-head">
+            <div className="memory-overview-title">
+              <strong>案件记忆总览</strong>
               <span>{caseMemory ? `更新于 ${formatDateTime(caseMemory.updatedAt)}` : '待建立'}</span>
-              <button
-                className="ghost-button"
-                type="button"
-                disabled={!selectedCase || isSubmitting}
-                onClick={() => void handleRebuildCaseMemory()}
-              >
-                重新梳理案件
-              </button>
             </div>
+            <button
+              className="ghost-button memory-rebuild-button"
+              type="button"
+              title="重新梳理案件"
+              aria-label="重新梳理案件"
+              disabled={!selectedCase || isSubmitting}
+              onClick={() => void handleRebuildCaseMemory()}
+            >
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M13.4 8a5.4 5.4 0 1 1-1.58-3.82" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M13.1 2.7v3.2H9.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           </div>
 
           <div className="memory-kpi-grid">
@@ -8400,6 +8464,7 @@ function App() {
           )}
 
           <input
+            ref={knowledgeSearchInputRef}
             className="search-input"
             value={knowledgeKeyword}
             onChange={(event) => setKnowledgeKeyword(event.target.value)}
@@ -9695,22 +9760,22 @@ function App() {
               {selectedCase ? (
                 <div className="streamlined-case-metrics">
                   <span className="streamlined-case-metric" title="当前案件已入库的材料数量">
-                    材料 <b>{caseEvidences.length}</b>
+                    <span className="streamlined-case-metric-label">材料</span> <b>{caseEvidences.length}</b>
                   </span>
                   <span className="streamlined-case-metric" title="已勾选、拟纳入本版质证书的证据数量">
-                    已选 <b>{selectedEvidenceIds.length}</b>
+                    <span className="streamlined-case-metric-label">已选</span> <b>{selectedEvidenceIds.length}</b>
                   </span>
                   <span className="streamlined-case-metric" title="当前材料的目录层级数量">
-                    目录 <b>{evidenceFolderCount}</b>
+                    <span className="streamlined-case-metric-label">目录</span> <b>{evidenceFolderCount}</b>
                   </span>
                   <span className="streamlined-case-metric" title="当前案件的文书版本数量">
-                    版本 <b>{caseCertificates.length}</b>
+                    <span className="streamlined-case-metric-label">版本</span> <b>{caseCertificates.length}</b>
                   </span>
                   <span className="streamlined-case-metric" title="已人工核验的段落数量">
-                    已核验 <b>{verifiedParagraphCount}</b>
+                    <span className="streamlined-case-metric-label">已核验</span> <b>{verifiedParagraphCount}</b>
                   </span>
                   <span className={`streamlined-case-metric${unlinkedParagraphCount ? ' is-alert' : ''}`} title="仍待补齐证据锚点的段落数量">
-                    待补锚点 <b>{unlinkedParagraphCount}</b>
+                    <span className="streamlined-case-metric-label">待补锚点</span> <b>{unlinkedParagraphCount}</b>
                   </span>
                 </div>
               ) : null}
@@ -9793,7 +9858,7 @@ function App() {
                   setIsCaseBriefOpen(next)
                   if (!next) setCaseDescriptionDraft(selectedCase.description ?? '')
                 }}>
-                  <summary>案件背景</summary>
+                  <summary><SelectChevronIcon className="case-brief-chevron" />案件背景</summary>
                   <textarea
                     className="description-box streamlined-case-brief-input"
                     value={caseDescriptionDraft}
@@ -10018,7 +10083,7 @@ function App() {
     return (
       <>
         <section
-          className={`streamlined-workbench ide-workbench ${isResizingWorkbench ? 'is-resizing' : ''}`}
+          className={`streamlined-workbench ide-workbench ${isResizingWorkbench ? 'is-resizing' : ''} ${isInsightPanelCollapsed ? 'is-insight-collapsed' : ''}`}
           ref={workbenchRef}
           style={{ '--streamlined-insight-width': `${insightPanelWidth}px` } as CSSProperties}
         >
@@ -10126,6 +10191,18 @@ function App() {
           />
 
           <aside className="panel pro-card streamlined-insight-panel">
+            <button
+              className="streamlined-insight-collapse"
+              type="button"
+              onClick={() => setIsInsightPanelCollapsed(true)}
+              title="收起案件助手"
+              aria-label="收起案件助手"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
+                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m10 4-4 4 4 4" />
+              </svg>
+            </button>
             <div className="ide-insight-tabs" role="group" aria-label="交互与详情栏">
               <button className={isIdeAssistantVisible ? 'active' : ''} type="button"
                 aria-pressed={isIdeAssistantVisible} onClick={() => setIsIdeAssistantVisible(true)}>助手</button>
@@ -10155,6 +10232,21 @@ function App() {
                 ? renderEvidencePreview('details') : renderVerifyInsightPanel()}
             </div>
           </aside>
+          {isInsightPanelCollapsed ? (
+            <button
+              className="streamlined-insight-restore"
+              type="button"
+              onClick={() => setIsInsightPanelCollapsed(false)}
+              title="展开案件助手"
+              aria-label="展开案件助手"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
+                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m6 4 4 4-4 4" />
+              </svg>
+              <span>案件助手</span>
+            </button>
+          ) : null}
         </section>
       </>
     )
@@ -10398,7 +10490,8 @@ function App() {
     >
       <IdeActivityBar identity={sidebarPrimaryIdentity} accountOpen={isIdeAccountOpen}
         active={{ files: !isStreamlinedSidebarCollapsed, document: ideContentTab === 'document',
-          assistant: isIdeAssistantVisible && agentMode === 'case', knowledge: isKnowledgeLibraryDialogOpen,
+          assistant: !isInsightPanelCollapsed && isIdeAssistantVisible && agentMode === 'case',
+          knowledge: isKnowledgeLibraryDialogOpen,
           settings: isSettingsDialogOpen }}
         theme={theme}
         onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}

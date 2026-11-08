@@ -241,7 +241,16 @@
 
 .inline-actions {
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   margin-top: 10px;
+}
+
+/* 左侧说明文字允许收缩换行，右侧操作组保持完整不被挤压。 */
+.inline-actions > span:first-child {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .panel-header-title-group {
@@ -269,7 +278,16 @@
 
 .inline-actions div {
   display: flex;
-  gap: 10px;
+  gap: 6px;
+}
+
+/* 右侧操作组保持完整：不被左侧长文字挤压，也不换行。 */
+.inline-actions > div {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
 }
 
 .status-chip,
@@ -864,11 +882,12 @@
   align-self: flex-start;
 }
 
+/* 指标区固定两行三列，每个胶囊等宽等高，案件切换时行数与块高不变。 */
 .streamlined-case-metrics {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  margin: -4px 0 0;
+  margin: 0;
 }
 
 .streamlined-case-metric {
@@ -896,11 +915,34 @@
   background: var(--panel-bg);
 }
 
+/* 案件背景折叠标题：与案件下拉框使用同款细线 chevron，不再用浏览器默认实心三角。 */
 .streamlined-case-brief > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 10px;
   color: var(--text);
   font-size: var(--font-caption);
   cursor: pointer;
+  list-style: none;
+}
+
+.streamlined-case-brief > summary::-webkit-details-marker {
+  display: none;
+}
+
+.case-brief-chevron {
+  order: 2;
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--accent);
+  transition: transform 0.18s ease;
+}
+
+.streamlined-case-brief[open] > summary .case-brief-chevron {
+  transform: rotate(180deg);
 }
 
 .streamlined-case-brief > summary:hover {
@@ -1314,19 +1356,6 @@
   color: var(--success);
 }
 
-.point-cost-hint {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 10px;
-  border: 1px solid rgba(63, 99, 243, 0.16);
-  border-radius: 999px;
-  background: rgba(63, 99, 243, 0.08);
-  color: var(--accent);
-  font-size: var(--font-caption);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
 @keyframes evidence-progress-slide {
   0% {
     transform: translateX(-120%);
@@ -1400,8 +1429,44 @@
 }
 
 .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  background: var(--accent-bg);
   color: var(--accent);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.text-link:hover {
+  border-color: var(--accent);
+  background: var(--panel-bg);
+}
+
+.text-link.danger {
+  border-color: rgba(210, 85, 69, 0.32);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.text-link.danger:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* 卡片标题与副标题分行对齐，避免标题被副标题挤断。 */
+.knowledge-reference-card > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .danger,
@@ -1864,6 +1929,9 @@
 }
 
 .insight-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   padding: 16px;
 }
 
@@ -1876,14 +1944,6 @@
 
 .memory-overview-card {
   gap: 14px;
-}
-
-.memory-head-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .memory-insight-grid,
@@ -3031,13 +3091,42 @@
   justify-content: flex-end;
 }
 
-.preview-format-badge {
-  padding: 6px 10px;
+/* 材料预览头部：徽标与按钮统一为同款圆角胶囊，高度一致。 */
+.preview-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: rgba(63, 99, 243, 0.1);
   color: var(--text-brand);
+  font: inherit;
   font-size: var(--font-caption);
+  line-height: 1;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.preview-meta-chip.is-static {
+  cursor: default;
+}
+
+.preview-meta-chip:hover:not(:disabled):not(.is-static) {
+  background: rgba(63, 99, 243, 0.18);
+}
+
+.preview-meta-chip:focus-visible {
+  outline: 2px solid #7c89f5;
+  outline-offset: 2px;
+}
+
+.preview-meta-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .reference-switcher {
@@ -3630,7 +3719,7 @@
 .knowledge-library-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1070;
+  z-index: 1180;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4608,14 +4697,12 @@
   height: 16px;
 }
 
-.agent-dock-collapse:hover,
-.agent-dock-clear:not(:disabled):hover {
+.agent-dock-collapse:hover {
   background: var(--panel-muted);
   color: var(--text-h);
 }
 
-.agent-dock-collapse:active,
-.agent-dock-clear:not(:disabled):active {
+.agent-dock-collapse:active {
   transform: translateY(1px);
 }
 
@@ -4663,6 +4750,133 @@
   word-break: break-word;
   font-size: 13px;
   line-height: 1.7;
+}
+
+/* 助手区改为 chat 对话框：顶部状态 + 模式开关，中间消息区滚动，底部输入区固定。 */
+.case-agent-chat {
+  gap: 0;
+  min-height: 0;
+}
+
+.case-agent-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.case-agent-chat-head .case-agent-position {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.case-agent-chat-head .case-agent-position strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.case-agent-chat-head .case-agent-position p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.case-agent-chat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(46vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+
+.case-agent-chat-body .agent-message {
+  max-width: 92%;
+}
+
+/* 模式开关：两态滑动开关，取代原先并列的两个按钮。 */
+.assistant-mode-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-muted);
+}
+
+.assistant-mode-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  bottom: 3px;
+  width: calc(50% - 3px);
+  border-radius: 7px;
+  background: var(--panel-bg);
+  box-shadow: 0 1px 4px rgba(31, 41, 55, 0.14);
+  transition: transform 0.18s ease;
+  pointer-events: none;
+}
+
+.assistant-mode-switch[data-active="question"] .assistant-mode-switch-thumb {
+  transform: translateX(100%);
+}
+
+.assistant-mode-switch button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-caption);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+
+.assistant-mode-switch button.active {
+  color: var(--accent);
+}
+
+.assistant-mode-switch button:hover:not(:disabled):not(.active) {
+  color: var(--text-h);
+}
+
+.assistant-mode-switch button:focus-visible {
+  outline: 2px solid #7c89f5;
+  outline-offset: 1px;
+}
+
+.assistant-mode-switch button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .case-agent-actions {
@@ -4743,6 +4957,112 @@
   scrollbar-width: thin;
 }
 
+/* 模式切换嵌入输入卡片顶部：左侧分段控件，右侧上下文状态。 */
+.agent-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: nowrap;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-mode-bar .agent-mode-switch {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+}
+
+.agent-mode-bar .agent-mode-switch button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--font-micro);
+}
+
+.agent-mode-bar .agent-mode-status {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.agent-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.agent-mode-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-caption);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.agent-mode-switch button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.agent-mode-switch button:hover:not(:disabled) {
+  color: var(--text-h);
+}
+
+.agent-mode-switch button.active {
+  background: var(--panel-bg);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(31, 41, 55, 0.12);
+}
+
+.agent-mode-switch button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-mode-status {
+  display: flex;
+  align-items: center;
+  gap: 6px 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.agent-mode-status-item {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: var(--font-micro);
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-mode-status-item:first-child {
+  color: var(--text-h);
+  font-weight: 600;
+}
 
 
 
@@ -4753,28 +5073,46 @@
 
 
 
+
+/* 文书起草的对话区复用案件沟通的卡片样式，保证两者视觉与高度完全一致。 */
 .agent-message-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: min(240px, 30dvh);
-  overflow: auto;
-  padding-right: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.agent-message-empty {
+  margin: 0;
+  padding: 16px 10px;
+  color: var(--text-subtle);
+  font-size: var(--font-caption);
+  text-align: center;
 }
 
 .agent-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   max-width: 88%;
-  padding: 13px 14px;
-  border-radius: 12px;
-  line-height: 1.75;
   overflow-wrap: anywhere;
   font-size: 13px;
 }
 
-.agent-message strong {
-  display: block;
-  margin-bottom: 6px;
-  font-size: var(--font-caption);
+/* 角色名置于气泡外部上方，气泡内只保留消息正文。 */
+.agent-message-author {
+  color: var(--text-subtle);
+  font-size: var(--font-micro);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.agent-message-bubble {
+  padding: 13px 14px;
+  border-radius: 12px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
 }
 
 .agent-message p {
@@ -4783,13 +5121,19 @@
 }
 
 .agent-message.assistant {
-  align-self: flex-start;
-  background: var(--panel-soft);
-  border: 1px solid #eceef3;
+  align-items: flex-start;
+}
+
+.agent-message.assistant .agent-message-bubble {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
 }
 
 .agent-message.user {
-  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.agent-message.user .agent-message-bubble {
   background: #f0f2ff;
   border: 1px solid #e5e8fb;
 }
@@ -4817,9 +5161,9 @@
   flex-direction: column;
   gap: 0;
   padding: 0;
-  border: 1px solid #e0e4ed;
-  border-radius: 14px;
-  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--panel-bg);
   box-shadow: none;
   overflow: hidden;
   flex-shrink: 0;
@@ -4827,26 +5171,32 @@
 }
 
 .agent-dock-input-shell:focus-within {
-  border-color: #8993e5;
-  box-shadow: 0 0 0 3px rgba(82, 96, 216, 0.08);
+  border-color: var(--border);
+  box-shadow: none;
 }
 
 .agent-dock-submit-area {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: nowrap;
   gap: 8px;
-  padding: 8px 12px 10px;
-  border-top: 1px solid #eceef4;
+  padding: 4px 10px 8px;
+  border-top: 0;
+}
+
+/* 两种模式的底部操作行保持同高，切换模式时输入块不会跳动。 */
+.assistant-composer-row,
+.agent-dock-submit-area {
+  min-height: 48px;
 }
 
 /* 操作按钮组固定为一行并靠右，避免窄面板下折行把提交按钮挤到第二行。 */
 .agent-dock-submit-area .agent-composer-actions {
   padding-top: 0;
   gap: 8px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
   flex-wrap: nowrap;
   justify-content: flex-end;
@@ -4860,14 +5210,31 @@
 }
 
 /* 语音按钮只留图标时保持与同行按钮同高，避免出现大块空白。 */
+/* 两种模式用同一尺寸，切换时输入块高度不变。 */
+.assistant-composer-row .assistant-voice,
 .agent-dock-submit-area .assistant-voice {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
-  width: 38px;
+  min-height: 36px;
+  width: 36px;
   padding: 0;
   border-radius: 9px;
+}
+
+/* 文书起草的控件与案件沟通保持同一套外观：圆形发送钮 + 轻量文字按钮。 */
+.agent-dock-submit-area .assistant-send {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.agent-dock-submit-area .assistant-control {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 12px;
 }
 
 .agent-dock-composer-meta {
@@ -4888,61 +5255,6 @@
   color: var(--text-muted);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-.agent-dock-clear {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.agent-dock-submit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 38px;
-  border: 1px solid #4e5cce;
-  background: #5260d8;
-  color: #fff;
-  box-shadow: 0 3px 7px rgba(68, 81, 185, 0.16);
-}
-
-.agent-dock-submit svg {
-  width: 17px;
-  height: 17px;
-}
-
-.agent-dock-submit:not(:disabled):hover {
-  background: #4553c9;
-  box-shadow: 0 5px 12px rgba(68, 81, 185, 0.25);
-  transform: translateY(-1px);
-}
-
-.agent-dock-submit:not(:disabled):active {
-  transform: translateY(1px);
-  box-shadow: none;
-}
-
-.agent-dock-submit:disabled {
-  border-color: #e0e3ee;
-  background: #e5e8f2;
-  color: var(--text-subtle);
-  box-shadow: none;
-}
-
-.agent-dock-submit.is-busy {
-  color: var(--text-brand);
-}
-
-.agent-dock-submit.is-busy::before {
-  content: '';
-  width: 12px;
-  height: 12px;
-  border: 2px solid #bbc1e9;
-  border-top-color: #5260d8;
-  border-radius: 50%;
-  animation: agent-dock-spin 0.8s linear infinite;
 }
 
 .agent-dock-stop {
@@ -4980,16 +5292,19 @@
 .agent-dock-prompt-input {
   width: 100%;
   min-width: 0;
-  height: 88px;
-  min-height: 76px;
-  max-height: min(240px, 35dvh);
-  padding: 14px 12px;
+  height: auto;
+  min-height: calc(5.1em + 18px);
+  max-height: 25dvh;
+  padding: 14px 14px 4px;
   border: none;
   border-radius: 0;
   background: transparent;
   font: inherit;
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.7;
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
   box-shadow: none;
 }
 
@@ -5081,9 +5396,9 @@
   }
 
   .agent-dock-submit-area {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     flex-wrap: nowrap;
   }
 
@@ -5101,10 +5416,6 @@
   .agent-dock button,
   .agent-dock-input-shell {
     transition: none;
-  }
-
-  .agent-dock-submit.is-busy::before {
-    animation: none;
   }
 }
 
@@ -6147,7 +6458,9 @@
   flex: 1;
   min-height: 0;
   margin: 0;
-  padding: 12px 10px 0;
+  /* 顶部留白压到最小，案件标题紧贴目录标题栏；类别之间留出呼吸空间。 */
+  padding: 4px 10px 0;
+  gap: 18px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -6164,7 +6477,8 @@
 .ide-shell .streamlined-evidence-summary { display: none; }
 .ide-shell .streamlined-evidence-toolbar { gap: 6px; }
 .ide-shell .streamlined-evidence-toolbar .ghost-button { padding: 5px 8px; }
-.ide-shell .streamlined-evidence-list { margin: 0 -6px; padding: 4px 4px 12px; }
+/* 操作按钮与材料列表同属一组，两者之间只留一道小间距。 */
+.ide-shell .streamlined-evidence-list { margin: -10px -6px 0; padding: 4px 4px 12px; }
 .ide-shell .streamlined-evidence-item { border-radius: 8px; box-shadow: none; }
 .ide-shell .streamlined-evidence-item:hover { background: var(--accent-bg); }
 
@@ -6196,12 +6510,86 @@
 
 .ide-shell .ide-workbench {
   --streamlined-resizer-width: 6px;
-  grid-template-columns: minmax(0, 1fr) 6px minmax(280px, min(38vw, var(--streamlined-insight-width)));
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) 6px minmax(min(420px, 38vw), min(38vw, var(--streamlined-insight-width)));
   gap: 0;
   align-items: stretch;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* 详情栏收起：文书区占满宽度，只留一个展开入口。 */
+.ide-shell .ide-workbench.is-insight-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ide-shell .ide-workbench.is-insight-collapsed > .streamlined-workbench-resizer,
+.ide-shell .ide-workbench.is-insight-collapsed > .streamlined-insight-panel {
+  display: none;
+}
+
+/* 案件助手左框上的收起按钮：紧贴左边缘，不越出面板裁剪区。 */
+.streamlined-insight-collapse {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 30px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
+  background: var(--panel-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(31, 41, 55, 0.12);
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.streamlined-insight-collapse:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.streamlined-insight-collapse svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 详情栏收起后的展开入口。 */
+.streamlined-insight-restore {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  font-size: var(--font-caption);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(31, 41, 55, 0.12);
+}
+
+.streamlined-insight-restore:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.streamlined-insight-restore svg {
+  width: 14px;
+  height: 14px;
 }
 
 .ide-shell .streamlined-document-panel,
@@ -6289,7 +6677,6 @@
 .ide-shell .preview-meta > div:first-child { min-width: 0; }
 .ide-shell .preview-meta strong { overflow-wrap: anywhere; word-break: break-word; }
 .ide-shell .preview-meta-actions { justify-content: flex-start; }
-.ide-shell .preview-meta-actions .ghost-button { padding: 6px 10px; border-radius: 7px; }
 .ide-shell .streamlined-case-select { border-radius: 7px; padding: 8px 28px 8px 10px; }
 .ide-shell .streamlined-case-select,
 .ide-shell .streamlined-case-selector-row select { min-height: 34px; }
@@ -6364,6 +6751,8 @@
   min-height: 0;
   padding: 12px;
   overflow-y: auto;
+  /* 与案件沟通同一纵向节奏：对话块顶边对齐、间距一致。 */
+  gap: 0;
 }
 
 .ide-agent-panel .agent-dock-mode-switch { flex: 0 0 auto; }
@@ -6376,10 +6765,17 @@
   padding: 12px;
 }
 
-.ide-agent-panel .agent-message-list { flex: 1; min-height: 100px; }
+.ide-agent-panel .agent-message-list { flex: 1; min-height: 0; }
 .ide-agent-panel .case-agent-composer { position: sticky; bottom: -12px; background: var(--panel-bg); padding: 10px 0; }
 .ide-agent-panel .case-agent-composer > small { display: none; }
 .ide-agent-panel .case-agent-panel { flex: 1; min-height: 0; }
+/* chat 对话框：输入区吸底，消息区自行滚动。 */
+.ide-agent-panel .case-agent-chat { gap: 0; }
+.ide-agent-panel .case-agent-chat-head { position: sticky; top: -12px; z-index: 2; background: var(--panel-bg); }
+.ide-agent-panel .case-agent-chat-body { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
+/* 文书起草的对话块顶边与案件沟通的代理立场块顶边对齐。 */
+.ide-agent-panel .agent-message-list { margin-top: 0; }
+.ide-agent-panel .case-agent-composer { order: 20; margin-top: auto; }
 .case-agent-composer {
   display: flex;
   flex-direction: column;
@@ -6387,19 +6783,59 @@
   gap: 0;
   order: 20;
   margin-top: auto;
-  padding: 10px;
+  padding: 0;
+  border-radius: 24px;
   background: var(--panel-bg, #fff);
   border: 1px solid var(--border, #dfe3ee);
-  box-shadow: 0 3px 16px #1e293b08;
+  box-shadow: none;
 }
-.ide-agent-panel .case-agent-composer { padding: 8px 8px 10px; bottom: 0; z-index: 2; }
-.case-agent-composer:focus-within { border-color: #8a94f2; box-shadow: 0 0 0 2px #6675ee12; }
-.case-agent-composer textarea { border: 0; background: transparent; width: 100%; min-height: 68px; padding: 4px 2px 8px; resize: vertical; box-shadow: none; }
+.ide-agent-panel .case-agent-composer { padding: 0; bottom: 0; z-index: 2; }
+.case-agent-composer:focus-within { border-color: var(--border); box-shadow: none; }
+/* 输入区：随内容自动增高（无需右下角拉伸手柄），默认容纳三行，最多到视口四分之一。 */
+.case-agent-composer textarea {
+  border: 0;
+  background: transparent;
+  width: 100%;
+  height: auto;
+  min-height: calc(5.1em + 18px);
+  max-height: 25dvh;
+  padding: 14px 14px 4px;
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 1.7;
+}
 .case-agent-composer textarea:focus { box-shadow: none; }
-/* 案件助手的控件合并为一行：Agent / 模型 / Skill / 语音 / 发送。 */
-.assistant-composer-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; padding: 7px 0 0; border-top: 1px solid var(--border, #edf0f5); }
-.assistant-mode-row { flex: 0 0 auto; padding-bottom: 4px; }
-.assistant-mode-row .assistant-control { color: var(--text, #29334a); font-weight: 600; }
+/* 输入文字跟随主题色，避免暗色主题下沿用浏览器默认黑字而看不清。 */
+.case-agent-composer textarea,
+.agent-dock-prompt-input {
+  color: var(--text-h);
+}
+.case-agent-composer textarea::placeholder,
+.agent-dock-prompt-input::placeholder {
+  color: var(--text-subtle);
+}
+/* 鼠标点选输入框时不再出现蓝色边框光晕，只保留键盘聚焦提示。 */
+.case-agent-composer textarea:focus-visible,
+.agent-dock-prompt-input:focus-visible {
+  box-shadow: none;
+}
+/* 两种模式的模型下拉字号统一，避免同一控件在不同模式下大小不一。 */
+.assistant-composer-row .assistant-control,
+.agent-dock-submit-area .assistant-control {
+  font-size: var(--font-caption);
+}
+/* 案件助手：输入区与功能合并到同一张卡片，左侧工具、右侧模型与发送。 */
+.assistant-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 4px 10px 8px; flex-wrap: nowrap; }
+.assistant-composer-tools,
+.assistant-composer-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.assistant-composer-tools { flex: 0 1 auto; }
+.assistant-composer-actions { flex: 0 1 auto; justify-content: flex-end; }
+.assistant-composer-row .assistant-picker { flex: 0 1 auto; }
+.assistant-composer-row .assistant-control { min-width: 0; }
+
 .assistant-composer-row .assistant-picker:last-child .assistant-picker-menu { left: auto; right: 0; }
 .agent-composer-actions { flex-wrap: wrap; }
 .assistant-send-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
@@ -6432,7 +6868,7 @@
 .assistant-skill-chip { display: flex; align-items: center; align-self: flex-start; gap: 8px; padding: 3px 8px; margin-bottom: 5px; border-radius: 6px; color: #5364dc; background: #eef0ff; font-size: 12px; }
 .assistant-skill-chip button { border: 0; background: none; color: inherit; cursor: pointer; }
 .assistant-voice svg, .assistant-send svg { width: 18px; height: 18px; flex-shrink: 0; }
-.assistant-send { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 9px; background: #5869ed; color: #fff; cursor: pointer; transition: transform .16s, box-shadow .16s; }
+.assistant-send { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 999px; background: #5869ed; color: #fff; cursor: pointer; transition: transform .16s, box-shadow .16s; }
 .assistant-send:hover { box-shadow: 0 4px 12px #5869ed40; }
 .assistant-send:disabled, .assistant-control:disabled, .assistant-voice:disabled { opacity: .45; cursor: not-allowed; }
 .assistant-voice.is-recording { color: #ce334b; background: #fff0f2; animation: assistant-pulse 1.5s ease-in-out infinite; }
@@ -6447,7 +6883,7 @@
     grid-template-columns: 52px minmax(180px, min(22vw, var(--streamlined-sidebar-width))) 6px minmax(0, 1fr);
   }
   .ide-shell .ide-workbench {
-    grid-template-columns: minmax(0, 1fr) 6px minmax(250px, min(30vw, var(--streamlined-insight-width)));
+    grid-template-columns: minmax(0, 1fr) 6px minmax(min(340px, 34vw), min(34vw, var(--streamlined-insight-width)));
   }
   .ide-shell .word-page { padding: 20px 18px; }
 }
@@ -6527,7 +6963,7 @@
 
 :root[data-theme='dark'] .linkage-reason,
 :root[data-theme='dark'] .agent-dock-brand-mark,
-:root[data-theme='dark'] .agent-message.user,
+:root[data-theme='dark'] .agent-message.user .agent-message-bubble,
 :root[data-theme='dark'] .evidence-attention-group {
   background: var(--panel-muted);
 }
@@ -6575,6 +7011,17 @@
   padding: 3px 9px;
   border-radius: 8px;
   background: var(--panel-soft);
+  min-width: 0;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* 侧栏收窄时先截断文字标签，数字始终完整可见。 */
+.streamlined-case-metric-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .streamlined-case-metric.is-alert {
@@ -6588,28 +7035,27 @@
 }
 
 .evidence-toolbar-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 6px;
   width: 100%;
 }
 
-/* 三个操作保持同一行：宽度按内容自适应，空间不足时压缩文字而不是换行。 */
+/* 三个操作保持同一行并平均铺满整行，避免按钮挤在左侧。 */
 .evidence-toolbar-actions > .folder-link-trigger {
   display: flex;
-  flex: 0 1 auto;
   min-width: 0;
 }
 
 .evidence-toolbar-actions > .folder-link-trigger > .evidence-toolbar-button {
-  flex: 0 1 auto;
+  width: 100%;
 }
 
 .streamlined-sidebar .evidence-toolbar-button,
 .ide-shell .streamlined-evidence-toolbar .evidence-toolbar-button {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   align-items: center;
   justify-content: center;
@@ -6784,6 +7230,86 @@
 .streamlined-sidebar .streamlined-case-selector-row .select-chevron,
 .ide-shell .streamlined-case-selector-row .select-chevron {
   color: var(--text-muted);
+}
+
+/* 记忆面板：统一块间距与卡片圆角，避免各区块视觉节奏不一致。 */
+.memory-stack {
+  gap: 12px;
+}
+
+/* 卡片内部改为纵向 flex，使 gap 生效，各块之间保持统一间距。 */
+.memory-stack .memory-overview-card,
+.memory-stack .insight-card {
+  gap: 12px;
+}
+
+.memory-stack .memory-kpi-grid,
+.memory-stack .memory-note-grid,
+.memory-stack .memory-insight-grid,
+.memory-stack .memory-source-grid {
+  gap: 12px;
+}
+
+.memory-stack .memory-kpi-card,
+.memory-stack .memory-timeline-item,
+.memory-stack .memory-paragraph-card,
+.memory-stack .memory-source-card,
+.memory-stack .knowledge-detail-block {
+  border-radius: 18px;
+}
+
+/* 总览卡片内的次级信息块改为浅底无边框，层级更清晰、间距更均匀。 */
+.memory-stack .knowledge-detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-color: transparent;
+  background: var(--panel-bg);
+  padding: 14px;
+}
+
+/* 记忆总览：标题与更新时间靠左，“重新梳理案件”改为右上角纯图标按钮。 */
+.memory-overview-head {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.memory-overview-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.memory-rebuild-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 9px;
+}
+
+.memory-rebuild-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.memory-rebuild-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.memory-stack .knowledge-detail-block p {
+  margin: 0;
+}
+
+.memory-stack .memory-summary-block {
+  border-color: var(--border);
 }
 
 .evidence-toolbar-button:disabled,

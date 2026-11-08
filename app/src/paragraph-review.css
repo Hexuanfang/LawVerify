@@ -61,3 +61,8 @@
   color: var(--text);
   font-size: var(--font-caption);
 }
+
+.paragraph-review-error {
+  color: var(--danger-text);
+  font-size: var(--font-caption);
+}

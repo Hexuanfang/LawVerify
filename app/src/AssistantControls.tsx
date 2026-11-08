@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from './api'
 
@@ -17,6 +17,26 @@ export type AssistantSelection = {
   model?: string
   agent: typeof assistantAgents[number]['id']
   skill?: typeof assistantSkills[number]['id']
+}
+
+export type AssistantMode = 'position' | 'question'
+
+/**
+ * 助手模式开关：在「代理设置」与「讨论案情」之间切换。
+ * 用 radiogroup + 滑块表示两态开关，键盘可直接操作两个选项。
+ */
+export function AssistantModeSwitch({ value, onChange, disabled }: {
+  value: AssistantMode
+  onChange: (value: AssistantMode) => void
+  disabled?: boolean
+}) {
+  return <div className="assistant-mode-switch" role="radiogroup" aria-label="助手模式" data-active={value}>
+    <span className="assistant-mode-switch-thumb" aria-hidden="true" />
+    <button type="button" role="radio" aria-checked={value === 'position'} disabled={disabled}
+      className={value === 'position' ? 'active' : ''} onClick={() => onChange('position')}>代理设置</button>
+    <button type="button" role="radio" aria-checked={value === 'question'} disabled={disabled}
+      className={value === 'question' ? 'active' : ''} onClick={() => onChange('question')}>讨论案情</button>
+  </div>
 }
 
 export function AssistantPicker({ label, title, items, value, disabled, open: controlledOpen, onOpen, onSelect }: {
@@ -141,6 +161,46 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
       </div>,
       document.body,
     ) : null}
+  </div>
+}
+
+export function AssistantWorkModeSwitch({ mode, onChange, disabled, status }: {
+  mode: 'case' | 'document'
+  onChange: (mode: 'case' | 'document') => void
+  disabled?: boolean
+  status?: ReactNode
+}) {
+  return <div className="agent-mode-bar">
+    <div className="agent-mode-switch" role="tablist" aria-label="助手工作模式">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'case'}
+        className={mode === 'case' ? 'active' : ''}
+        disabled={disabled}
+        onClick={() => onChange('case')}
+      >
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2.6 3.9h10.8v6.6H8.3L5.1 13v-2.5H2.6V3.9z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+        案件沟通
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'document'}
+        className={mode === 'document' ? 'active' : ''}
+        disabled={disabled}
+        onClick={() => onChange('document')}
+      >
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.6 2.6h6.1l2.7 2.7v8.1H3.6V2.6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M9.4 2.7v2.8h2.9M5.9 8.6h4.2M5.9 11h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+        文书起草
+      </button>
+    </div>
+    {status ? <div className="agent-mode-status">{status}</div> : null}
   </div>
 }
 

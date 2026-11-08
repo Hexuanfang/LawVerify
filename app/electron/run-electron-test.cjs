@@ -2,7 +2,13 @@ const { spawnSync } = require('node:child_process')
 const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
-const allowed = new Set(['test-desktop-service.cjs', 'test-ide-layout.cjs', 'test-account-proxy.cjs', 'test-update-ui.cjs'])
+const allowed = new Set([
+  'test-desktop-service.cjs',
+  'test-ide-layout.cjs',
+  'test-agent-chat-switch.cjs',
+  'test-account-proxy.cjs',
+  'test-update-ui.cjs',
+])
 const target = process.argv[2]
 if (!allowed.has(target)) throw new Error('Unknown Electron test')
 const env = { ...process.env }

@@ -11,6 +11,8 @@ function fixture(options = {}) {
     fork(_entry, _args, configuration) {
       const child = new EventEmitter()
       child.configuration = configuration
+      child.stdout = new EventEmitter()
+      child.stderr = new EventEmitter()
       child.kill = () => { setImmediate(() => child.emit('exit', 1)); return true }
       children.push(child)
       setImmediate(() => child.emit('message', { type: 'ready' }))
@@ -40,7 +42,19 @@ test('starts once for concurrent callers and does not reset the origin', async t
   await ready
   assert.equal(children.length, 2)
   assert.equal(children[0].configuration.env.PORT, children[1].configuration.env.PORT)
-  assert.equal(children[1].configuration.stdio, 'ignore')
+  assert.equal(children[1].configuration.stdio, 'pipe')
+})
+
+test('service output is reported as diagnostics instead of being discarded', async t => {
+  const { supervisor, children } = fixture()
+  t.after(() => supervisor.stop())
+  const events = []
+  supervisor.on('diagnostic', (event) => events.push(event))
+  await supervisor.start()
+  children[0].stdout.emit('data', Buffer.from('boom'))
+  children[0].stderr.emit('data', Buffer.from('bad'))
+  assert.ok(events.some((item) => item.event === 'service-stdout' && item.text.includes('boom')))
+  assert.ok(events.some((item) => item.event === 'service-stderr' && item.text.includes('bad')))
 })
 
 test('stops after three automatic recoveries', async t => {

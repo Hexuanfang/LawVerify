@@ -1,5 +1,5 @@
 import { cloudErrorMessage } from './cloud-errors'
-import { boundedFetch } from './bounded-fetch'
+import { boundedFetch, createStreamFetch } from './bounded-fetch'
 import { resolveEvidenceMimeType } from './evidence-mime'
 import type {
   AppState,
@@ -483,12 +483,15 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
   }
   applyWorkspaceAccountHeader(headers)
 
-  const response = await boundedFetch(`${API_BASE_URL}${path}`, {
+  // 流式请求按空闲计时：收到数据就重新计时，长任务不会因为总时长超限被断开。
+  const stream = createStreamFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-  }, 15 * 60 * 1000).catch(() => {
+  })
+  const response = await stream.response.catch(() => {
     // 用户主动停止时要保留中止语义，避免被当成服务不可用。
     if (init.signal?.aborted) throw createAbortError()
+    if (stream.isTimedOut()) throw new Error('服务端长时间没有响应，请稍后重试。')
     throw new Error('暂时无法连接服务，请检查连接后重试。')
   })
 
@@ -560,8 +563,10 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
     while (true) {
       const { done, value } = await reader.read().catch(() => {
         if (init.signal?.aborted) throw createAbortError()
+        if (stream.isTimedOut()) throw new Error('服务端长时间没有响应，请稍后重试。')
         throw new Error('处理连接已中断，请稍后重试。')
       })
+      stream.noteActivity()
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
       if (buffer.length > 16 * 1024 * 1024) throw new Error('返回内容过大，已停止接收。请检查已有结果。')
 

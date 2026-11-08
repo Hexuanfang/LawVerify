@@ -60,8 +60,10 @@ class ServiceSupervisor extends EventEmitter {
       let child
       try {
         child = this.fork(this.entry, [], {
-          env: this.env, stdio: 'ignore', serviceName: 'LawVerify Local Service',
-          execArgv: ['--max-old-space-size=1024'],
+          env: this.env, stdio: 'pipe', serviceName: 'LawVerify Local Service',
+          // 工作区里几十份材料原件解码后会占用较多内存，堆上限过低会触发频繁的
+          // 完整回收，把事件循环长时间占死，表现为流式连接被中断。
+          execArgv: ['--max-old-space-size=2048'],
         })
       } catch (error) {
         this.status('failed')
@@ -69,6 +71,13 @@ class ServiceSupervisor extends EventEmitter {
         return
       }
       this.child = child
+      // 服务端日志原先被直接丢弃，出问题时无从查起；这里转成诊断事件写进稳定性日志。
+      child.stdout?.on('data', (chunk) => {
+        this.emit('diagnostic', { event: 'service-stdout', text: chunk.toString() })
+      })
+      child.stderr?.on('data', (chunk) => {
+        this.emit('diagnostic', { event: 'service-stderr', text: chunk.toString() })
+      })
       readyTimer = setTimeout(() => {
         fail()
         child.kill()

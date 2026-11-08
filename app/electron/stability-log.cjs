@@ -13,6 +13,10 @@ function createStabilityLog(directory) {
       if (typeof value === 'number' && Number.isFinite(value)) record[key] = value
       else if (typeof value === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(value)) record[key] = value
     }
+    // 服务端的输出片段：只保留末尾若干字符，避免日志文件被单条输出撑爆。
+    if (typeof details.text === 'string' && details.text.trim()) {
+      record.text = details.text.replace(/\s+/g, ' ').trim().slice(0, 500)
+    }
     queued++
     tail = tail.then(async () => {
       await fs.mkdir(directory, { recursive: true })

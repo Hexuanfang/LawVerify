@@ -222,6 +222,8 @@ export interface EvidenceInsight {
   error?: string
   // 超大材料走检索式理解时的覆盖情况：只覆盖了被检索命中的内容块。
   coverage?: EvidenceInsightCoverage
+  // 规则扫描出的程序与形式风险。
+  risks?: EvidenceRiskFinding[]
   updatedAt: string
 }
 
@@ -233,6 +235,23 @@ export interface EvidenceInsightCoverage {
   totalChars: number
   coveredChunkIndexes: number[]
   queries: string[]
+}
+
+export type EvidenceRiskKind =
+  | 'limitation-deadline'
+  | 'evidence-form'
+  | 'original-missing'
+  | 'signature-seal'
+  | 'page-continuity'
+  | 'delivery-address'
+  | 'party-identity'
+
+// 规则扫描出的程序与形式风险：不进检索链，独立于争议焦点。
+export interface EvidenceRiskFinding {
+  kind: EvidenceRiskKind
+  severity: 'high' | 'medium' | 'low'
+  message: string
+  excerpt?: string
 }
 
 export interface CaseContextSupportItem {

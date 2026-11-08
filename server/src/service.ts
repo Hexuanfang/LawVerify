@@ -54,6 +54,7 @@ import {
 import { requestLinkageParagraphBatch } from './intelligence/linkage-response.js'
 import { selectEvidenceChunksForUnderstanding } from './intelligence/evidence-retrieval.js'
 import { resolveEvidenceUnderstandingMode } from './intelligence/evidence-understanding-mode.js'
+import { scanEvidenceRisks } from './intelligence/evidence-risk-scan.js'
 import {
   AUTO_STATUTE_REFERENCE_NOTE,
   buildStatuteReference,
@@ -6443,6 +6444,8 @@ async function commitEvidenceSummary(
     evidenceId: preparation.evidenceId,
     version: preparation.processingInsight.version,
     ...insightDraft,
+    // 规则扫描独立于模型理解：程序瑕疵与形式要件问题不会出现在争议焦点的语义空间里。
+    risks: scanEvidenceRisks(getMeaningfulEvidenceText(evidence.ocrText)),
     updatedAt,
   })
 
@@ -7118,8 +7121,25 @@ function mergeInsightWithIncrementalCoverage(
     timelineEvents: uniqueStrings([...(insight.timelineEvents ?? []), ...(draft.timelineEvents ?? [])], 12),
     issues: uniqueStrings([...(insight.issues ?? []), ...(draft.issues ?? [])], 8),
     coverage,
+    risks: mergeEvidenceRisks(insight.risks, draft.risks),
     updatedAt: new Date().toISOString(),
   }
+}
+
+function mergeEvidenceRisks(
+  left: EvidenceInsight['risks'],
+  right: EvidenceInsight['risks'],
+) {
+  const merged = [...(left ?? []), ...(right ?? [])]
+  const seen = new Set<string>()
+  return merged.filter((item) => {
+    const key = `${item.kind}|${item.message}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
 }
 
 // 超大材料只在检索命中处被理解过：拿到争议焦点后补齐其余相关内容块。

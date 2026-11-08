@@ -59,6 +59,28 @@ test('stops after three automatic recoveries', async t => {
   assert.equal(supervisor.state, 'failed')
 })
 
+test('keeps retrying in the background after the restart budget is exhausted', async t => {
+  const { supervisor, children } = fixture({ restartDelays: [1, 1], recoveryRetryMs: 5 })
+  t.after(() => supervisor.stop())
+  await supervisor.start()
+  for (let index = 0; index < 2; index++) {
+    const ready = state(supervisor, 'ready')
+    children[index].emit('exit', 1)
+    await ready
+  }
+  const failed = state(supervisor, 'failed')
+  children[2].emit('exit', 1)
+  await failed
+  assert.equal(supervisor.state, 'failed')
+
+  // 重启次数用尽也不放弃：本地服务恢复后界面应自动回到可用状态，
+  // 不必让用户重开应用、丢掉正在做的材料。
+  const readyAgain = state(supervisor, 'ready')
+  await readyAgain
+  assert.equal(supervisor.state, 'ready')
+  assert.equal(children.length, 4)
+})
+
 test('startup failure retries without rejecting the overall readiness wait', async t => {
   let attempts = 0
   const { supervisor } = fixture({

@@ -2,9 +2,9 @@ const { EventEmitter } = require('node:events')
 
 // Keep the origin fixed across restarts so cookies, drafts and source URLs stay valid.
 class ServiceSupervisor extends EventEmitter {
-  constructor({ fork, entry, env, readyTimeoutMs = 30000, restartDelays = [500, 1500, 4000], restartWindowMs = 300000, pingIntervalMs = 30000, pingTimeoutMs = 20000 }) {
+  constructor({ fork, entry, env, readyTimeoutMs = 30000, restartDelays = [500, 1500, 4000, 8000, 15000], restartWindowMs = 600000, pingIntervalMs = 30000, pingTimeoutMs = 60000, recoveryRetryMs = 30000 }) {
     super()
-    Object.assign(this, { fork, entry, env, readyTimeoutMs, restartDelays, restartWindowMs, pingIntervalMs, pingTimeoutMs })
+    Object.assign(this, { fork, entry, env, readyTimeoutMs, restartDelays, restartWindowMs, pingIntervalMs, pingTimeoutMs, recoveryRetryMs })
     this.child = null
     this.pending = null
     this.stopped = false
@@ -114,7 +114,13 @@ class ServiceSupervisor extends EventEmitter {
         this.status('recovering')
         this.restarts = this.restarts.filter(time => Date.now() - time < this.restartWindowMs)
         if (this.restarts.length >= this.restartDelays.length) {
+          // 重启次数用尽也不放弃：本地服务只是暂时起不来，
+          // 保持低频重试，恢复后界面会自动回到可用状态，不必让用户重开应用。
           this.status('failed')
+          this.timer = setTimeout(() => {
+            this.timer = null
+            void this.start().catch(() => {})
+          }, this.recoveryRetryMs)
           return
         }
         const delay = this.restartDelays[this.restarts.length]

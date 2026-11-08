@@ -477,7 +477,8 @@ async function startPackagedServer() {
     return desktopServerPromise
   }
   if (desktopServer) {
-    if (desktopServer.state === 'failed') throw new Error('本地服务恢复失败，请重新打开 LawVerify。')
+    // 服务失败后看门狗仍会低频重试，这里等它恢复，
+    // 而不是直接让窗口加载失败、逼用户重开应用。
     await desktopServer.waitUntilReady()
     return desktopServerUrl
   }

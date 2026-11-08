@@ -12,7 +12,9 @@ function fatal(event, error) {
 }
 
 process.on('uncaughtException', error => fatal('service-uncaught-exception', error))
-process.on('unhandledRejection', error => fatal('service-unhandled-rejection', error))
+// 未处理的 Promise 拒绝不代表本地服务不可用：只记录诊断，不因此杀掉服务。
+// 真正无响应的情况交给桌面端看门狗恢复，杀掉进程会让用户手上的材料一起中断。
+process.on('unhandledRejection', error => diagnostic('service-unhandled-rejection', error))
 process.parentPort?.on('message', ({ data }) => {
   if (data?.type === 'ping') {
     process.parentPort.postMessage({ type: 'pong', rssMB: Math.round(process.memoryUsage().rss / 1024 / 1024) })

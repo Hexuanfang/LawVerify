@@ -6395,7 +6395,10 @@ function App() {
             cancelled = true
             return
           }
-          setAutoLinkFeedback({ tone: 'info', text: '本次联动未完成，请稍后重试。' })
+          // 透出服务端给出的具体原因（例如材料在联动期间被更新），
+          // 不要用通用文案盖掉，用户才知道下一步该做什么。
+          const detail = error instanceof Error ? error.message.trim() : ''
+          setAutoLinkFeedback({ tone: 'info', text: detail || '本次联动未完成，请稍后重试。' })
           throw error
         }
         if (cancelled) return

@@ -1970,6 +1970,53 @@ function attachAutoEvidenceLinksToCertificateWithLlm(
   }
 }
 
+// 合并联动写入的挂接与引用：人工内容以最新工作区为准，
+// 联动生成的自动项用本次联动结果覆盖。
+// 联动过程中的模型调用可能持续数分钟，期间后台的材料理解会更新工作区；
+// 保存前基于最新工作区合并，既不覆盖别人的更新，也不让整次联动因为
+// 工作区被更新而作废。
+export function mergeAutoLinkageItems<T extends { note?: string }>(
+  latestItems: T[],
+  linkedItems: T[],
+  autoNotes: string[],
+) {
+  const isAutoItem = (item: T) => Boolean(item.note && autoNotes.includes(item.note))
+  return [
+    ...latestItems.filter((item) => !isAutoItem(item)),
+    ...linkedItems.filter((item) => isAutoItem(item)),
+  ]
+}
+
+export function mergeAutoLinkageIntoCertificate(latest: Certificate, linked: Certificate): Certificate {
+  const linkedParagraphs = new Map((linked.paragraphs ?? []).map((paragraph) => [paragraph.id, paragraph]))
+  return {
+    ...latest,
+    paragraphs: (latest.paragraphs ?? []).map((paragraph) => {
+      const source = linkedParagraphs.get(paragraph.id)
+      if (!source) {
+        return paragraph
+      }
+      const links = mergeAutoLinkageItems(
+        getParagraphLinks(paragraph),
+        getParagraphLinks(source),
+        [AUTO_EVIDENCE_LINK_NOTE],
+      )
+      const references = mergeAutoLinkageItems(
+        paragraph.references ?? [],
+        source.references ?? [],
+        [AUTO_STATUTE_REFERENCE_NOTE, AUTO_CASE_REFERENCE_NOTE],
+      )
+      return normalizeParagraph({
+        ...paragraph,
+        linkageFocus: source.linkageFocus ?? paragraph.linkageFocus,
+        links,
+        link: links[0],
+        references,
+      })
+    }),
+  }
+}
+
 function paragraphMentionsCaseReference(text: string) {
   const normalized = text.replace(/\s+/g, '')
   if (!normalized) {
@@ -6843,8 +6890,35 @@ export async function autoLinkCertificate(
     throwIfLinkageAborted(signal)
 
     reportProgress('正在保存联动结果')
-    workspace.certificates = workspace.certificates.map((item) => item.id === certificateId ? nextCertificate : item)
-    await writeWorkspace(workspace)
+    // 模型调用可能持续数分钟，期间后台的材料理解会更新工作区。
+    // 保存前重新读取最新工作区，只把联动写入的挂接与引用合并上去：
+    // 段落正文与人工挂接以最新工作区为准，不会用旧快照覆盖别人的更新，
+    // 也不会因为后台更新了材料而让整次联动前功尽弃。
+    const latestWorkspace = await readWorkspace()
+    const latestCertificate = latestWorkspace.certificates.find((item) => item.id === certificateId)
+    if (!latestCertificate) {
+      throw new Error('文书已被删除，联动结果已丢弃。')
+    }
+    // 联动期间重建的案件记忆：与最新工作区取版本较新的一方。
+    const memoryById = new Map(latestWorkspace.caseContextMemories.map((item) => [item.id, item]))
+    for (const memory of workspace.caseContextMemories) {
+      const current = memoryById.get(memory.id)
+      if (!current || (memory.version ?? 0) > (current.version ?? 0)) {
+        memoryById.set(memory.id, memory)
+      }
+    }
+    latestWorkspace.caseContextMemories = [...memoryById.values()]
+    latestWorkspace.certificates = latestWorkspace.certificates.map((item) =>
+      item.id === certificateId ? mergeAutoLinkageIntoCertificate(item, nextCertificate) : item,
+    )
+    try {
+      await writeWorkspace(latestWorkspace)
+    } catch (error) {
+      if ((error as { code?: string }).code === 'WORKSPACE_CONFLICT') {
+        throw new AppError('联动结果保存失败：材料或文书在联动期间被更新，请重新执行联动。', 409, 'WORKSPACE_CONFLICT')
+      }
+      throw error
+    }
 
     const refreshedWorkspace = await readWorkspace()
     const refreshedCertificate = refreshedWorkspace.certificates.find((item) => item.id === certificateId) ?? nextCertificate

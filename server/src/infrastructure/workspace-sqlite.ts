@@ -142,7 +142,12 @@ export class WorkspaceSqliteStore {
       return storageError(error)
     }
     try {
-      db.exec('PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;')
+      db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;')
+      // journal_mode 是写操作：每次连接都重设会和正在进行的写入事务互相等待，
+      // busy_timeout 到点后表现为数十秒的假死（桌面端看门狗会直接杀掉服务）。
+      // 只在确实不是 WAL 时切一次，切完就不再触碰。
+      const journalMode = String(db.prepare('PRAGMA journal_mode').get()?.journal_mode ?? '').toLowerCase()
+      if (journalMode !== 'wal') db.exec('PRAGMA journal_mode = WAL;')
       const version = Number(db.prepare('PRAGMA user_version').get()?.user_version)
       if (version > 1) {
         throw new AppError('工作区由更新版本创建，请升级 LawVerify 后打开。', 409, 'WORKSPACE_VERSION')

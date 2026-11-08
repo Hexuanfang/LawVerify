@@ -1,7 +1,18 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import type { CertificateParagraph, EvidenceLink, ParagraphReference, WorkspaceState } from './domain.js'
+import type {
+  Certificate,
+  CertificateParagraph,
+  ClaimEvidenceMatch,
+  ClaimUnit,
+  Evidence,
+  EvidenceFragment,
+  EvidenceLink,
+  ParagraphReference,
+  WorkspaceState,
+} from './domain.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { listKnowledgeFilesForWorkspace } from './commercial/knowledge-file-service.js'
 import { getWorkspaceDataDir } from './config/paths.js'
@@ -127,6 +138,94 @@ function normalizeParagraphLinks(paragraph: CertificateParagraph): CertificatePa
     link: links[0],
     references: normalizeParagraphReferences(paragraph.references),
   }
+}
+
+// 证据片段、主张单元和启发式匹配都是纯计算，但结果只取决于材料原文与文书段落，
+// 和材料是否已经被理解无关。材料一多（几十份材料、上百个段落）重算一次要几百毫秒，
+// 而自动理解会连续读写工作区几十次，重算会把本地服务的事件循环占满，
+// 桌面端看门狗会判定服务无响应并直接杀掉进程。
+// 这里按内容指纹缓存派生结果：输入没变就直接复用，输入变了才重算。
+interface DerivedWorkspaceSnapshot {
+  key: string
+  fragments: EvidenceFragment[]
+  units: ClaimUnit[]
+  matches: ClaimEvidenceMatch[]
+}
+
+const DERIVED_CACHE_LIMIT = 4
+const derivedWorkspaceCache = new Map<string, DerivedWorkspaceSnapshot>()
+
+// 指纹覆盖所有会影响派生结果的输入：材料原文与定位信息、文书段落文本与证据挂接。
+// 少算一个字段就会让缓存误命中、证据关联结果过期，因此这里逐字段精确哈希。
+function buildDerivedFingerprint(evidences: Evidence[], certificates: Certificate[]) {
+  const hash = createHash('sha256')
+  for (const evidence of evidences) {
+    hash.update(evidence.id ?? '')
+    hash.update('\u0001')
+    hash.update(evidence.caseId ?? '')
+    hash.update('\u0001')
+    hash.update(evidence.type ?? '')
+    hash.update('\u0001')
+    hash.update(evidence.number ?? '')
+    hash.update('\u0001')
+    hash.update(evidence.name ?? '')
+    hash.update('\u0001')
+    hash.update(evidence.fileName ?? '')
+    hash.update('\u0001')
+    hash.update(evidence.anchorHint ?? '')
+    hash.update('\u0001')
+    hash.update(String(evidence.pages ?? 0))
+    hash.update('\u0001')
+    hash.update(evidence.ocrText ?? '')
+    hash.update('\u0002')
+  }
+  for (const certificate of certificates) {
+    hash.update(certificate.id ?? '')
+    hash.update('\u0001')
+    hash.update(certificate.caseId ?? '')
+    hash.update('\u0001')
+    for (const paragraph of certificate.paragraphs ?? []) {
+      hash.update(paragraph.id ?? '')
+      hash.update('\u0001')
+      hash.update(paragraph.text ?? '')
+      hash.update('\u0001')
+      hash.update(JSON.stringify(paragraph.links ?? []))
+      hash.update('\u0001')
+      hash.update(JSON.stringify(paragraph.link ?? null))
+      hash.update('\u0002')
+    }
+    hash.update('\u0002')
+  }
+  return hash.digest('hex')
+}
+
+function resolveDerivedWorkspace(
+  evidences: Evidence[],
+  certificates: Certificate[],
+): { fragments: EvidenceFragment[]; units: ClaimUnit[]; matches: ClaimEvidenceMatch[] } {
+  const key = buildDerivedFingerprint(evidences, certificates)
+  const cached = derivedWorkspaceCache.get(key)
+  if (cached) {
+    // 命中后放回队首，保留最近使用的几份，兼顾多账号来回切换。
+    derivedWorkspaceCache.delete(key)
+    derivedWorkspaceCache.set(key, cached)
+    return {
+      fragments: [...cached.fragments],
+      units: [...cached.units],
+      matches: [...cached.matches],
+    }
+  }
+
+  const fragments = buildEvidenceFragments(evidences)
+  const units = buildClaimUnits(certificates)
+  const matches = buildClaimEvidenceMatches(certificates, units, fragments)
+  derivedWorkspaceCache.set(key, { key, fragments, units, matches })
+  while (derivedWorkspaceCache.size > DERIVED_CACHE_LIMIT) {
+    const oldest = derivedWorkspaceCache.keys().next().value
+    if (oldest === undefined) break
+    derivedWorkspaceCache.delete(oldest)
+  }
+  return { fragments, units, matches }
 }
 
 function normalizeParagraphReferences(references: CertificateParagraph['references']): ParagraphReference[] {
@@ -309,9 +408,10 @@ function normalizeWorkspace(state: WorkspaceState): WorkspaceState {
     paragraphs: (certificate.paragraphs ?? []).map((paragraph) => normalizeParagraphLinks(paragraph)),
   }))
 
-  const evidenceFragments = buildEvidenceFragments(evidences)
-  const claimUnits = buildClaimUnits(certificates)
-  const derivedMatches = buildClaimEvidenceMatches(certificates, claimUnits, evidenceFragments)
+  const derived = resolveDerivedWorkspace(evidences, certificates)
+  const evidenceFragments = derived.fragments
+  const claimUnits = derived.units
+  const derivedMatches = derived.matches
   const validClaimIds = new Set(claimUnits.map((item) => item.id))
   const validFragmentIds = new Set(evidenceFragments.map((item) => item.id))
   const persistedModelMatches = (normalizedState.claimEvidenceMatches ?? []).filter((match) =>

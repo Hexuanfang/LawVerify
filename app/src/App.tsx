@@ -9070,6 +9070,11 @@ function App() {
               >
                 {autoLinkingCertificateId === activeCertificate?.id ? '联动中...' : '证据联动'}
               </button>
+              {activeCertificate?.linkageStale ? (
+                <span className="linkage-stale-hint" role="status" aria-live="polite">
+                  材料有更新，联动结果可能已过时
+                </span>
+              ) : null}
               {autoLinkingCertificateId ? (
                 <button
                   className="word-tool evidence-link-stop-button"

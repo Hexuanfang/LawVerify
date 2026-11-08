@@ -77,7 +77,7 @@ import { OFFICIAL_LEGAL_SOURCES } from './legal-source-catalog.js'
 import { removeLocalKnowledgeFileIndex, replaceLocalKnowledgeFileIndex, searchLocalKnowledgeRagChunks } from './local-rag-store.js'
 import { getCurrentWorkspaceAccount, readWorkspace, runWithWorkspaceAccount, writeWorkspace } from './store.js'
 import {
-  CASE_AGENT_RULES, evidenceSourceNumber, normalizeStrategy, objectiveInputKey,
+  CASE_AGENT_RULES, evidenceSourceNumber, linkageMaterialFingerprint, normalizeStrategy, objectiveInputKey,
   positionSchema, strategyInputKey, type PositionDraft,
 } from './intelligence/case-agent.js'
 import { chargedCaseAgentTask, settleCaseAgentRefunds } from './case-agent-billing.js'
@@ -273,17 +273,17 @@ async function drainBackgroundEvidenceProcessingQueue() {
           await settleCaseAgentRefunds(caseId)
           // 多份材料并发理解：模型调用耗时最长，放在工作区写锁之外并行执行，
           // 落库仍由 summarizeEvidence 内部串行合并，保证结果不丢。
-          const outcomes = await mapSettledWithConcurrency<string, { evidenceId: string; outcome: 'skipped' | 'duplicate' | 'done' }>(
+          const outcomes = await mapSettledWithConcurrency<string, { evidenceId: string; outcome: 'skipped' | 'duplicate' | 'done'; analyzed: boolean }>(
             task.evidenceIds,
             EVIDENCE_SUMMARY_CONCURRENCY,
             async (evidenceId) => {
               const current = await readWorkspace()
               const currentFolder = current.cases.find(c => c.id === caseId)
-              if (!currentFolder || currentFolder.agent?.autoAnalyze === false) return { evidenceId, outcome: 'done' }
+              if (!currentFolder || currentFolder.agent?.autoAnalyze === false) return { evidenceId, outcome: 'done', analyzed: false }
               const material = current.evidences.find(e => e.id === evidenceId)
-              if (!material) return { evidenceId, outcome: 'done' }
+              if (!material) return { evidenceId, outcome: 'done', analyzed: false }
               // 重复文件只标记不理解，避免重复扣费并阻断整案梳理。
-              if (material.duplicateOf) return { evidenceId, outcome: 'duplicate' }
+              if (material.duplicateOf) return { evidenceId, outcome: 'duplicate', analyzed: false }
               const run = async () => {
                 const result = await summarizeEvidence(evidenceId, { background: true })
                 if (result.workspace.evidences.find(e => e.id === evidenceId)?.summaryStatus === 'failed') {
@@ -292,17 +292,19 @@ async function drainBackgroundEvidenceProcessingQueue() {
                 return result
               }
               try {
-                const result = material.summaryStatus === 'ready'
+                const reused = material.summaryStatus === 'ready'
+                const result = reused
                   ? await summarizeEvidence(evidenceId, { cacheOnly: true })
                   : await chargedCaseAgentTask(caseId, 'evidence_summary', material.contentHash ?? material.storageKey ?? evidenceId, run)
                 if (result.workspace.evidences.find(e => e.id === evidenceId)?.summaryStatus === 'failed') {
                   throw new Error(buildEvidenceSummaryFailureMessage(result.workspace, evidenceId))
                 }
-                return { evidenceId, outcome: 'done' }
+                // 复用既有理解结果的不算新证据：不据此触发反向检索。
+                return { evidenceId, outcome: 'done', analyzed: !reused }
               } catch (error) {
                 // 缺少文本与图片的材料只做排除处理，其余材料继续梳理。
                 if (!isEvidenceNoContentFailure(error instanceof Error ? error.message : '')) throw error
-                return { evidenceId, outcome: 'skipped' }
+                return { evidenceId, outcome: 'skipped', analyzed: false }
               }
             },
           )
@@ -322,6 +324,15 @@ async function drainBackgroundEvidenceProcessingQueue() {
             }
           }
           await rebuildCaseMemoryAfterBackgroundProcessing(caseId, revision)
+          // 新证据进来后，回头在超大材料里找与新证据相关的内容：已覆盖的块不会重做。
+          const analyzedEvidenceIds = outcomes
+            .filter((result) => result.ok)
+            .map((result) => result.value)
+            .filter((result) => result.analyzed)
+            .map((result) => result.evidenceId)
+          if (analyzedEvidenceIds.length) {
+            await enrichRetrievalLimitedInsightsByNewEvidence(caseId, analyzedEvidenceIds)
+          }
           const latest = await readWorkspace()
           const next = latest.cases.find(c => c.id === caseId)?.agent?.task
           if (next?.revision === revision) {
@@ -2408,6 +2419,21 @@ async function attachAutoStatuteReferencesToCertificate(workspace: WorkspaceStat
 }
 
 export function sanitizeWorkspaceForClient(workspace: WorkspaceState): WorkspaceState {
+  const fingerprintByCaseId = new Map<string, string>()
+  const fingerprintOf = (caseId: string) => {
+    const cached = fingerprintByCaseId.get(caseId)
+    if (cached) {
+      return cached
+    }
+
+    const fingerprint = linkageMaterialFingerprint(
+      workspace.evidences.filter((item) => item.caseId === caseId),
+      workspace.evidenceInsights.filter((item) => item.caseId === caseId),
+    )
+    fingerprintByCaseId.set(caseId, fingerprint)
+    return fingerprint
+  }
+
   return {
     ...workspace,
     aiBillingMode: isCloudAiEnabled() ? 'cloud' : 'client',
@@ -2420,6 +2446,12 @@ export function sanitizeWorkspaceForClient(workspace: WorkspaceState): Workspace
       sourceDataUrl: undefined,
       previewDataUrl: undefined,
       pageImageDataUrls: undefined,
+    })),
+    certificates: workspace.certificates.map((certificate) => ({
+      ...certificate,
+      // 材料在联动之后又增加或被重新理解时，联动结果已经过时，需要提示重新核验。
+      linkageStale: Boolean(certificate.linkageInputKey)
+        && certificate.linkageInputKey !== fingerprintOf(certificate.caseId),
     })),
   }
 }
@@ -7156,15 +7188,17 @@ function mergeEvidenceRisks(
 async function enrichRetrievalLimitedInsights(
   workspace: WorkspaceState,
   evidences: Evidence[],
-  analyses: Map<string, ParagraphAutoLinkAnalysis>,
+  focusQueries: string[],
+  options: { excludeEvidenceIds?: string[] } = {},
 ) {
-  const focusQueries = collectFocusQueriesFromAnalyses(analyses)
   if (!focusQueries.length) {
     return
   }
 
+  const excluded = new Set(options.excludeEvidenceIds ?? [])
   const targets = evidences.filter((evidence) =>
-    getLatestEvidenceInsight(workspace, evidence.id)?.coverage?.mode === 'retrieval')
+    !excluded.has(evidence.id)
+    && getLatestEvidenceInsight(workspace, evidence.id)?.coverage?.mode === 'retrieval')
   if (!targets.length) {
     return
   }
@@ -7213,6 +7247,41 @@ async function enrichRetrievalLimitedInsights(
   })
 }
 
+// 新证据出现后回头在旧的大材料里找相关内容：
+// 新证据里的具体事实（金额、日期、当事人）是很强的检索信号，
+// 通用争点词命中不到的段落，往往正是与新证据相互印证或相互矛盾的地方。
+async function enrichRetrievalLimitedInsightsByNewEvidence(
+  caseId: string,
+  newEvidenceIds: string[],
+) {
+  if (!newEvidenceIds.length) {
+    return
+  }
+
+  const workspace = await readWorkspace()
+  const newInsights = newEvidenceIds
+    .map((evidenceId) => getLatestEvidenceInsight(workspace, evidenceId))
+    .filter((insight): insight is EvidenceInsight => Boolean(insight && insight.status === 'ready'))
+  if (!newInsights.length) {
+    return
+  }
+
+  // 具体事实优先，概括性描述放后面：query 越具体，命中越准。
+  const queries = uniqueStrings([
+    ...newInsights.flatMap((insight) => insight.amounts ?? []),
+    ...newInsights.flatMap((insight) => insight.timelineEvents ?? []),
+    ...newInsights.flatMap((insight) => insight.entities ?? []),
+    ...newInsights.flatMap((insight) => insight.keyFacts ?? []),
+    ...newInsights.map((insight) => insight.summary),
+  ], 40)
+  if (!queries.length) {
+    return
+  }
+
+  const caseEvidences = workspace.evidences.filter((item) => item.caseId === caseId)
+  await enrichRetrievalLimitedInsights(workspace, caseEvidences, queries, { excludeEvidenceIds: newEvidenceIds })
+}
+
 export async function autoLinkCertificate(
   certificateId: string,
   onProgress?: LinkageProgressReporter,
@@ -7257,7 +7326,7 @@ export async function autoLinkCertificate(
 
     // 争议焦点在整理过程中才逐步明确：拿到焦点后对超大材料再做一次增量检索与理解。
     reportProgress('正在按争议焦点补齐超大材料的理解')
-    await enrichRetrievalLimitedInsights(workspace, caseEvidences, analyses)
+    await enrichRetrievalLimitedInsights(workspace, caseEvidences, collectFocusQueriesFromAnalyses(analyses))
     throwIfLinkageAborted(signal)
 
     // 补齐后的理解结果写回了工作区，联动要基于最新材料记忆来做。
@@ -7300,8 +7369,15 @@ export async function autoLinkCertificate(
       }
     }
     latestWorkspace.caseContextMemories = [...memoryById.values()]
+    // 记录本次联动依赖的材料指纹：之后材料有增减或被重新理解时，可以提示用户重新核验。
+    const linkageInputKey = linkageMaterialFingerprint(
+      latestWorkspace.evidences.filter((item) => item.caseId === certificate.caseId),
+      latestWorkspace.evidenceInsights.filter((item) => item.caseId === certificate.caseId),
+    )
     latestWorkspace.certificates = latestWorkspace.certificates.map((item) =>
-      item.id === certificateId ? mergeAutoLinkageIntoCertificate(item, nextCertificate) : item,
+      item.id === certificateId
+        ? { ...mergeAutoLinkageIntoCertificate(item, nextCertificate), linkageInputKey }
+        : item,
     )
     try {
       await writeWorkspace(latestWorkspace)

@@ -311,6 +311,10 @@ export interface Certificate {
   paragraphIds: string[]
   paragraphs: CertificateParagraph[]
   createdAt: string
+  // 上次联动所依赖的材料指纹：材料新增、删除或重新理解后会变化。
+  linkageInputKey?: string
+  // 服务端下发的派生字段：联动结果是否已因材料变化而过时。
+  linkageStale?: boolean
 }
 
 export interface CaseFolder {

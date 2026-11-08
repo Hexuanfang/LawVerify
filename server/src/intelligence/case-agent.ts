@@ -77,6 +77,19 @@ export function objectiveInputKey(evidences: Evidence[], insights: EvidenceInsig
   )).digest('hex')
 }
 
+// 文书联动所依赖的材料指纹：材料新增、删除或重新理解后指纹会变，
+// 用来判断已保存的联动结果是否已经过时。
+export function linkageMaterialFingerprint(evidences: Evidence[], insights: EvidenceInsight[]) {
+  const versionByEvidenceId = new Map(insights.map((insight) => [insight.evidenceId, insight.version]))
+  return createHash('sha256').update(JSON.stringify(
+    evidences.map(e => ({
+      id: e.id,
+      hash: e.contentHash ?? e.summaryCacheKey ?? e.storageKey ?? '',
+      version: versionByEvidenceId.get(e.id) ?? 0,
+    })).sort((a, b) => a.id.localeCompare(b.id)),
+  )).digest('hex')
+}
+
 export function strategyInputKey(memory: CaseContextMemory, position: CasePosition) {
   return createHash('sha256').update(JSON.stringify([memory.inputKey ?? memory.version, position])).digest('hex')
 }

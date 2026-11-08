@@ -2431,6 +2431,16 @@
   transform: translateY(1px);
 }
 
+.linkage-stale-hint {
+  align-self: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 191, 0, 0.14);
+  color: var(--warn-text);
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
 .evidence-link-stop-button {
   min-width: 68px;
   min-height: 38px;

@@ -31,7 +31,7 @@ function resolveUpstreamStatus(status: number) {
   return status >= 500 ? 502 : 400
 }
 
-function waitBeforeRetry(delayMs: number, abortSignal?: AbortSignal) {
+export function waitBeforeRetry(delayMs: number, abortSignal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     const onAbort = () => {
       clearTimeout(timer)

@@ -3049,6 +3049,20 @@ async function aggregateEvidencePageInsightsWithLlm(
   }
 }
 
+// 部分内容理解失败时在风险里记明，避免这条记忆看起来像完整覆盖了整份材料。
+function withFailedPagesNote<T extends { issues?: string[] }>(draft: T, failedPages: number[]) {
+  if (!failedPages.length) {
+    return draft
+  }
+  return {
+    ...draft,
+    issues: uniqueStrings([
+      ...(draft.issues ?? []),
+      `第${failedPages.join('、')}部分理解失败，本条记忆基于其余内容`,
+    ], 8),
+  }
+}
+
 async function buildEvidenceInsightDraftWithLlm(
   evidence: Evidence,
   fragments: EvidenceFragment[],
@@ -3082,13 +3096,17 @@ async function buildEvidenceInsightDraftWithLlm(
       ),
     )
     const pageDrafts = pageResults.filter((draft): draft is EvidencePageInsightDraft => Boolean(draft))
+    const failedPages = visionImageDataUrls
+      .map((_image, index) => index + 1)
+      .filter((pageNumber) => !pageResults[pageNumber - 1])
 
     if (pageDrafts.length) {
-      if (pageDrafts.length !== visionImageDataUrls.length) throw new Error('部分页面理解失败，请重试后再建立证据记忆。')
+      // 部分页面失败不再让整份材料作废：能用的页面继续用，失败页记入风险。
       try {
-        return await aggregateEvidencePageInsightsWithLlm(evidence, fragments, meaningfulText, pageDrafts, fallback)
+        const merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, meaningfulText, pageDrafts, fallback)
+        return withFailedPagesNote(merged, failedPages)
       } catch {
-        return mergeEvidencePageInsightDrafts(pageDrafts, fallback)
+        return withFailedPagesNote(mergeEvidencePageInsightDrafts(pageDrafts, fallback), failedPages)
       }
     }
 
@@ -3882,15 +3900,28 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
       ),
     )
     const drafts: EvidencePageInsightDraft[] = []
+    const failedPages: number[] = []
     for (const [index, result] of pageResults.entries()) {
-      if (!result.ok) {
-        throw result.error instanceof Error ? result.error : new Error(`第${index + 1}页理解失败，请重试。`)
+      if (!result.ok || !result.value) {
+        // 单页失败不再让整份材料作废：能用的页继续用，失败页记入风险。
+        failedPages.push(index + 1)
+        continue
       }
-      if (!result.value) throw new Error(`第${index + 1}页未返回完整理解，请重试。`)
       drafts.push(result.value)
     }
+    if (!drafts.length) {
+      throw new Error(failedPages.length
+        ? `第${failedPages.join('、')}页理解失败，且没有可用文本可回退。`
+        : '当前视觉模型调用失败，且没有可用 OCR 文本可回退。')
+    }
     const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
-    return aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+    try {
+      const merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+      return withFailedPagesNote(merged, failedPages)
+    } catch {
+      // 汇总失败退回逐页结果，不让整份材料因汇总失败而作废。
+      return withFailedPagesNote(mergeEvidencePageInsightDrafts(drafts, fallback), failedPages)
+    }
   }
   if (meaningfulText.length > 12000) {
     const chunks: string[] = []
@@ -3908,15 +3939,28 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
       },
     )
     const drafts: EvidencePageInsightDraft[] = []
-    for (const result of chunkResults) {
+    const failedChunks: number[] = []
+    for (const [index, result] of chunkResults.entries()) {
       if (!result.ok) {
-        throw result.error instanceof Error ? result.error : new Error('长文本分段理解失败，请重试。')
+        // 分段失败不再让整份材料作废：能用的分段继续用，失败分段记入风险。
+        failedChunks.push(index + 1)
+        continue
       }
       drafts.push(result.value)
     }
+    if (!drafts.length) {
+      throw new Error('长文本分段理解失败，且没有可用文本可回退。')
+    }
     const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
-    const merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
-    return { ...merged, keyExcerpts: merged.keyExcerpts?.map(({ pageNumber: _page, ...excerpt }) => excerpt),
+    let merged: EvidenceInsightDraft
+    try {
+      merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+    } catch {
+      // 汇总失败退回逐段结果，不让整份材料因汇总失败而作废。
+      merged = mergeEvidencePageInsightDrafts(drafts, fallback)
+    }
+    const noted = withFailedPagesNote(merged, failedChunks)
+    return { ...noted, keyExcerpts: noted.keyExcerpts?.map(({ pageNumber: _page, ...excerpt }) => excerpt),
       sourceFragmentIds: fragments.map(f => f.id) }
   }
   if (evidence.type === 'pdf' && !meaningfulText && (evidence.pages ?? 1) > (evidence.pageImageDataUrls?.length ?? 0)) {

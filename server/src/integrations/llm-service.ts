@@ -1,7 +1,7 @@
 import { env } from '../config/env.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { z } from 'zod'
-import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
+import { cloudAiFetch, isCloudAiEnabled, waitBeforeRetry } from './cloud-ai.js'
 
 export interface LlmChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -32,6 +32,8 @@ interface ChatCompletionOptions {
 const assistantModel = new AsyncLocalStorage<string>()
 // 请求级中止信号：客户端断开或用户点击“停止”后，让正在进行的 LLM 调用立即中断。
 const requestAbort = new AsyncLocalStorage<AbortSignal>()
+// 直连模式的上游限流退避：并发理解时一次 429 会让整份材料整理失败。
+const MAX_LLM_ATTEMPTS = 3
 
 export async function withRequestAbortSignal<T>(signal: AbortSignal | undefined, action: () => T): Promise<T> {
   if (!signal) return action()
@@ -146,13 +148,28 @@ async function requestChat(options: ChatCompletionOptions, stream: boolean) {
   if (!baseUrl || !apiKey || !model) throw new Error('LLM 请求缺少 baseUrl、apiKey 或 model。')
   const timeoutSignal = AbortSignal.timeout(env.LLM_TIMEOUT_MS)
   const abortSignal = currentRequestAbortSignal()
-  const response = await fetch(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ ...payload, model }),
-    signal: abortSignal ? AbortSignal.any([timeoutSignal, abortSignal]) : timeoutSignal,
-  })
-  if (!response.ok) throw new Error('智能分析服务暂不可用，请稍后重试。')
-  return response
+  const url = `${normalizeBaseUrl(baseUrl)}/chat/completions`
+  const body = JSON.stringify({ ...payload, model })
+  // 直连模式没有网关的退避重试：上游限流时退避后重试，
+  // 避免多份材料并发理解把一次限流放大成整案整理失败。
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body,
+      signal: abortSignal ? AbortSignal.any([timeoutSignal, abortSignal]) : timeoutSignal,
+    })
+    if (response.ok) {
+      return response
+    }
+    await response.body?.cancel().catch(() => {})
+    if (response.status === 429 && attempt < MAX_LLM_ATTEMPTS) {
+      await waitBeforeRetry(env.LLM_RETRY_BASE_DELAY_MS * attempt, abortSignal)
+      continue
+    }
+    // 只记录状态码与模型名，不记录请求内容与响应正文。
+    console.error(`LLM request failed: status=${response.status} model=${model}`)
+    throw new Error(`智能分析服务暂不可用（${response.status}），请稍后重试。`)
+  }
 }
 
 export function getLlmRuntimeStatus() {

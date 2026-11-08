@@ -69,6 +69,8 @@ const envSchema = z.object({
   LLM_VISION_API_KEY: z.string().optional(),
   LLM_VISION_MODEL: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+  // 上游限流（429）时的退避基线（毫秒），按第几次重试成倍增加。
+  LLM_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(2000),
   // 自动理解时同时处理的材料份数：多份材料并行理解，整体等待时间按批次数摊薄。
   EVIDENCE_SUMMARY_CONCURRENCY: z.coerce.number().int().positive().default(3),
   // 材料理解阶段对模型的全局并发上限：逐页理解与材料级并发共享同一配额，

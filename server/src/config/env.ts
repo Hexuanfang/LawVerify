@@ -32,6 +32,10 @@ const booleanFromEnv = z
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8787),
+  // 本地服务默认只监听回环地址：工作区与证据原件没有鉴权，
+  // 暴露到局域网会让同网段任意设备都能读取或改写案件数据。
+  // 确需从局域网调试时显式设为 0.0.0.0。
+  SERVER_HOST: z.string().default('127.0.0.1'),
   CORS_ORIGIN: z.string().default('http://127.0.0.1:5173,http://localhost:5173'),
   JSON_LIMIT: z.string().default('100mb'),
   APP_NAME: z.string().default('lawverify-server'),

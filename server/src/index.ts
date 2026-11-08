@@ -58,13 +58,14 @@ async function main() {
   // #endregion
   await initializeCommercialInfrastructure()
 
-  const server = app.listen(env.PORT, () => {
+  const server = app.listen(env.PORT, env.SERVER_HOST, () => {
     // #region debug-point A:listen-ready
     reportDebug('A', 'server-listen-ready', {
       port: env.PORT,
+      host: env.SERVER_HOST,
     })
     // #endregion
-    console.log(`LawVerify server running on http://localhost:${env.PORT}`)
+    console.log(`LawVerify server running on http://${env.SERVER_HOST}:${env.PORT}`)
     console.log(`Legacy API: http://localhost:${env.PORT}${env.API_PREFIX}`)
     console.log(`Versioned API: http://localhost:${env.PORT}${env.API_V1_PREFIX}`)
   })

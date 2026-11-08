@@ -49,6 +49,13 @@ const mediaKeys = new Set(['sourceDataUrl', 'previewDataUrl', 'pageImageDataUrls
 // 进程重启后首次访问会重新校验一次，外部改动文件也会因体积或时间变化被重新校验。
 const verifiedAssets = new Map<string, { size: number; mtimeMs: number }>()
 
+// 已解码的原件内容：原件以哈希寻址，同一份原件只保留一份字符串。
+// 并发任务各自读取工作区时不再各持有一份十几 MB 的 base64 副本，
+// 内存占用与并发数无关，也不会因为反复解码把事件循环占满。
+const assetContentCache = new Map<string, { content: string; size: number; mtimeMs: number }>()
+const ASSET_CACHE_MAX_CHARS = 512 * 1024 * 1024
+let assetContentChars = 0
+
 function rowKey(row: Pick<RecordRow, 'table' | 'id'>) {
   return JSON.stringify([row.table, row.id])
 }
@@ -224,34 +231,55 @@ export class WorkspaceSqliteStore {
     return value
   }
 
-  private decodeAssets(value: unknown, cache = new Map<string, string>()): unknown {
+  private decodeAssets(value: unknown): unknown {
     if (isObject(value) && typeof value.__lawverifyAsset === 'string') {
       const hash = value.__lawverifyAsset
       if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid workspace asset reference')
-      let content = cache.get(hash)
-      if (content === undefined) {
-        const file = path.join(this.assetsDir, hash)
-        try {
-          content = readFileSync(file, 'utf8')
-        } catch {
-          throw new AppError('证据原件缓存无法读取，请保留工作区并从备份恢复。', 500, 'WORKSPACE_ASSET_MISSING')
-        }
-        // 已经校验过且文件未被改动时跳过哈希比对，避免每次读取工作区都重算全部原件。
-        if (!this.isAssetTrusted(file)) {
-          if (createHash('sha256').update(content).digest('hex') !== hash) {
-            throw new AppError('证据原件缓存校验失败，请从备份恢复工作区。', 500, 'WORKSPACE_ASSET_CORRUPT')
-          }
-          this.rememberAsset(file)
-        }
-        cache.set(hash, content)
-      }
-      return content
+      return this.readAssetContent(hash)
     }
-    if (Array.isArray(value)) return value.map(item => this.decodeAssets(item, cache))
+    if (Array.isArray(value)) return value.map(item => this.decodeAssets(item))
     if (isObject(value)) {
-      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.decodeAssets(item, cache)]))
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.decodeAssets(item)]))
     }
     return value
+  }
+
+  private readAssetContent(hash: string) {
+    const file = path.join(this.assetsDir, hash)
+    const stat = this.assetStat(file)
+    const cached = assetContentCache.get(hash)
+    // 命中缓存前先确认文件没有被改动：体积或修改时间变了就重新读回并校验。
+    if (cached && stat && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+      // 命中后移到队尾，便于按最近使用淘汰。
+      assetContentCache.delete(hash)
+      assetContentCache.set(hash, cached)
+      return cached.content
+    }
+
+    let content: string
+    try {
+      content = readFileSync(file, 'utf8')
+    } catch {
+      throw new AppError('证据原件缓存无法读取，请保留工作区并从备份恢复。', 500, 'WORKSPACE_ASSET_MISSING')
+    }
+    // 已经校验过且文件未被改动时跳过哈希比对，避免每次读取工作区都重算全部原件。
+    if (!this.isAssetTrusted(file)) {
+      if (createHash('sha256').update(content).digest('hex') !== hash) {
+        throw new AppError('证据原件缓存校验失败，请从备份恢复工作区。', 500, 'WORKSPACE_ASSET_CORRUPT')
+      }
+      this.rememberAsset(file)
+    }
+
+    assetContentCache.set(hash, { content, size: stat?.size ?? content.length, mtimeMs: stat?.mtimeMs ?? 0 })
+    assetContentChars += content.length
+    while (assetContentChars > ASSET_CACHE_MAX_CHARS) {
+      const oldest = assetContentCache.keys().next().value
+      if (oldest === undefined) break
+      const removed = assetContentCache.get(oldest)
+      assetContentCache.delete(oldest)
+      assetContentChars -= removed?.content.length ?? 0
+    }
+    return content
   }
 
   private assetStat(file: string) {

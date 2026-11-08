@@ -2017,6 +2017,39 @@ export function mergeAutoLinkageIntoCertificate(latest: Certificate, linked: Cer
   }
 }
 
+// 长任务保存前重新读取工作区，把本次任务的产出应用到最新状态上：
+// 期间后台的材料理解与其它任务的更新都会被保留，不会被几分钟前的快照覆盖。
+export async function commitToLatestWorkspace(
+  produced: WorkspaceState,
+  apply: (latest: WorkspaceState) => void,
+  guard?: (latest: WorkspaceState) => void,
+) {
+  const latest = await readWorkspace()
+  guard?.(latest)
+  // 案件记忆：本次任务与后台可能各自重建过，取版本较新的一方。
+  const memoryById = new Map(latest.caseContextMemories.map((item) => [item.id, item]))
+  for (const memory of produced.caseContextMemories) {
+    const current = memoryById.get(memory.id)
+    if (!current || (memory.version ?? 0) > (current.version ?? 0)) {
+      memoryById.set(memory.id, memory)
+    }
+  }
+  latest.caseContextMemories = [...memoryById.values()]
+  apply(latest)
+  await writeWorkspace(latest)
+  return latest
+}
+
+// 文书正文在任务期间是否被改动：改写会整体替换段落内容，
+// 用户在改写期间编辑过就要保留用户的版本，放弃本次改写。
+export function certificateParagraphsChanged(original: Certificate, latest: Certificate | undefined) {
+  if (!latest) return true
+  const originalText = (original.paragraphs ?? []).map((paragraph) => paragraph.text)
+  const latestText = (latest.paragraphs ?? []).map((paragraph) => paragraph.text)
+  if (originalText.length !== latestText.length) return true
+  return originalText.some((text, index) => text !== latestText[index])
+}
+
 function paragraphMentionsCaseReference(text: string) {
   const normalized = text.replace(/\s+/g, '')
   if (!normalized) {
@@ -6433,16 +6466,27 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
           agentReply: '当前未配置模型，已回退为基础规则生成文书。',
         }
   const certificate = await attachAutoStatuteReferencesToCertificate(workspace, rawCertificate)
-  workspace.certificates.unshift(certificate)
-  workspace.cases = workspace.cases.map((item) =>
-    item.id === caseFolder.id ? { ...item, status: 'in_review' } : item,
-  )
-  upsertDraftMemory(
+  // 保存前重新读取工作区，把生成结果应用到最新状态：
+  // 期间后台的材料理解与其它任务的更新不会被旧快照覆盖。
+  const latest = await commitToLatestWorkspace(
     workspace,
-    buildDraftMemory(workspace, certificate, payload.prompt?.trim() || payload.focus, caseContextMemory, evidences),
+    (state) => {
+      state.certificates.unshift(certificate)
+      state.cases = state.cases.map((item) =>
+        item.id === caseFolder.id ? { ...item, status: 'in_review' } : item,
+      )
+      upsertDraftMemory(
+        state,
+        buildDraftMemory(state, certificate, payload.prompt?.trim() || payload.focus, caseContextMemory, evidences),
+      )
+    },
+    (state) => {
+      if (!state.cases.some((item) => item.id === caseFolder.id)) {
+        throw new Error('案件已删除，生成结果已丢弃。')
+      }
+    },
   )
-  await writeWorkspace(workspace)
-  return { workspace, certificate, agentReply }
+  return { workspace: latest, certificate, agentReply }
 }
 
 export async function streamGenerateCertificate(
@@ -6544,25 +6588,30 @@ async function runStreamGenerateCertificate(
         : '已根据你的要求生成一版文书草稿。')
   }
 
-  workspace.certificates.unshift(certificate)
-  workspace.cases = workspace.cases.map((item) =>
-    item.id === caseFolder.id ? { ...item, status: 'in_review' } : item,
-  )
-  upsertDraftMemory(
+  // 保存前重新读取工作区，把生成结果应用到最新状态：
+  // 期间后台的材料理解与其它任务的更新不会被旧快照覆盖。
+  const latest = await commitToLatestWorkspace(
     workspace,
-    buildDraftMemory(workspace, certificate, payload.prompt?.trim() || payload.focus, caseContextMemory, evidences),
+    (state) => {
+      state.certificates.unshift(certificate)
+      state.cases = state.cases.map((item) =>
+        item.id === caseFolder.id ? { ...item, status: 'in_review' } : item,
+      )
+      upsertDraftMemory(
+        state,
+        buildDraftMemory(state, certificate, payload.prompt?.trim() || payload.focus, caseContextMemory, evidences),
+      )
+    },
+    (state) => {
+      // 落库前确认案件仍在，避免案件被删除后把生成结果写回成孤儿文书。
+      if (!state.cases.some((item) => item.id === caseFolder.id)) {
+        throw new Error('案件已删除，生成结果已丢弃。')
+      }
+    },
   )
-
-  // 落库前确认案件仍在，避免案件被删除后把生成结果写回成孤儿文书。
-  const latest = await readWorkspace()
-  if (!latest.cases.some((item) => item.id === caseFolder.id)) {
-    throw new Error('案件已删除，生成结果已丢弃。')
-  }
-
-  await writeWorkspace(workspace)
   await onEvent({
     type: 'done',
-    workspace,
+    workspace: latest,
     certificate,
     agentReply,
   })
@@ -6614,17 +6663,31 @@ export async function rewriteCertificate(payload: RewriteCertificatePayload) {
 
   const rewrittenCertificate = await attachAutoStatuteReferencesToCertificate(workspace, result.certificate)
 
-  workspace.certificates = workspace.certificates.map((item) =>
-    item.id === certificate.id ? rewrittenCertificate : item,
-  )
-  upsertDraftMemory(
+  // 保存前重新读取工作区：改写会整体替换段落内容，
+  // 用户在改写期间编辑过正文就保留用户的版本，放弃本次改写。
+  const latest = await commitToLatestWorkspace(
     workspace,
-    buildDraftMemory(workspace, rewrittenCertificate, payload.prompt.trim(), caseContextMemory, evidences),
+    (state) => {
+      state.certificates = state.certificates.map((item) =>
+        item.id === certificate.id ? rewrittenCertificate : item,
+      )
+      upsertDraftMemory(
+        state,
+        buildDraftMemory(state, rewrittenCertificate, payload.prompt.trim(), caseContextMemory, evidences),
+      )
+    },
+    (state) => {
+      const latestCertificate = state.certificates.find((item) => item.id === certificate.id)
+      if (!latestCertificate) {
+        throw new Error('文书已被删除，改写结果已丢弃。')
+      }
+      if (certificateParagraphsChanged(certificate, latestCertificate)) {
+        throw new AppError('文书在改写期间已被修改，改写结果未保存。请确认最新内容后重新改写。', 409, 'CERTIFICATE_CONFLICT')
+      }
+    },
   )
-
-  await writeWorkspace(workspace)
   return {
-    workspace: await readWorkspace(),
+    workspace: latest,
     certificate: rewrittenCertificate,
     agentReply: result.agentReply,
   }
@@ -6723,22 +6786,31 @@ async function runStreamRewriteCertificate(
     paragraphs: rewrittenParagraphs,
   })
 
-  workspace.certificates = workspace.certificates.map((item) =>
-    item.id === certificate.id ? rewrittenCertificate : item,
-  )
-  upsertDraftMemory(
+  // 保存前重新读取工作区：改写会整体替换段落内容，
+  // 用户在改写期间编辑过正文就保留用户的版本，放弃本次改写。
+  const latest = await commitToLatestWorkspace(
     workspace,
-    buildDraftMemory(workspace, rewrittenCertificate, payload.prompt.trim(), caseContextMemory, evidences),
+    (state) => {
+      state.certificates = state.certificates.map((item) =>
+        item.id === certificate.id ? rewrittenCertificate : item,
+      )
+      upsertDraftMemory(
+        state,
+        buildDraftMemory(state, rewrittenCertificate, payload.prompt.trim(), caseContextMemory, evidences),
+      )
+    },
+    (state) => {
+      // 落库前确认文书与案件仍在，避免案件被删除后把改写结果写回成孤儿文书。
+      if (!state.cases.some((item) => item.id === caseFolder.id)
+        || !state.certificates.some((item) => item.id === certificate.id)) {
+        throw new Error('案件已删除，改写结果已丢弃。')
+      }
+      const latestCertificate = state.certificates.find((item) => item.id === certificate.id)
+      if (latestCertificate && certificateParagraphsChanged(certificate, latestCertificate)) {
+        throw new AppError('文书在改写期间已被修改，改写结果未保存。请确认最新内容后重新改写。', 409, 'CERTIFICATE_CONFLICT')
+      }
+    },
   )
-
-  // 落库前确认文书与案件仍在，避免案件被删除后把改写结果写回成孤儿文书。
-  const latest = await readWorkspace()
-  if (!latest.cases.some((item) => item.id === caseFolder.id)
-    || !latest.certificates.some((item) => item.id === certificate.id)) {
-    throw new Error('案件已删除，改写结果已丢弃。')
-  }
-
-  await writeWorkspace(workspace)
   await onEvent({
     type: 'done',
     workspace: await readWorkspace(),
@@ -6967,9 +7039,6 @@ export async function reviewParagraphMatches(certificateId: string, paragraphId:
 
   const evidenceById = new Map(workspace.evidences.map((item) => [item.id, item]))
   const fragmentById = new Map(workspace.evidenceFragments.map((item) => [item.id, item]))
-  const existingModelMatches = workspace.claimEvidenceMatches.filter((item) => item.source === 'model')
-  const nextModelMatches = existingModelMatches.filter((item) => !claimUnits.some((claim) => claim.id === item.claimUnitId))
-
   const reviewedMatches: ClaimEvidenceMatch[] = []
 
   for (const claim of claimUnits) {
@@ -7025,11 +7094,24 @@ export async function reviewParagraphMatches(certificateId: string, paragraphId:
     }
   }
 
-  workspace.claimEvidenceMatches = [...nextModelMatches, ...reviewedMatches]
-  await writeWorkspace(workspace)
+  // 保存前重新读取工作区：复核期间材料理解可能更新了主张与片段，
+  // 已经失效的匹配不再写回。
+  const latest = await readWorkspace()
+  const validClaimIds = new Set(latest.claimUnits.map((item) => item.id))
+  const validFragmentIds = new Set(latest.evidenceFragments.map((item) => item.id))
+  const latestParagraphClaimIds = new Set(
+    latest.claimUnits.filter((item) => item.paragraphId === paragraphId).map((item) => item.id),
+  )
+  const preservedModelMatches = latest.claimEvidenceMatches
+    .filter((item) => item.source === 'model')
+    .filter((item) => !latestParagraphClaimIds.has(item.claimUnitId))
+  const validReviewed = reviewedMatches.filter((match) =>
+    validClaimIds.has(match.claimUnitId) && validFragmentIds.has(match.evidenceFragmentId))
+  latest.claimEvidenceMatches = [...preservedModelMatches, ...validReviewed]
+  await writeWorkspace(latest)
   return {
-    workspace: await readWorkspace(),
-    reviewedCount: reviewedMatches.length,
+    workspace: latest,
+    reviewedCount: validReviewed.length,
   }
 }
 

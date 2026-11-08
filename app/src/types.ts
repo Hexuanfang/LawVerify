@@ -236,7 +236,19 @@ export interface EvidenceInsight {
   confidence: number
   status: EvidenceInsightStatus
   error?: string
+  // 超大材料走检索式理解时的覆盖情况。
+  coverage?: EvidenceInsightCoverage
   updatedAt: string
+}
+
+export interface EvidenceInsightCoverage {
+  mode: 'full' | 'retrieval'
+  totalChunks: number
+  coveredChunks: number
+  coveredChars: number
+  totalChars: number
+  coveredChunkIndexes: number[]
+  queries: string[]
 }
 
 export interface CaseContextSupportItem {

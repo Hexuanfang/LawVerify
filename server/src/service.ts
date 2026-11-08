@@ -16,6 +16,7 @@ import type {
   Evidence,
   EvidenceFragment,
   EvidenceInsight,
+  EvidenceInsightCoverage,
   EvidenceLink,
   EvidenceImportPayload,
   GenerateCertificatePayload,
@@ -51,6 +52,8 @@ import {
   normalizeSentenceLinkageFocus,
 } from './intelligence/linkage-policy.js'
 import { requestLinkageParagraphBatch } from './intelligence/linkage-response.js'
+import { selectEvidenceChunksForUnderstanding } from './intelligence/evidence-retrieval.js'
+import { resolveEvidenceUnderstandingMode } from './intelligence/evidence-understanding-mode.js'
 import {
   AUTO_STATUTE_REFERENCE_NOTE,
   buildStatuteReference,
@@ -2556,12 +2559,15 @@ async function extractEvidenceContentFromSourceAsset(
       const total = await session.request<number>('info')
       const text = await session.request<string>('text')
       const pageImageDataUrls: string[] = []
-      for (let page = 1; page <= Math.min(total, MAX_BACKGROUND_VISION_PAGES); page++) {
+      const textContent = text.trim()
+      // 有文本层的 PDF 只需要一页预览图：文本理解已经够用，逐页渲染只会拖慢导入。
+      const previewPages = textContent ? 1 : MAX_BACKGROUND_VISION_PAGES
+      for (let page = 1; page <= Math.min(total, previewPages); page++) {
         pageImageDataUrls.push(await session.request<string>('page', page))
       }
       return {
         sourceMimeType: asset.mimeType,
-        ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
+        ocrText: textContent || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
         previewDataUrl: pageImageDataUrls[0] ?? evidence.previewDataUrl,
         pageImageDataUrls,
         pages: total || evidence.pages || 1,
@@ -3031,30 +3037,41 @@ async function aggregateEvidencePageInsightsWithLlm(
   }
 }
 
-// 部分内容理解失败时在风险里记明，避免这条记忆看起来像完整覆盖了整份材料。
-function withFailedPagesNote<T extends { issues?: string[] }>(draft: T, failedPages: number[]) {
-  if (!failedPages.length) {
+// 把理解范围与失败情况写进风险，避免这条记忆看起来像完整覆盖了整份材料。
+function withInsightIssues<T extends { issues?: string[] }>(draft: T, messages: string[]) {
+  const additions = messages.filter(Boolean)
+  if (!additions.length) {
     return draft
   }
   return {
     ...draft,
     issues: uniqueStrings([
       ...(draft.issues ?? []),
-      `第${failedPages.join('、')}部分理解失败，本条记忆基于其余内容`,
+      ...additions,
     ], 8),
   }
+}
+
+// 部分内容理解失败时在风险里记明，避免这条记忆看起来像完整覆盖了整份材料。
+function withFailedPagesNote<T extends { issues?: string[] }>(draft: T, failedPages: number[]) {
+  if (!failedPages.length) {
+    return draft
+  }
+
+  return withInsightIssues(draft, [`第${failedPages.join('、')}部分理解失败，本条记忆基于其余内容`])
 }
 
 async function buildEvidenceInsightDraftWithLlm(
   evidence: Evidence,
   fragments: EvidenceFragment[],
+  options: { skipVision?: boolean } = {},
 ): Promise<EvidenceInsightDraft> {
   if (!canRunEvidenceUnderstandingLlm(evidence)) {
     return buildFallbackEvidenceInsightDraft(evidence, fragments)
   }
 
   const meaningfulText = getMeaningfulEvidenceText(evidence.ocrText)
-  const visionImageDataUrls = getEvidenceVisionImageDataUrls(evidence)
+  const visionImageDataUrls = options.skipVision ? [] : getEvidenceVisionImageDataUrls(evidence)
   const canUseImageVision = visionImageDataUrls.length > 0
 
   if (!meaningfulText && !canUseImageVision) {
@@ -3093,7 +3110,11 @@ async function buildEvidenceInsightDraftWithLlm(
     }
 
     if (!meaningfulText) {
-      throw new Error('当前视觉模型调用失败，且没有可用 OCR 文本可回退。')
+      // 视觉模型整体失败时不再让整份材料作废：退回预处理文本的记忆并标注风险，
+      // 避免一批材料因为个别视觉调用失败而整批中断。
+      return withInsightIssues(fallback, [
+        '视觉模型调用失败，本条记忆仅基于预处理文本生成，需人工重新识别后核对。',
+      ])
     }
   }
 
@@ -3843,68 +3864,82 @@ function canRunEvidenceUnderstandingLlm(evidence: Pick<Evidence, 'sourceDataUrl'
   return isLlmConfigured()
 }
 
-async function understandEvidenceWithLlm(evidence: Evidence, fragments: EvidenceFragment[]) {
-  if (!canRunEvidenceUnderstandingLlm(evidence)) {
-    throw new Error('当前尚未配置大模型，无法执行证据内容理解。')
+// 导入阶段还没有争议焦点，先用通用争点词做检索；
+// 联动阶段拿到焦点后会再做一次增量检索。
+const DEFAULT_EVIDENCE_FOCUS_QUERIES = [
+  '争议焦点',
+  '当事人',
+  '合同',
+  '签订',
+  '履行',
+  '付款',
+  '违约',
+  '赔偿',
+  '责任',
+  '证据',
+  '原件',
+  '签章',
+  '送达',
+  '诉讼时效',
+  '金额',
+  '利息',
+  '解除',
+  '解除通知',
+]
+
+// 检索式理解：只把被检索命中的内容块交给模型，避免几百页材料整体塞进模型。
+async function understandEvidenceWithRetrieval(
+  evidence: Evidence,
+  fragments: EvidenceFragment[],
+  meaningfulText: string,
+  queries: string[],
+  existingCoverage?: EvidenceInsightCoverage,
+) {
+  const searchQueries = [...new Set([...queries, ...DEFAULT_EVIDENCE_FOCUS_QUERIES])].filter(Boolean)
+  const selection = selectEvidenceChunksForUnderstanding({
+    text: meaningfulText,
+    queries: searchQueries,
+    maxChars: 48000,
+    maxChunks: 64,
+    excludeChunkIndexes: existingCoverage?.coveredChunkIndexes ?? [],
+  })
+
+  if (!selection.chunks.length) {
+    // 没有命中任何内容块时退回常规理解，避免整份材料直接作废。
+    return buildEvidenceInsightDraftWithLlm(evidence, fragments, { skipVision: true })
   }
 
-  const meaningfulText = getMeaningfulEvidenceText(evidence.ocrText)
-  const canUseImageVision = canUseEvidenceVision(evidence)
+  const scopedText = selection.chunks.map((chunk) => chunk.content).join('\n\n')
+  const scopedEvidence = { ...evidence, ocrText: scopedText }
+  const draft = await understandEvidenceTextWithLlm(scopedEvidence, fragments, scopedText, { skipVision: true })
+  const coveredChunkIndexes = [...new Set([
+    ...(existingCoverage?.coveredChunkIndexes ?? []),
+    ...selection.coveredChunkIndexes,
+  ])]
+  const coverageNote = existingCoverage
+    ? `材料共 ${selection.totalChunks} 块（约 ${Math.round(selection.totalChars / 1000)} 千字），累计只理解被检索命中的 ${coveredChunkIndexes.length} 块，其余内容未逐块理解。`
+    : `材料共 ${selection.totalChunks} 块（约 ${Math.round(selection.totalChars / 1000)} 千字），本次只理解被检索命中的 ${selection.coveredChunks} 块，其余内容未逐块理解。`
 
-  if (!meaningfulText && !canUseImageVision) {
-    throw new Error(EVIDENCE_NO_CONTENT_REASON)
+  return {
+    ...withInsightIssues(draft, [coverageNote]),
+    coverage: {
+      mode: 'retrieval' as const,
+      totalChunks: selection.totalChunks,
+      coveredChunks: coveredChunkIndexes.length,
+      coveredChars: (existingCoverage?.coveredChars ?? 0) + selection.coveredChars,
+      totalChars: selection.totalChars,
+      coveredChunkIndexes,
+      queries: searchQueries,
+    },
   }
+}
 
-  if (evidence.type === 'pdf' && evidence.storageKey) {
-    // 页面渲染与模型理解分两段：渲染完成后立即释放文档解析进程，
-    // 否则多份 PDF 会互相排队占用解析进程（解析进程最多同时 2 个）。
-    const { pageImages, total } = await withDocumentSession(await readObject(evidence.storageKey), async session => {
-      const total = await session.request<number>('info')
-      // 页面渲染保持串行（共用同一个文档解析进程），模型理解改为限流并发。
-      const pageImages: string[] = []
-      for (let page = 1; page <= total; page += 1) {
-        const image = await session.request<string>('page', page)
-        if (!image) throw new Error(`第${page}页未能完成原件识别，请重试。`)
-        pageImages.push(image)
-      }
-      return { pageImages, total }
-    })
-    const pageResults = await mapSettledWithConcurrency<string, EvidencePageInsightDraft | null>(
-      pageImages,
-      EVIDENCE_VISION_CONCURRENCY,
-      (image, index) => buildEvidencePageInsightDraftWithVision(
-        evidence,
-        fragments,
-        '',
-        image,
-        index + 1,
-        total,
-      ),
-    )
-    const drafts: EvidencePageInsightDraft[] = []
-    const failedPages: number[] = []
-    for (const [index, result] of pageResults.entries()) {
-      if (!result.ok || !result.value) {
-        // 单页失败不再让整份材料作废：能用的页继续用，失败页记入风险。
-        failedPages.push(index + 1)
-        continue
-      }
-      drafts.push(result.value)
-    }
-    if (!drafts.length) {
-      throw new Error(failedPages.length
-        ? `第${failedPages.join('、')}页理解失败，且没有可用文本可回退。`
-        : '当前视觉模型调用失败，且没有可用 OCR 文本可回退。')
-    }
-    const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
-    try {
-      const merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
-      return withFailedPagesNote(merged, failedPages)
-    } catch {
-      // 汇总失败退回逐页结果，不让整份材料因汇总失败而作废。
-      return withFailedPagesNote(mergeEvidencePageInsightDrafts(drafts, fallback), failedPages)
-    }
-  }
+async function understandEvidenceTextWithLlm(
+  evidence: Evidence,
+  fragments: EvidenceFragment[],
+  meaningfulText: string,
+  options: { skipVision?: boolean } = {},
+) {
   if (meaningfulText.length > 12000) {
     const chunks: string[] = []
     for (let offset = 0; offset < meaningfulText.length; offset += 10000) {
@@ -3945,10 +3980,115 @@ async function understandEvidenceWithLlm(evidence: Evidence, fragments: Evidence
     return { ...noted, keyExcerpts: noted.keyExcerpts?.map(({ pageNumber: _page, ...excerpt }) => excerpt),
       sourceFragmentIds: fragments.map(f => f.id) }
   }
+
   if (evidence.type === 'pdf' && !meaningfulText && (evidence.pages ?? 1) > (evidence.pageImageDataUrls?.length ?? 0)) {
     throw new Error('扫描件尚未完成全部页面识别，请补充可检索文本或完整页图后重试。')
   }
-  return buildEvidenceInsightDraftWithLlm(evidence, fragments)
+
+  return buildEvidenceInsightDraftWithLlm(evidence, fragments, { skipVision: options.skipVision })
+}
+
+async function understandEvidenceWithLlm(
+  evidence: Evidence,
+  fragments: EvidenceFragment[],
+  options: { focusQueries?: string[] } = {},
+) {
+  if (!canRunEvidenceUnderstandingLlm(evidence)) {
+    throw new Error('当前尚未配置大模型，无法执行证据内容理解。')
+  }
+
+  const meaningfulText = getMeaningfulEvidenceText(evidence.ocrText)
+  const canUseImageVision = canUseEvidenceVision(evidence)
+
+  if (!meaningfulText && !canUseImageVision) {
+    throw new Error(EVIDENCE_NO_CONTENT_REASON)
+  }
+
+  const mode = resolveEvidenceUnderstandingMode({
+    type: evidence.type,
+    pages: evidence.pages,
+    hasText: Boolean(meaningfulText),
+    hasVision: canUseImageVision,
+    retrievalPageThreshold: env.EVIDENCE_RETRIEVAL_PAGE_THRESHOLD,
+  })
+
+  // 超大材料走检索式理解：先建块级索引，只把被检索命中的内容块交给模型。
+  if (mode === 'retrieval' && meaningfulText) {
+    return understandEvidenceWithRetrieval(evidence, fragments, meaningfulText, options.focusQueries ?? [])
+  }
+
+  // 有文本层的 PDF 直接走文本理解：逐页渲染加逐页视觉是几百页材料的主要耗时来源。
+  if (mode === 'vision' && evidence.type === 'pdf' && evidence.storageKey && !meaningfulText) {
+    // 扫描件：视觉理解页数封顶，优先复用导入阶段已经解析出来的页图。
+    const pageLimit = Math.max(1, env.EVIDENCE_VISION_PAGE_LIMIT)
+    const cachedImages = (evidence.pageImageDataUrls ?? []).slice(0, pageLimit)
+    let pageImages = cachedImages
+    let total = evidence.pages ?? cachedImages.length
+    if (cachedImages.length < Math.min(total, pageLimit)) {
+      // 页面渲染与模型理解分两段：渲染完成后立即释放文档解析进程，
+      // 否则多份 PDF 会互相排队占用解析进程（解析进程最多同时 2 个）。
+      const rendered = await withDocumentSession(await readObject(evidence.storageKey), async session => {
+        const pageTotal = await session.request<number>('info')
+        // 页面渲染保持串行（共用同一个文档解析进程），模型理解改为限流并发。
+        const images: string[] = []
+        for (let page = 1; page <= Math.min(pageTotal, pageLimit); page += 1) {
+          const image = await session.request<string>('page', page)
+          if (!image) throw new Error(`第${page}页未能完成原件识别，请重试。`)
+          images.push(image)
+        }
+        return { images, total: pageTotal }
+      })
+      pageImages = rendered.images
+      total = rendered.total
+    }
+    const pageResults = await mapSettledWithConcurrency<string, EvidencePageInsightDraft | null>(
+      pageImages,
+      EVIDENCE_VISION_CONCURRENCY,
+      (image, index) => buildEvidencePageInsightDraftWithVision(
+        evidence,
+        fragments,
+        '',
+        image,
+        index + 1,
+        total,
+      ),
+    )
+    const drafts: EvidencePageInsightDraft[] = []
+    const failedPages: number[] = []
+    for (const [index, result] of pageResults.entries()) {
+      if (!result.ok || !result.value) {
+        // 单页失败不再让整份材料作废：能用的页继续用，失败页记入风险。
+        failedPages.push(index + 1)
+        continue
+      }
+      drafts.push(result.value)
+    }
+    // 只覆盖了前若干页时必须说清楚，避免用户以为整份材料都被读过。
+    const coverageNote = total > pageImages.length
+      ? `仅覆盖前 ${pageImages.length} 页（共 ${total} 页），其余页面未参与本次理解。`
+      : ''
+    if (!drafts.length) {
+      // 视觉整体失败时不再让整份材料作废：退回预处理文本的记忆，并把失败写进风险。
+      return withInsightIssues(buildFallbackEvidenceInsightDraft(evidence, fragments), [
+        coverageNote,
+        failedPages.length
+          ? `第${failedPages.join('、')}页理解失败，本条记忆仅基于预处理文本生成，需人工重新识别后核对。`
+          : '视觉模型调用失败，本条记忆仅基于预处理文本生成，需人工重新识别后核对。',
+      ].filter(Boolean))
+    }
+    const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
+    try {
+      const merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+      return withInsightIssues(withFailedPagesNote(merged, failedPages), [coverageNote])
+    } catch {
+      // 汇总失败退回逐页结果，不让整份材料因汇总失败而作废。
+      return withInsightIssues(withFailedPagesNote(mergeEvidencePageInsightDrafts(drafts, fallback), failedPages), [coverageNote])
+    }
+  }
+  // PDF 有文本层时不再补做视觉理解：文本已经覆盖全文，视觉只会增加耗时与失败面。
+  return understandEvidenceTextWithLlm(evidence, fragments, meaningfulText, {
+    skipVision: evidence.type === 'pdf' && Boolean(meaningfulText),
+  })
 }
 
 function normalizeEvidenceRelativePath(relativePath: string | undefined, fileName: string) {
@@ -6340,6 +6480,25 @@ export async function summarizeEvidence(
   if (options.background && snapshotEvidence.summaryStatus === 'ready' && snapshotEvidence.summaryCacheKey) {
     return { workspace: snapshot, reusedCachedSummary: true, processing: false }
   }
+
+  // 摘要缓存仍然有效时不再重新解析原件：几百页 PDF 的重新解析耗时远大于一次缓存校验，
+  // 用户重试或后台补跑时不应该再等一遍全文提取。
+  if (!options.force && !options.cacheOnly
+    && snapshotEvidence.summaryStatus === 'ready'
+    && snapshotEvidence.summaryText?.trim()
+    && snapshotEvidence.summaryCacheKey === computeEvidenceSummaryCacheKey(snapshotEvidence)) {
+    const cached = await runExclusiveWorkspaceMutation(() =>
+      prepareEvidenceSummary(evidenceId, { ...options, cacheOnly: true }, {}),
+    )
+    if (cached.kind === 'completed' && cached.reusedCachedSummary) {
+      return {
+        workspace: cached.workspace,
+        reusedCachedSummary: true,
+        processing: cached.processing,
+      }
+    }
+  }
+
   const hydration = options.cacheOnly
     ? { patch: {} as Partial<Evidence> }
     : await hydrateEvidenceForUnderstanding(snapshotEvidence)
@@ -6928,6 +7087,99 @@ export async function updateParagraph(
   return { workspace: await readWorkspace() }
 }
 
+// 争议焦点在整理过程中逐步明确：把焦点词变成检索词，对超大材料再做一次增量理解。
+function collectFocusQueriesFromAnalyses(analyses: Map<string, ParagraphAutoLinkAnalysis>) {
+  const queries: string[] = []
+  for (const analysis of analyses.values()) {
+    queries.push(...(analysis.legalIssues ?? []))
+    queries.push(...(analysis.proofRequirements ?? []))
+    if (analysis.paragraphSummary?.trim()) {
+      queries.push(analysis.paragraphSummary.trim())
+    }
+  }
+
+  return uniqueStrings(queries, 12)
+}
+
+function mergeInsightWithIncrementalCoverage(
+  insight: EvidenceInsight,
+  draft: EvidenceInsightDraft,
+  coverage: EvidenceInsightCoverage,
+): EvidenceInsight {
+  return {
+    ...insight,
+    summary: insight.summary.trim() || draft.summary,
+    keyFacts: uniqueStrings([...(insight.keyFacts ?? []), ...(draft.keyFacts ?? [])], 16),
+    disputedPoints: uniqueStrings([...(insight.disputedPoints ?? []), ...(draft.disputedPoints ?? [])], 12),
+    proofPurposes: uniqueStrings([...(insight.proofPurposes ?? []), ...(draft.proofPurposes ?? [])], 12),
+    proofLimitations: uniqueStrings([...(insight.proofLimitations ?? []), ...(draft.proofLimitations ?? [])], 12),
+    entities: uniqueStrings([...(insight.entities ?? []), ...(draft.entities ?? [])], 16),
+    amounts: uniqueStrings([...(insight.amounts ?? []), ...(draft.amounts ?? [])], 12),
+    timelineEvents: uniqueStrings([...(insight.timelineEvents ?? []), ...(draft.timelineEvents ?? [])], 12),
+    issues: uniqueStrings([...(insight.issues ?? []), ...(draft.issues ?? [])], 8),
+    coverage,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+// 超大材料只在检索命中处被理解过：拿到争议焦点后补齐其余相关内容块。
+async function enrichRetrievalLimitedInsights(
+  workspace: WorkspaceState,
+  evidences: Evidence[],
+  analyses: Map<string, ParagraphAutoLinkAnalysis>,
+) {
+  const focusQueries = collectFocusQueriesFromAnalyses(analyses)
+  if (!focusQueries.length) {
+    return
+  }
+
+  const targets = evidences.filter((evidence) =>
+    getLatestEvidenceInsight(workspace, evidence.id)?.coverage?.mode === 'retrieval')
+  if (!targets.length) {
+    return
+  }
+
+  const updates: Array<{ evidenceId: string; draft: EvidenceInsightDraft; coverage: EvidenceInsightCoverage }> = []
+  for (const evidence of targets) {
+    const insight = getLatestEvidenceInsight(workspace, evidence.id)
+    const existingCoverage = insight?.coverage
+    const meaningfulText = getMeaningfulEvidenceText(evidence.ocrText)
+    if (!insight || !existingCoverage || !meaningfulText) {
+      continue
+    }
+
+    try {
+      const draft = await understandEvidenceWithRetrieval(
+        evidence,
+        getEvidenceFragmentsForEvidence(workspace, evidence.id),
+        meaningfulText,
+        focusQueries,
+        existingCoverage,
+      )
+      const coverage = draft.coverage
+      if (!coverage || coverage.coveredChunkIndexes.length === existingCoverage.coveredChunkIndexes.length) {
+        continue
+      }
+      updates.push({ evidenceId: evidence.id, draft, coverage })
+    } catch {
+      // 增量补齐失败不影响联动：保留原有理解结果继续做证据联动。
+    }
+  }
+
+  if (!updates.length) {
+    return
+  }
+
+  await runExclusiveWorkspaceMutation(async () => {
+    const latest = await readWorkspace()
+    latest.evidenceInsights = latest.evidenceInsights.map((insight) => {
+      const update = updates.find((item) => item.evidenceId === insight.evidenceId)
+      return update ? mergeInsightWithIncrementalCoverage(insight, update.draft, update.coverage) : insight
+    })
+    await writeWorkspace(latest)
+  })
+}
+
 export async function autoLinkCertificate(
   certificateId: string,
   onProgress?: LinkageProgressReporter,
@@ -6970,19 +7222,27 @@ export async function autoLinkCertificate(
     )
     throwIfLinkageAborted(signal)
 
+    // 争议焦点在整理过程中才逐步明确：拿到焦点后对超大材料再做一次增量检索与理解。
+    reportProgress('正在按争议焦点补齐超大材料的理解')
+    await enrichRetrievalLimitedInsights(workspace, caseEvidences, analyses)
+    throwIfLinkageAborted(signal)
+
+    // 补齐后的理解结果写回了工作区，联动要基于最新材料记忆来做。
+    const linkageWorkspace = await readWorkspace()
+
     reportProgress('正在整理证据与关键句子的证明关系')
-    const evidenceLinkedCertificate = attachAutoEvidenceLinksToCertificateWithLlm(workspace, certificate, caseEvidences, analyses)
+    const evidenceLinkedCertificate = attachAutoEvidenceLinksToCertificateWithLlm(linkageWorkspace, certificate, caseEvidences, analyses)
     throwIfLinkageAborted(signal)
     reportProgress('正在核验争议对应的法律依据')
     const statuteLinkedCertificate = await attachAutoStatuteReferencesToCertificateWithLlm(
-      workspace,
+      linkageWorkspace,
       evidenceLinkedCertificate,
       analyses,
     )
     throwIfLinkageAborted(signal)
     reportProgress('正在核验相关案例与裁判规则')
     const nextCertificate = await attachAutoCaseReferencesToCertificateWithLlm(
-      workspace,
+      linkageWorkspace,
       statuteLinkedCertificate,
       analyses,
     )

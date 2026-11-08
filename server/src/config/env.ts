@@ -73,6 +73,10 @@ const envSchema = z.object({
   LLM_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(2000),
   // 自动理解时同时处理的材料份数：多份材料并行理解，整体等待时间按批次数摊薄。
   EVIDENCE_SUMMARY_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // 扫描件逐页视觉理解的页数上限：只理解前 N 页，其余页面在风险里标注未覆盖。
+  EVIDENCE_VISION_PAGE_LIMIT: z.coerce.number().int().positive().default(10),
+  // 超过该页数的 PDF 改走检索式理解：先建块级索引，再只理解被检索命中的内容块。
+  EVIDENCE_RETRIEVAL_PAGE_THRESHOLD: z.coerce.number().int().positive().default(500),
   // 材料理解阶段对模型的全局并发上限：逐页理解与材料级并发共享同一配额，
   // 避免并发叠加后请求过密被供应商限流，导致材料理解失败。
   EVIDENCE_UNDERSTANDING_LLM_CONCURRENCY: z.coerce.number().int().positive().default(6),

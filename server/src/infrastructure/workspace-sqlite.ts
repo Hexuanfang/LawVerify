@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
@@ -43,6 +43,11 @@ export interface WorkspaceSnapshot {
 
 const snapshotKey = Symbol('lawverify.workspace.snapshot')
 const mediaKeys = new Set(['sourceDataUrl', 'previewDataUrl', 'pageImageDataUrls'])
+
+// 资产文件的完整性校验结果：同一份资产在一个进程里只校验一次。
+// 之后用体积与修改时间判断文件是否仍然可信，避免每次读写都重新读回整份文件算哈希。
+// 进程重启后首次访问会重新校验一次，外部改动文件也会因体积或时间变化被重新校验。
+const verifiedAssets = new Map<string, { size: number; mtimeMs: number }>()
 
 function rowKey(row: Pick<RecordRow, 'table' | 'id'>) {
   return JSON.stringify([row.table, row.id])
@@ -190,8 +195,12 @@ export class WorkspaceSqliteStore {
         mkdirSync(this.assetsDir, { recursive: true })
         const file = path.join(this.assetsDir, hash)
         if (existsSync(file)) {
-          if (createHash('sha256').update(readFileSync(file)).digest('hex') !== hash) {
-            throw new AppError('证据原件缓存校验失败，已阻止保存。请检查工作区存储。', 500, 'WORKSPACE_ASSET_CORRUPT')
+          // 文件名就是内容哈希，已校验过且未被改动时不必再读回整份文件重算。
+          if (!this.isAssetTrusted(file)) {
+            if (createHash('sha256').update(readFileSync(file)).digest('hex') !== hash) {
+              throw new AppError('证据原件缓存校验失败，已阻止保存。请检查工作区存储。', 500, 'WORKSPACE_ASSET_CORRUPT')
+            }
+            this.rememberAsset(file)
           }
         } else {
           const temporary = `${file}.${randomUUID()}.tmp`
@@ -201,6 +210,7 @@ export class WorkspaceSqliteStore {
           } finally {
             rmSync(temporary, { force: true })
           }
+          this.rememberAsset(file)
         }
       }
       return { __lawverifyAsset: hash }
@@ -220,13 +230,18 @@ export class WorkspaceSqliteStore {
       if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid workspace asset reference')
       let content = cache.get(hash)
       if (content === undefined) {
+        const file = path.join(this.assetsDir, hash)
         try {
-          content = readFileSync(path.join(this.assetsDir, hash), 'utf8')
+          content = readFileSync(file, 'utf8')
         } catch {
           throw new AppError('证据原件缓存无法读取，请保留工作区并从备份恢复。', 500, 'WORKSPACE_ASSET_MISSING')
         }
-        if (createHash('sha256').update(content).digest('hex') !== hash) {
-          throw new AppError('证据原件缓存校验失败，请从备份恢复工作区。', 500, 'WORKSPACE_ASSET_CORRUPT')
+        // 已经校验过且文件未被改动时跳过哈希比对，避免每次读取工作区都重算全部原件。
+        if (!this.isAssetTrusted(file)) {
+          if (createHash('sha256').update(content).digest('hex') !== hash) {
+            throw new AppError('证据原件缓存校验失败，请从备份恢复工作区。', 500, 'WORKSPACE_ASSET_CORRUPT')
+          }
+          this.rememberAsset(file)
         }
         cache.set(hash, content)
       }
@@ -237,6 +252,28 @@ export class WorkspaceSqliteStore {
       return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.decodeAssets(item, cache)]))
     }
     return value
+  }
+
+  private assetStat(file: string) {
+    try {
+      const stat = statSync(file)
+      return { size: stat.size, mtimeMs: stat.mtimeMs }
+    } catch {
+      return null
+    }
+  }
+
+  /** 文件此前已通过完整性校验，且体积与修改时间都没有变化。 */
+  private isAssetTrusted(file: string) {
+    const stat = this.assetStat(file)
+    if (!stat) return false
+    const trusted = verifiedAssets.get(file)
+    return Boolean(trusted && trusted.size === stat.size && trusted.mtimeMs === stat.mtimeMs)
+  }
+
+  private rememberAsset(file: string) {
+    const stat = this.assetStat(file)
+    if (stat) verifiedAssets.set(file, stat)
   }
 
   private flatten(state: WorkspaceState, persistAssets: boolean) {
@@ -315,17 +352,51 @@ export class WorkspaceSqliteStore {
   }
 
   private assemble(rows: Map<string, RecordRow>): WorkspaceState {
-    const list = (table: Table, parentId?: string) => [...rows.values()]
-      .filter(row => row.table === table && (parentId === undefined || row.parentId === parentId))
-      .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-      .map(row => JSON.parse(row.payload) as JsonObject)
+    // 先按表与父节点分组：每个集合、每个段落、每条挂接只在各自的分组里排序，
+    // 不再为一次查询扫描全部记录。
+    const grouped = new Map<Table, Map<string | null, RecordRow[]>>()
+    for (const row of rows.values()) {
+      let parents = grouped.get(row.table)
+      if (!parents) {
+        parents = new Map()
+        grouped.set(row.table, parents)
+      }
+      const key = row.parentId ?? null
+      const bucket = parents.get(key)
+      if (bucket) {
+        bucket.push(row)
+      } else {
+        parents.set(key, [row])
+      }
+    }
+    const compare = (a: RecordRow, b: RecordRow) => a.position - b.position || a.id.localeCompare(b.id)
+    const list = (table: Table, parentId?: string) => {
+      const parents = grouped.get(table)
+      if (!parents) {
+        return [] as JsonObject[]
+      }
+      let tableRows: RecordRow[]
+      if (parentId === undefined) {
+        tableRows = []
+        for (const bucket of parents.values()) {
+          for (const row of bucket) {
+            tableRows.push(row)
+          }
+        }
+      } else {
+        tableRows = parents.get(parentId) ?? []
+      }
+      return tableRows
+        .slice()
+        .sort(compare)
+        .map(row => JSON.parse(row.payload) as JsonObject)
+    }
     const state = { ...list('workspace_extra')[0], user: list('workspace_user')[0] } as unknown as WorkspaceState
     for (const [collection, table] of Object.entries(collections)) {
       (state as unknown as JsonObject)[collection] = list(table)
     }
-    const certificateRows = [...rows.values()].filter(row => row.table === 'certificates')
-      .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-    state.certificates = certificateRows.map(row => {
+    const certificateRows = grouped.get('certificates')?.get(null) ?? []
+    state.certificates = certificateRows.slice().sort(compare).map(row => {
       const certificate = JSON.parse(row.payload) as Certificate
       certificate.paragraphs = list('paragraphs', row.id).map(value => {
         const paragraph = value as unknown as CertificateParagraph

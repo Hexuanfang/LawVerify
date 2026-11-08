@@ -111,6 +111,14 @@ test('media is deduplicated outside SQLite and decoded without changing fingerpr
   assert.throws(() => read(store), /校验失败/)
 })
 
+test('保存时发现被改动的证据原件会阻止写入', t => {
+  const { dir, store, state } = isolated(t)
+  const hash = readdirSync(path.join(dir, 'workspace-assets'))[0]
+  writeFileSync(path.join(dir, 'workspace-assets', hash), 'corrupt')
+  state.evidences[0].name = 'changed'
+  assert.throws(() => store.save(state), /校验失败/)
+})
+
 test('unchanged saves do not rewrite records; modifications affect only changed rows', t => {
   const { store, state } = isolated(t)
   store.save(state)

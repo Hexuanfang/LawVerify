@@ -3895,7 +3895,11 @@ function isPlaceholderEvidenceText(text: string) {
     .map((line) => line.trim())
     .filter(Boolean)
 
-  if (!normalizedLines.length) {
+  // PDF 抽取留下的页标记只是页眉，不是正文内容：
+  // 扫描件如果只剩页标记，必须按「没有可读文本」处理，否则会跳过视觉理解。
+  const contentLines = normalizedLines.filter((line) => !/^-{2,}\s*第\s*\d+\s*\/\s*\d+\s*页\s*-{2,}$/u.test(line))
+
+  if (!contentLines.length) {
     return true
   }
 
@@ -3908,7 +3912,7 @@ function isPlaceholderEvidenceText(text: string) {
     /^3\.\s*可直接用于/u,
   ]
 
-  return normalizedLines.every((line) => placeholderLinePatterns.some((pattern) => pattern.test(line)))
+  return contentLines.every((line) => placeholderLinePatterns.some((pattern) => pattern.test(line)))
 }
 
 function getMeaningfulEvidenceText(text: string) {
@@ -4060,6 +4064,20 @@ const DEFAULT_EVIDENCE_FOCUS_QUERIES = [
   '利息',
   '解除',
   '解除通知',
+  // 英文或中英混排的材料同样要能检索到，否则检索会整片落空。
+  'contract',
+  'agreement',
+  'payment',
+  'amount',
+  'signature',
+  'invoice',
+  'evidence',
+  'dispute',
+  'breach',
+  'performance',
+  'original',
+  'delivery',
+  'deadline',
 ]
 
 // 检索式理解：只把被检索命中的内容块交给模型，避免几百页材料整体塞进模型。

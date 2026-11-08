@@ -108,3 +108,19 @@ test('空文本不会产生块', () => {
   assert.equal(selection.coveredChunks, 0)
   assert.deepEqual(selection.chunks, [])
 })
+
+test('检索词完全落空时按均匀间隔兜底采样，不放弃整份材料', () => {
+  const text = Array.from({ length: 200 }, (_, index) =>
+    `Clause ${index + 1}: the borrower shall repay the principal within thirty days.`).join('\n')
+
+  const selection = selectEvidenceChunksForUnderstanding({
+    text,
+    queries: ['争议焦点', '合同纠纷'],
+    maxChunks: 5,
+    maxChars: 6000,
+  })
+
+  assert.ok(selection.totalChunks > 5)
+  assert.ok(selection.coveredChunks > 0, '检索落空时也应覆盖一部分内容')
+  assert.ok(selection.chunks.some((chunk) => chunk.content.includes('Clause')), '兜底采样应取到原文内容')
+})

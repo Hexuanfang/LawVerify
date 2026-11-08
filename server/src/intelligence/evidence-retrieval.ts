@@ -274,8 +274,13 @@ export function selectEvidenceChunksForUnderstanding(input: {
   const neighborSize = input.neighborSize ?? NEIGHBOR_CHUNK_SIZE
   const selectedIndexes = new Set<number>()
   let coveredChars = 0
+  // 检索词全部落空时按均匀间隔兜底采样：检索依赖语言与用词，
+  // 均匀覆盖不依赖，遇到英文或与争点无关的材料时仍然能读到有代表性的内容。
+  const candidates = ranked.length
+    ? ranked.map((item) => item.chunkIndex)
+    : spreadChunkIndexes(chunks.length, input.maxChunks ?? 64)
   // 按命中分数从高到低取块，命中块连同前后相邻块一起带走，顺序按原文排列。
-  for (const { chunkIndex } of ranked) {
+  for (const chunkIndex of candidates) {
     for (const neighbor of expandChunkIndexes([chunkIndex], chunks.length, neighborSize)) {
       if (excluded.has(neighbor) || selectedIndexes.has(neighbor)) {
         continue
@@ -299,4 +304,19 @@ export function selectEvidenceChunksForUnderstanding(input: {
     coveredChars,
     coveredChunkIndexes: orderedIndexes,
   }
+}
+
+// 均匀间隔取块：检索落空时保证整份材料仍有代表性的内容被理解。
+function spreadChunkIndexes(total: number, limit: number) {
+  if (total <= 0 || limit <= 0) {
+    return []
+  }
+
+  const take = Math.min(total, limit)
+  const stride = Math.max(1, Math.floor(total / take))
+  const indexes: number[] = []
+  for (let index = 0; index < total && indexes.length < take; index += stride) {
+    indexes.push(index)
+  }
+  return indexes
 }

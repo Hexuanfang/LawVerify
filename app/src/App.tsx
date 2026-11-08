@@ -5164,8 +5164,8 @@ function App() {
 
         const { workspace } = await api.importEvidences({
           caseId: selectedCase.id,
-          processInBackground: false,
-          deferUnderstanding: true,
+          // 每批传完立即进入后台解析与理解，不等全部材料上传完。
+          processInBackground: true,
           files,
         })
         latestWorkspace = workspace
@@ -5184,7 +5184,7 @@ function App() {
 
         setEvidenceImportProgress({
           stage: 'parse',
-          message: `已接入 ${uploadedCount}/${sortedFileList.length} 个原件`,
+          message: `已接入 ${uploadedCount}/${sortedFileList.length} 个原件，已在后台解析与理解`,
           completed: uploadedCount,
           total: sortedFileList.length,
         })

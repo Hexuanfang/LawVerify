@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { Document, Packer, Paragraph } from 'docx'
 import { extractWordText, withDocumentSession } from '../src/infrastructure/document-jobs.ts'
 import { notifyWorkspaceChanged, subscribeWorkspaceChanges } from '../src/infrastructure/workspace-events.ts'
-import { boundedMemoryStorage, reserveUpload } from '../src/middleware/bounded-upload.ts'
+import { boundedMemoryStorage, maxUploadBatchBytes, reserveUpload } from '../src/middleware/bounded-upload.ts'
 import { Readable } from 'node:stream'
 import { EventEmitter } from 'node:events'
 
@@ -96,7 +96,7 @@ test('upload storage bounds aggregate bytes even without Content-Length', async 
   const storage = boundedMemoryStorage()
   const request = {}
   const chunk = Buffer.alloc(16 * 1024 * 1024)
-  const stream = Readable.from(Array.from({ length: 9 }, () => chunk))
+  const stream = Readable.from(Array.from({ length: Math.ceil(maxUploadBatchBytes / chunk.length) + 1 }, () => chunk))
   await assert.rejects(new Promise((resolve, reject) => {
     storage._handleFile(request, { stream }, (error, result) => error ? reject(error) : resolve(result))
   }), error => error.code === 'UPLOAD_BATCH_TOO_LARGE')

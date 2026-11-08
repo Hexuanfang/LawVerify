@@ -1,15 +1,26 @@
 import * as mammoth from 'mammoth'
 import { PDFParse } from 'pdf-parse'
+import { readFile } from 'node:fs/promises'
 
 let buffer = Buffer.alloc(0)
 let parser: PDFParse | undefined
 const pdf = () => parser ??= new PDFParse({ data: buffer, maxImageSize: 16000000, isEvalSupported: false })
+// 初始化可能要先从磁盘读整份原件：业务请求必须等初始化完成，否则会在空 buffer 上解析。
+let ready: Promise<void> = Promise.resolve()
 
 process.on('disconnect', () => process.exit(0))
 process.on('message', async (message: unknown) => {
-  const { type, bytes, id, action, page } = message as { type?: string; bytes?: Buffer; id: number; action: string; page: number }
-  if (type === 'initialize') { buffer = Buffer.from(bytes!); return }
+  const { type, bytes, path, id, action, page } = message as { type?: string; bytes?: Buffer; path?: string; id: number; action: string; page: number }
+  if (type === 'initialize') {
+    // 大原件按路径读取：主进程不再需要把整个文件塞进 IPC 消息。
+    ready = (async () => {
+      buffer = path ? await readFile(path) : Buffer.from(bytes!)
+    })()
+    await ready
+    return
+  }
   try {
+    await ready
     let result: unknown
     if (action === 'word') {
       result = (await mammoth.extractRawText({ buffer })).value

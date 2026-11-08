@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { Readable } from 'node:stream'
 import { rankCases } from './intelligence/legal-verification.js'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -62,7 +64,7 @@ import {
   isPlaceholderStatuteContent,
   pickPreferredStatuteBinding,
 } from './intelligence/statute-version.js'
-import { deleteObject, readObject, storeObject } from './infrastructure/object-storage.js'
+import { deleteObject, readObject, readObjectPath, storeObject } from './infrastructure/object-storage.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { createChatCompletion, createChatCompletionStream, isLlmConfigured, withRequestAbortSignal, type LlmChatMessage } from './integrations/llm-service.js'
 import { getLlmCallCacheHitCount, resetLlmCallCacheHitCount, withLlmCallCache } from './infrastructure/llm-call-cache.js'
@@ -147,6 +149,10 @@ const evidenceUnderstandingLimiter = createSemaphore(
     ? Math.min(env.EVIDENCE_UNDERSTANDING_LLM_CONCURRENCY, env.CLOUD_AI_MAX_CONCURRENCY)
     : env.EVIDENCE_UNDERSTANDING_LLM_CONCURRENCY)
 const backgroundEvidenceProcessingQueue = new Map<string, { account: string | null; caseId: string }>()
+// 案件记忆重建的延迟合并：材料分批上传时，连续多批共用一次重建，
+// 避免每传完一批就把案件记忆重建一遍（每次都是一次模型调用）。
+const pendingMemoryRebuilds = new Map<string, { revision: number; notes: string[] }>()
+let memoryRebuildTimer: ReturnType<typeof setTimeout> | undefined
 let backgroundEvidenceProcessingActive = false
 let backgroundEvidenceProcessingTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -233,6 +239,62 @@ async function rebuildCaseMemoryAfterBackgroundProcessing(caseId: string, revisi
   } else await perform()
 }
 
+// 记忆重建延迟合并：上传还在继续时先不重建，等这一波材料传完再重建一次。
+function scheduleCaseMemoryRebuild(caseId: string, revision: number, notes: string[] = []) {
+  const pending = pendingMemoryRebuilds.get(caseId)
+  pendingMemoryRebuilds.set(caseId, { revision, notes: pending?.notes.length ? pending.notes : notes })
+  if (memoryRebuildTimer) {
+    return
+  }
+
+  memoryRebuildTimer = setTimeout(() => {
+    memoryRebuildTimer = undefined
+    const pendingEntries = [...pendingMemoryRebuilds.entries()]
+    pendingMemoryRebuilds.clear()
+    void Promise.all(pendingEntries.map(([id, pending]) =>
+      rebuildCaseMemoryAfterBackgroundProcessing(id, pending.revision)
+        .then(() => finalizeCaseAgentTask(id, pending.revision, pending.notes))
+        .catch(async (error) => {
+          const message = error instanceof Error ? error.message : '案件记忆重建失败，请重试。'
+          if (message.includes('已变化')) {
+            // 重建期间又来了新材料：交给下一轮梳理处理，不算失败。
+            queueBackgroundEvidenceProcessing(id, [])
+            return
+          }
+          await markCaseAgentTaskFailed(id, pending.revision, message)
+        }),
+    ))
+  }, 2500)
+}
+
+// 案件记忆就绪后，这一轮梳理才算完成。
+async function finalizeCaseAgentTask(caseId: string, revision: number, notes: string[]) {
+  const latest = await readWorkspace()
+  const task = latest.cases.find((item) => item.id === caseId)?.agent?.task
+  if (!task || task.revision !== revision) {
+    return
+  }
+
+  task.status = 'ready'
+  task.stage = notes.length ? `案件理解已更新（${notes.join('，')}）` : '案件理解已更新'
+  task.updatedAt = new Date().toISOString()
+  await writeWorkspace(latest)
+}
+
+async function markCaseAgentTaskFailed(caseId: string, revision: number, message: string) {
+  const latest = await readWorkspace()
+  const task = latest.cases.find((item) => item.id === caseId)?.agent?.task
+  if (!task || task.revision !== revision) {
+    return
+  }
+
+  task.status = 'failed'
+  task.error = message
+  task.stage = '等待重试'
+  task.updatedAt = new Date().toISOString()
+  await writeWorkspace(latest)
+}
+
 // 自动梳理失败时把材料理解阶段记录的真实原因带出来，避免用固定文案掩盖上游错误。
 function buildEvidenceSummaryFailureMessage(workspace: WorkspaceState, evidenceId: string) {
   const reason = workspace.evidences.find((item) => item.id === evidenceId)?.summaryError?.trim()
@@ -262,6 +324,22 @@ async function drainBackgroundEvidenceProcessingQueue() {
         const task = folder?.agent?.task
         if (!folder || !task || folder.agent?.autoAnalyze === false || !['queued', 'processing'].includes(task.status)) return
         const revision = task.revision
+        // 只处理还没理解好的材料：分批上传时任务队列会不断追加，
+        // 若每次都重扫全部材料，批次一多就会退化成材料数乘批次数次读写。
+        const pendingEvidenceIds = task.evidenceIds.filter((evidenceId) => {
+          const material = initial.evidences.find((item) => item.id === evidenceId)
+          return material && material.summaryStatus !== 'ready' && material.summaryStatus !== 'failed'
+        })
+        if (!pendingEvidenceIds.length) {
+          // 没有待理解的材料：收尾并把队列清空，等记忆重建完成再报「已更新」。
+          task.status = 'processing'
+          task.stage = '正在整理案件记忆'
+          task.evidenceIds = []
+          task.updatedAt = new Date().toISOString()
+          await writeWorkspace(initial)
+          scheduleCaseMemoryRebuild(caseId, revision, [])
+          return
+        }
         task.status = 'processing'
         task.stage = '正在理解新增材料'
         task.updatedAt = new Date().toISOString()
@@ -274,7 +352,7 @@ async function drainBackgroundEvidenceProcessingQueue() {
           // 多份材料并发理解：模型调用耗时最长，放在工作区写锁之外并行执行，
           // 落库仍由 summarizeEvidence 内部串行合并，保证结果不丢。
           const outcomes = await mapSettledWithConcurrency<string, { evidenceId: string; outcome: 'skipped' | 'duplicate' | 'done'; analyzed: boolean }>(
-            task.evidenceIds,
+            pendingEvidenceIds,
             EVIDENCE_SUMMARY_CONCURRENCY,
             async (evidenceId) => {
               const current = await readWorkspace()
@@ -323,7 +401,6 @@ async function drainBackgroundEvidenceProcessingQueue() {
               duplicateEvidenceIds.push(result.value.evidenceId)
             }
           }
-          await rebuildCaseMemoryAfterBackgroundProcessing(caseId, revision)
           // 新证据进来后，回头在超大材料里找与新证据相关的内容：已覆盖的块不会重做。
           const analyzedEvidenceIds = outcomes
             .filter((result) => result.ok)
@@ -339,14 +416,21 @@ async function drainBackgroundEvidenceProcessingQueue() {
             const notes: string[] = []
             if (skippedEvidenceIds.length) notes.push(`已跳过 ${skippedEvidenceIds.length} 份待解析材料`)
             if (duplicateEvidenceIds.length) notes.push(`已排除 ${duplicateEvidenceIds.length} 份重复文件`)
-            next.status = 'ready'
-            next.stage = notes.length ? `案件理解已更新（${notes.join('，')}）` : '案件理解已更新'
             next.evidenceIds = []
             next.skippedEvidenceIds = skippedEvidenceIds
             next.duplicateEvidenceIds = duplicateEvidenceIds
+            // 案件记忆还没重建完，先不报「已更新」：记忆就绪才算这一轮梳理完成。
+            next.status = 'processing'
+            next.stage = '正在整理案件记忆'
             next.updatedAt = new Date().toISOString()
             await writeWorkspace(latest)
-          } else if (next) queueBackgroundEvidenceProcessing(caseId, next.evidenceIds)
+            // 记忆重建延后合并：上传分批到达时只重建一次。
+            scheduleCaseMemoryRebuild(caseId, revision, notes)
+          } else if (next) {
+            // 处理期间又来了新材料：这一轮的记忆已经过时，交给下一轮重建。
+            scheduleCaseMemoryRebuild(caseId, revision, [])
+            queueBackgroundEvidenceProcessing(caseId, [])
+          }
         } catch (error) {
           const latest = await readWorkspace()
           const next = latest.cases.find(c => c.id === caseId)?.agent?.task
@@ -2511,6 +2595,61 @@ export async function getEvidenceSourceAsset(evidenceId: string) {
   }
 }
 
+// 原件引用：落盘原件只给路径，解析时不必再把整份文件读进主进程内存。
+async function getEvidenceSourceAssetRef(evidence: Evidence) {
+  if (evidence.storageKey?.trim()) {
+    return {
+      path: readObjectPath(evidence.storageKey.trim()),
+      buffer: undefined as Buffer | undefined,
+      mimeType: resolveEvidenceMimeType(evidence.fileName, evidence.sourceMimeType, evidence.type),
+      fileName: evidence.fileName,
+    }
+  }
+
+  const dataUrl = evidence.sourceDataUrl ?? evidence.previewDataUrl
+  if (!dataUrl) {
+    throw new Error('当前证据未保存可读取的原件数据。')
+  }
+
+  const { buffer, mimeType } = parseDataUrl(dataUrl)
+  return {
+    path: undefined as string | undefined,
+    buffer,
+    mimeType: resolveEvidenceMimeType(evidence.fileName, evidence.sourceMimeType || mimeType, evidence.type),
+    fileName: evidence.fileName,
+  }
+}
+
+// 原件下载走流：几百页的扫描件不会因为一次预览就把整份文件读进内存。
+export async function getEvidenceSourceAssetStream(evidenceId: string) {
+  const workspace = await readWorkspace()
+  const evidence = workspace.evidences.find((item) => item.id === evidenceId)
+  if (!evidence) {
+    throw new Error('证据不存在。')
+  }
+
+  if (evidence.storageKey?.trim()) {
+    const filePath = readObjectPath(evidence.storageKey.trim())
+    return {
+      stream: createReadStream(filePath),
+      mimeType: resolveEvidenceMimeType(evidence.fileName, evidence.sourceMimeType, evidence.type),
+      fileName: evidence.fileName,
+    }
+  }
+
+  const dataUrl = evidence.sourceDataUrl ?? evidence.previewDataUrl
+  if (!dataUrl) {
+    throw new Error('当前证据未保存可读取的原件数据。')
+  }
+
+  const { buffer, mimeType } = parseDataUrl(dataUrl)
+  return {
+    stream: Readable.from(buffer),
+    mimeType: resolveEvidenceMimeType(evidence.fileName, evidence.sourceMimeType || mimeType, evidence.type),
+    fileName: evidence.fileName,
+  }
+}
+
 function shouldHydrateEvidenceForUnderstanding(
   evidence: Pick<Evidence, 'type' | 'ocrText' | 'sourceDataUrl' | 'previewDataUrl' | 'pageImageDataUrls' | 'sourceMimeType'>,
 ) {
@@ -2540,13 +2679,14 @@ async function extractEvidenceContentFromSourceAsset(
     return {}
   }
 
-  const asset = await getEvidenceSourceAsset(evidence.id)
+  const asset = await getEvidenceSourceAssetRef(evidence)
   const lowerName = asset.fileName.toLowerCase()
   const normalizedMimeType = (asset.mimeType || evidence.sourceMimeType || '').toLowerCase()
 
   if (evidence.type === 'image' || normalizedMimeType.startsWith('image/')) {
-    const dataUrl = asset.buffer.length <= MAX_INLINE_IMAGE_SOURCE_BYTES
-      ? bufferToDataUrl(asset.buffer, asset.mimeType)
+    const buffer = asset.buffer ?? await readObject(evidence.storageKey!.trim())
+    const dataUrl = buffer.length <= MAX_INLINE_IMAGE_SOURCE_BYTES
+      ? bufferToDataUrl(buffer, asset.mimeType)
       : undefined
 
     return {
@@ -2565,22 +2705,24 @@ async function extractEvidenceContentFromSourceAsset(
     || lowerName.endsWith('.markdown')
     || normalizedMimeType.startsWith('text/')
   ) {
+    const buffer = asset.buffer ?? await readObject(evidence.storageKey!.trim())
     return {
       sourceMimeType: asset.mimeType,
-      ocrText: asset.buffer.toString('utf8').trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
+      ocrText: buffer.toString('utf8').trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
     }
   }
 
   if (lowerName.endsWith('.rtf') || normalizedMimeType.includes('rtf')) {
+    const buffer = asset.buffer ?? await readObject(evidence.storageKey!.trim())
     return {
       sourceMimeType: asset.mimeType,
-      ocrText: stripRtfKnowledgeControlText(asset.buffer.toString('utf8')).trim()
+      ocrText: stripRtfKnowledgeControlText(buffer.toString('utf8')).trim()
         || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
     }
   }
 
   if (lowerName.endsWith('.docx')) {
-    const text = await extractWordText(asset.buffer)
+    const text = await extractWordText(asset.path ?? asset.buffer!)
     return {
       sourceMimeType: asset.mimeType,
       ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
@@ -2588,7 +2730,7 @@ async function extractEvidenceContentFromSourceAsset(
   }
 
   if (lowerName.endsWith('.pdf') || normalizedMimeType.includes('pdf')) {
-    return withDocumentSession(asset.buffer, async session => {
+    return withDocumentSession(asset.path ?? asset.buffer!, async session => {
       const total = await session.request<number>('info')
       const text = await session.request<string>('text')
       const pageImageDataUrls: string[] = []
@@ -4070,7 +4212,7 @@ async function understandEvidenceWithLlm(
     if (cachedImages.length < Math.min(total, pageLimit)) {
       // 页面渲染与模型理解分两段：渲染完成后立即释放文档解析进程，
       // 否则多份 PDF 会互相排队占用解析进程（解析进程最多同时 2 个）。
-      const rendered = await withDocumentSession(await readObject(evidence.storageKey), async session => {
+      const rendered = await withDocumentSession(readObjectPath(evidence.storageKey), async session => {
         const pageTotal = await session.request<number>('info')
         // 页面渲染保持串行（共用同一个文档解析进程），模型理解改为限流并发。
         const images = [...cachedImages]

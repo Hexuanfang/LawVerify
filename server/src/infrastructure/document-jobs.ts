@@ -1,9 +1,11 @@
 import { fork, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { AppError } from '../core/app-error.js'
+import { env } from '../config/env.js'
 
 const MAX_ACTIVE = 2
 const MAX_QUEUED = 16
+const maxEvidenceFileBytes = env.MAX_EVIDENCE_FILE_MB * 1024 * 1024
 let active = 0
 const queue: Array<() => void> = []
 async function acquire() {
@@ -28,8 +30,16 @@ export interface DocumentSession {
   request<T>(action: 'word' | 'info' | 'text' | 'page', page?: number): Promise<T>
 }
 
-export async function withDocumentSession<T>(buffer: Buffer, operation: (session: DocumentSession) => Promise<T>) {
-  if (buffer.byteLength > 100 * 1024 * 1024) throw new AppError('材料超过100MB，请拆分后处理。', 413, 'DOCUMENT_TOO_LARGE')
+export async function withDocumentSession<T>(
+  source: Buffer | string,
+  operation: (session: DocumentSession) => Promise<T>,
+) {
+  // 传路径时不在主进程再读一份原件，几百页的扫描件也不会把内存顶满。
+  const buffer = typeof source === 'string' ? undefined : source
+  const sourcePath = typeof source === 'string' ? source : undefined
+  if (buffer && buffer.byteLength > maxEvidenceFileBytes) {
+    throw new AppError(`材料超过${Math.round(maxEvidenceFileBytes / 1024 / 1024)}MB，请拆分后处理。`, 413, 'DOCUMENT_TOO_LARGE')
+  }
   await acquire()
   let worker: ChildProcess | undefined
   let lifetimeTimer: ReturnType<typeof setTimeout> | undefined
@@ -41,7 +51,7 @@ export async function withDocumentSession<T>(buffer: Buffer, operation: (session
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       execArgv: [...process.execArgv.filter(arg => !arg.startsWith('--inspect')), '--max-old-space-size=256'],
     })
-    worker.send({ type: 'initialize', bytes: buffer })
+    worker.send({ type: 'initialize', bytes: buffer, path: sourcePath })
     const runningWorker = worker
     let sequence = 0
     const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
@@ -94,6 +104,6 @@ export async function withDocumentSession<T>(buffer: Buffer, operation: (session
   }
 }
 
-export function extractWordText(buffer: Buffer) {
-  return withDocumentSession(buffer, session => session.request<string>('word'))
+export function extractWordText(source: Buffer | string) {
+  return withDocumentSession(source, session => session.request<string>('word'))
 }

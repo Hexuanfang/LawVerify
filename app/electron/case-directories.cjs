@@ -4,6 +4,8 @@ const path = require('node:path')
 
 const allowed = /\.(pdf|docx|doc|rtf|txt|md|png|jpe?g|gif|webp|pptx?)$/i
 const fingerprint = metadata => `stat:${metadata.size}:${metadata.mtimeMs}:${metadata.ctimeMs}`
+// 单个材料原件的大小上限：与服务端 MAX_EVIDENCE_FILE_MB 保持一致。
+const MAX_FILE_BYTES = 512 * 1024 * 1024
 
 function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
   const configPath = path.join(app.getPath('userData'), 'case-directories.json')
@@ -60,7 +62,7 @@ function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
       for (let offset = 0; offset < candidates.length; offset += 16) {
         const items = await Promise.all(candidates.slice(offset, offset + 16).map(async item => {
           const metadata = await fs.stat(item.child)
-          if (metadata.size > 100 * 1024 * 1024) throw new Error(`文件“${item.fileName}”超过100MB，请拆分后再同步。`)
+          if (metadata.size > MAX_FILE_BYTES) throw new Error(`文件“${item.fileName}”超过${MAX_FILE_BYTES / 1024 / 1024}MB，请拆分后再同步。`)
           return { relativePath: item.relativePath, fileName: item.fileName, size: metadata.size,
             hash: fingerprint(metadata) }
         }))
@@ -120,7 +122,7 @@ function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
       throw new Error('材料不在已授权目录内。')
     }
     const metadata = await fs.stat(target)
-    if (!metadata.isFile() || metadata.size > 100 * 1024 * 1024) throw new Error('材料格式或大小不受支持。')
+    if (!metadata.isFile() || metadata.size > MAX_FILE_BYTES) throw new Error('材料格式或大小不受支持。')
     const metadataOnly = payload.hash?.startsWith('stat:')
     if (metadataOnly && fingerprint(metadata) !== payload.hash) throw new Error('材料已变化，正在重新同步。')
     const bytes = await fs.readFile(target)

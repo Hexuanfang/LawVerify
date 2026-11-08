@@ -38,6 +38,11 @@ const envSchema = z.object({
   SERVER_HOST: z.string().default('127.0.0.1'),
   CORS_ORIGIN: z.string().default('http://127.0.0.1:5173,http://localhost:5173'),
   JSON_LIMIT: z.string().default('100mb'),
+  // 单个材料原件的大小上限（MB）：上传与原件解析共用同一上限。
+  // 上传按文件落盘处理，内存占用不随文件大小增长。
+  MAX_EVIDENCE_FILE_MB: z.coerce.number().int().positive().default(512),
+  // 单批上传的请求体上限（MB）：同样按落盘处理，只限制总量不限制单文件。
+  MAX_UPLOAD_BATCH_MB: z.coerce.number().int().positive().default(512),
   APP_NAME: z.string().default('lawverify-server'),
   API_PREFIX: z.string().default('/api'),
   API_V1_PREFIX: z.string().default('/api/v1'),

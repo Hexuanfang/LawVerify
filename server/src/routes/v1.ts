@@ -1,6 +1,6 @@
 import { Router, type Request } from 'express'
 import multer from 'multer'
-import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
+import { boundedFileStorage, boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import express from 'express'
 import { z } from 'zod'
 import { createRechargePaymentOrder, getBillingCatalog, getRechargePaymentOrder, listRechargePaymentOrders } from '../billing-service.js'
@@ -142,6 +142,11 @@ export function createV1Router() {
     response.flush?.()
   }
   const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
+  // 单个证据原件按落盘处理，上限与桌面端一致，不再受 50MB 内存缓冲限制。
+  const evidenceUpload = multer({
+    storage: boundedFileStorage(),
+    limits: { fileSize: env.MAX_EVIDENCE_FILE_MB * 1024 * 1024, files: 1, fields: 10, fieldSize: 2 * 1024 * 1024 },
+  })
 
   router.use((request, _response, next) => {
     runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => {
@@ -340,7 +345,7 @@ export function createV1Router() {
     authenticate,
     requirePermission('evidence.upload'),
     reserveUpload,
-    upload.single('file'),
+    evidenceUpload.single('file'),
     async (request, response) => {
       if (!request.file) {
         throw new Error('请选择要上传的文件。')

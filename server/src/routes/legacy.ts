@@ -5,14 +5,14 @@ import { z } from 'zod'
 import { env } from '../config/env.js'
 import { sendLegacyError } from '../core/api-response.js'
 import { AppError } from '../core/app-error.js'
-import { storeObject } from '../infrastructure/object-storage.js'
+import { storeObjectFromPath } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
 import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel, withRequestAbortSignal } from '../integrations/llm-service.js'
 import { assistantOptionsSchema } from '../intelligence/assistant-options.js'
 import { subscribeWorkspaceChanges } from '../infrastructure/workspace-events.js'
-import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
+import { boundedFileStorage, reserveUpload, type UploadedFile } from '../middleware/bounded-upload.js'
 import {
   bootstrap,
   caseAgentMessage,
@@ -26,7 +26,7 @@ import {
   generateCertificate,
   importCertificate,
   importEvidences,
-  getEvidenceSourceAsset,
+  getEvidenceSourceAssetStream,
   bindWorkspaceCloudAccount,
   login,
   autoLinkCertificate,
@@ -67,7 +67,16 @@ const createCaseSchema = z.object({
 
 export function createLegacyRouter() {
   const router = Router()
-  const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
+  // 材料原件按文件落盘：单文件上限可以放大，内存占用不随文件大小增长。
+  const upload = multer({
+    storage: boundedFileStorage(),
+    limits: {
+      fileSize: env.MAX_EVIDENCE_FILE_MB * 1024 * 1024,
+      files: 200,
+      fields: 10,
+      fieldSize: 2 * 1024 * 1024,
+    },
+  })
   const resolveWorkspaceAccount = (request: Request) =>
     request.header('x-workspace-account')?.trim().toLowerCase()
     ?? (typeof request.query.workspaceAccount === 'string'
@@ -375,7 +384,13 @@ export function createLegacyRouter() {
     const assets = []
     for (const [index, file] of files.entries()) {
       const manifestItem = manifest[index] ?? {}
-      const stored = await storeObject(file, {
+      const stored = await storeObjectFromPath({
+        path: (file as Partial<UploadedFile>).path!,
+        size: file.size,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        contentHash: (file as Partial<UploadedFile>).contentHash!,
+      }, {
         bucket: 'evidence',
         fileName: manifestItem.fileName?.trim() || file.originalname,
       })
@@ -386,7 +401,7 @@ export function createLegacyRouter() {
         storageKey: stored.key,
         storageUrl: stored.url,
         sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
-        contentHash: createHash('sha256').update(file.buffer).digest('hex'),
+        contentHash: stored.contentHash,
       })
     }
 
@@ -422,7 +437,7 @@ export function createLegacyRouter() {
         secFetchDest: request.headers['sec-fetch-dest'] ?? null,
       })
       // #endregion
-      const asset = await getEvidenceSourceAsset(request.params.evidenceId)
+      const asset = await getEvidenceSourceAssetStream(request.params.evidenceId)
       response.setHeader('Content-Type', asset.mimeType)
       response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(asset.fileName)}"`)
       response.removeHeader('X-Frame-Options')
@@ -432,10 +447,17 @@ export function createLegacyRouter() {
         evidenceId: request.params.evidenceId,
         mimeType: asset.mimeType,
         fileName: asset.fileName,
-        bufferLength: asset.buffer.length,
       })
       // #endregion
-      response.send(asset.buffer)
+      // 流式回传原件：几百页的扫描件不会因为一次预览就把整份文件读进内存。
+      asset.stream.once('error', () => {
+        if (!response.headersSent) {
+          sendLegacyError(response, 404, '读取证据原件失败')
+          return
+        }
+        response.destroy()
+      })
+      asset.stream.pipe(response)
     } catch (error) {
       // #region debug-point C:source-route-error
       reportLegacyDebug('C', 'source-route-error', {

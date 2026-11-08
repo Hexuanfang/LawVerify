@@ -6,6 +6,9 @@ import type { AppState } from './types'
 const syncing = new Map<string, Promise<AppState>>()
 const clearedCases = new Set<string>()
 const scopeKey = (account: string, caseId: string) => JSON.stringify([account.trim().toLowerCase(), caseId])
+// 单批上传的字节数与文件数上限：批次越小，越早进入后台解析与理解。
+const MAX_UPLOAD_BATCH_BYTES = 48_000_000
+const MAX_UPLOAD_BATCH_COUNT = 16
 
 export async function stopCaseDirectorySync(account: string, caseId: string) {
   clearedCases.add(scopeKey(account, caseId))
@@ -61,12 +64,47 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
   indexed = indexFor(current)
   if (!stillAuthorized()) return current
   onLinked?.(current)
-  for (const [index, item] of directory.files.entries()) {
+  // 批量上传：读完一批就上传并登记，登记后立即进入后台解析与理解，不等整个目录传完。
+  let batch: Array<{ file: File & { webkitRelativePath: string }; item: CaseDirectoryManifest['files'][number] }> = []
+  let batchBytes = 0
+  let completed = 0
+  const flushBatch = async () => {
+    if (!batch.length) {
+      return
+    }
+    const pending = batch
+    batch = []
+    batchBytes = 0
+    const { assets } = await api.uploadEvidenceSourceFiles(pending.map((entry) => entry.file))
+    if (!stillAuthorized()) return current
+    await api.syncDirectoryEvidences({
+      caseId, processInBackground: true,
+      files: pending.map((entry, index) => {
+        const asset = assets[index]
+        if (!asset) throw new Error(`文件“${entry.item.fileName}”同步失败。`)
+        return {
+          ...asset,
+          fileName: entry.item.fileName,
+          relativePath: entry.file.webkitRelativePath,
+          directoryId: directory.id,
+          sourceFingerprint: entry.item.hash,
+          name: entry.item.fileName,
+          type: 'other' as const,
+          ocrText: '',
+        }
+      }),
+    })
+    completed += pending.length
+    onProgress?.(completed, directory.files.length)
+  }
+
+  for (const item of directory.files) {
     if (!stillAuthorized()) return current
     const relativePath = `${directory.name}--${directory.id}/${item.relativePath}`
     const existing = indexed.get(relativePath)
     if (existing?.sourceFingerprint === item.hash && existing.storageKey) {
-      onProgress?.(index + 1, directory.files.length)
+      completed += 1
+      onProgress?.(completed, directory.files.length)
       continue
     }
     const bytes = await window.lawVerifyDesktop!.readCaseDirectoryFile!({
@@ -76,17 +114,13 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
       type: resolveEvidenceMimeType(item.fileName),
     }) as File & { webkitRelativePath: string }
     Object.defineProperty(file, 'webkitRelativePath', { value: relativePath })
-    const { assets } = await api.uploadEvidenceSourceFiles([file])
-    const asset = assets[0]
-    if (!asset) throw new Error(`文件“${item.fileName}”同步失败。`)
-    if (!stillAuthorized()) return current
-    await api.syncDirectoryEvidences({
-      caseId, processInBackground: false, deferUnderstanding: true,
-      files: [{ ...asset, fileName: item.fileName, relativePath, directoryId: directory.id, sourceFingerprint: item.hash,
-        name: item.fileName, type: 'other', ocrText: '' }],
-    })
-    onProgress?.(index + 1, directory.files.length)
+    batch.push({ file, item })
+    batchBytes += bytes.byteLength
+    if (batch.length >= MAX_UPLOAD_BATCH_COUNT || batchBytes >= MAX_UPLOAD_BATCH_BYTES) {
+      await flushBatch()
+    }
   }
+  await flushBatch()
   const paths = new Set(directory.files.map(item => `${directory.name}--${directory.id}/${item.relativePath}`))
   for (const removed of current.evidences.filter(e => e.caseId === caseId && e.directoryId === directory.id
     && !paths.has(e.relativePath ?? ''))) {

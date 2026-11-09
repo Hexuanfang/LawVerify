@@ -26,7 +26,7 @@ export function IdeActivityBar({ active, identity, accountOpen, theme, onNavigat
   const [isPending, startTransition] = useTransition()
 
   return <nav className="ide-activity-bar" aria-label="功能导航">
-    <div className="ide-brand-mark" title="LawVerify">L</div>
+    <img className="ide-brand-mark" src="/lawverify-icon.svg" alt="LawVerify" title="LawVerify" />
     {navigationItems.map(([key, label, path]) => (
       <button key={key} type="button" aria-label={label} title={label}
         aria-pressed={active[key]} aria-busy={isPending && pendingTarget === key}

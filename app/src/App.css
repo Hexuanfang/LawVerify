@@ -257,22 +257,60 @@
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.panel-header-title-group > div {
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .panel-header-title-group h2 {
   margin: 0;
+  /* 标题只占一行并按字号令牌收敛，宽窄窗口下头部高度保持一致。 */
+  font-size: var(--font-title);
+  /* 行高收紧到贴合字面，标题的视觉中线才和旁边的状态、按钮对齐。 */
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态标签与操作按钮保持完整，不被长标题挤压换行。 */
+.panel-header-title-group .status-chip,
+.panel-header-title-group .header-action-button,
+.panel-header-status-block .status-chip,
+.panel-header-status-block .header-action-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 核验状态、进度与归档按钮合并成一块，整体居中显示。 */
+.panel-header-status-block {
+  /* 整块内容不被压缩，靠 auto 外边距在头部正中摆放。 */
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 不换行：一旦折行，整行的垂直中线就被撑歪。 */
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin-inline: auto;
+}
+
+/* 归档前的核验进度摆在按钮旁边，避免按钮置灰却看不出原因。 */
+.mark-ready-progress {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--font-caption);
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 .panel-header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  /* 上传/下载两个图标按钮始终并排，不换行。 */
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
@@ -783,6 +821,20 @@
   gap: 8px;
 }
 
+.evidence-progress-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-h);
+}
+
+.evidence-progress-head .evidence-progress-eta {
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .evidence-import-result {
   display: flex;
   align-items: center;
@@ -1108,6 +1160,16 @@
   left: 6px;
   width: 1px;
   background: rgba(120, 140, 190, 0.24);
+}
+
+/* 目录前的全选/反选框：与下方材料行的复选框同尺寸，半选时显示为横杠。 */
+.evidence-tree-folder-check {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  margin: 0 6px 0 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .evidence-tree-folder {
@@ -1487,6 +1549,13 @@
 
 .knowledge-reference-card .reference-note {
   margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-caption);
+}
+
+/* 卡片底部左侧的来源/检索信息只是辅助信息，字号与颜色都压低一档，别跟条文正文抢视线。 */
+.knowledge-reference-card .knowledge-card-meta,
+.knowledge-detail-block .knowledge-card-meta {
   color: var(--text-muted);
   font-size: var(--font-caption);
 }
@@ -2519,6 +2588,21 @@
   align-items: center;
   justify-content: center;
   user-select: none;
+}
+
+/* 纯图标按钮：用固定方块尺寸代替文字，保证两个按钮并排一行。 */
+.header-action-button.header-icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.header-action-button.header-icon-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .header-action-button:hover:not(:disabled) {
@@ -3653,6 +3737,54 @@
   gap: 10px;
 }
 
+.case-dialog-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--danger-soft);
+  border-radius: 14px;
+  background: var(--danger-soft);
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.case-dialog-notice strong {
+  color: var(--danger-text);
+}
+
+.case-dialog-notice p {
+  margin: 0;
+}
+
+.case-dialog-notice-progress {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.danger-button {
+  border: none;
+  border-radius: 999px;
+  padding: 11px 18px;
+  font: inherit;
+  cursor: pointer;
+  background: var(--danger);
+  color: #fff;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.danger-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.danger-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 
 
 
@@ -3764,6 +3896,7 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  box-sizing: border-box;
   width: min(1480px, 100%);
   max-height: calc(100vh - 48px);
   padding: 22px;
@@ -3773,8 +3906,14 @@
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.16);
 }
 
+/* 专业知识库三列内容较长，弹窗固定高度并让每列内部滚动，避免底部被裁切。 */
+.knowledge-library-dialog.is-library {
+  height: calc(100vh - 48px);
+}
+
 .knowledge-library-head {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
@@ -4169,6 +4308,7 @@
   gap: 14px;
   min-width: 0;
   min-height: 100%;
+  overflow-y: auto;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -4410,11 +4550,13 @@
 /* 专业知识库在弹窗内以三列呈现，每列独立滚动。 */
 .knowledge-library-body-library {
   display: block;
+  min-height: 0;
   overflow: hidden;
 }
 
 .knowledge-library-body-library .knowledge-layout {
   height: 100%;
+  grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
 }
 
@@ -4462,6 +4604,7 @@
 .knowledge-library-nav {
   justify-content: flex-start;
   align-self: flex-start;
+  flex: 0 0 auto;
   gap: 8px;
   padding: 4px;
 }
@@ -4617,6 +4760,10 @@
     padding: 16px;
   }
 
+  .knowledge-library-dialog.is-library {
+    height: calc(100vh - 24px);
+  }
+
   .knowledge-library-body {
     grid-template-columns: 1fr;
   }
@@ -4686,15 +4833,12 @@
   place-items: center;
   flex: 0 0 34px;
   height: 34px;
-  border: 1px solid #e7e9fc;
-  border-radius: 11px;
-  background: #f3f4ff;
-  color: var(--text-brand);
 }
 
-.agent-dock-brand-mark svg {
-  width: 22px;
-  height: 22px;
+.agent-dock-brand-mark img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
 }
 
 .agent-dock button {
@@ -5980,16 +6124,17 @@
     gap: 8px 14px;
   }
 
-  .streamlined-document-panel > .panel-header,
-  .streamlined-insight-panel > .panel-header {
-    align-items: flex-start;
-    flex-wrap: wrap;
+  /* IDE 形态下文书头部在 .ide-document-view 里，选择器要跟实际 DOM 对上，否则整行会被挤变形。 */
+  .ide-shell .ide-document-view > .panel-header {
+    align-items: center;
+    /* 状态块与图标按钮都保持一行，窄屏也不换行。 */
+    flex-wrap: nowrap;
   }
 
-  .streamlined-document-panel > .panel-header .panel-header-actions,
-  .streamlined-insight-panel > .panel-header .panel-header-actions {
-    width: 100%;
-    justify-content: flex-start;
+  .ide-shell .ide-document-view > .panel-header .panel-header-actions {
+    width: auto;
+    justify-content: flex-end;
+    flex: 0 0 auto;
   }
 
   .knowledge-tab-row {
@@ -6108,15 +6253,15 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
-  .streamlined-document-panel > .panel-header,
-  .streamlined-insight-panel > .panel-header {
+  .ide-shell .ide-document-view > .panel-header {
     gap: 10px;
+    flex-wrap: nowrap;
   }
 
-  .streamlined-document-panel > .panel-header .panel-header-actions,
-  .streamlined-insight-panel > .panel-header .panel-header-actions {
-    width: 100%;
-    justify-content: flex-start;
+  .ide-shell .ide-document-view > .panel-header .panel-header-actions {
+    width: auto;
+    justify-content: flex-end;
+    flex: 0 0 auto;
   }
 
   .header-action-button {
@@ -6260,10 +6405,7 @@
   height: 30px;
   margin-bottom: 12px;
   border-radius: 8px;
-  color: #fff;
-  background: #3f63f3;
-  font-size: var(--font-title);
-  font-weight: 700;
+  object-fit: contain;
 }
 
 .ide-activity-bar > button {
@@ -6569,8 +6711,8 @@
   z-index: 4;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 30px;
+  width: 14px;
+  height: 48px;
   padding: 0;
   transform: translateY(-50%);
   border: 1px solid var(--border);
@@ -6589,8 +6731,8 @@
 }
 
 .streamlined-insight-collapse svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 /* 详情栏收起后的展开入口。 */
@@ -6630,6 +6772,8 @@
   min-width: 0;
   min-height: 0;
   padding: 0;
+  /* .panel 默认是 14px 间距的竖排 flex，会在标签行与头部之间留出一条空白带，这里去掉。 */
+  gap: 0;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -6680,6 +6824,11 @@
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 「AI 文书」标签放大并上移，紧贴下划线。 */
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 8px 14px 10px;
 }
 
 .ide-insight-tabs > button { flex: 1; padding-inline: 8px; }
@@ -6994,7 +7143,6 @@
 }
 
 :root[data-theme='dark'] .linkage-reason,
-:root[data-theme='dark'] .agent-dock-brand-mark,
 :root[data-theme='dark'] .agent-message.user .agent-message-bubble,
 :root[data-theme='dark'] .evidence-attention-group {
   background: var(--panel-muted);
@@ -7064,6 +7212,76 @@
 
 .streamlined-case-metric.is-alert b {
   color: var(--warn-text);
+}
+
+/* 「待补锚点」悬停浮层：列出待补锚点的段落，最多 5 条，超出显示省略号。 */
+.streamlined-case-metric-popover {
+  position: fixed;
+  z-index: 1210;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 268px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.18);
+  color: var(--text);
+  font-size: var(--font-caption);
+}
+
+.streamlined-case-metric-popover-title {
+  padding: 2px 6px 6px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.streamlined-case-metric-popover-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.streamlined-case-metric-popover-item:hover {
+  background: var(--accent-bg);
+}
+
+.streamlined-case-metric-popover-index {
+  flex: 0 0 auto;
+  min-width: 16px;
+  color: var(--text-subtle);
+  text-align: right;
+}
+
+/* 段落正文最多显示两行，避免长段落把浮层撑得过高。 */
+.streamlined-case-metric-popover-text {
+  display: -webkit-box;
+  min-width: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+.streamlined-case-metric-popover-more {
+  padding: 2px 6px;
+  color: var(--text-subtle);
+  text-align: right;
+}
+
+/* 「待补锚点」移进文书头部后，字号跟旁边的核验进度保持一致。 */
+.panel-header-status-block .streamlined-case-metric {
+  font-size: var(--font-caption);
 }
 
 .evidence-toolbar-actions {

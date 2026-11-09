@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import QRCode from 'qrcode'
+import { createPortal } from 'react-dom'
 import { Extension } from '@tiptap/core'
 import TextAlign from '@tiptap/extension-text-align'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
@@ -390,12 +391,14 @@ interface AgentMessage {
 }
 
 interface CaseDialogState {
-  mode: 'create' | 'rename'
+  mode: 'create' | 'rename' | 'delete'
   caseId?: string
   title: string
   confirmLabel: string
   value: string
   description?: string
+  // 删除确认用：案件名之外的提示文案，以及危险操作按钮样式。
+  notice?: string
 }
 
 interface StreamingCertificatePreview {
@@ -1444,12 +1447,28 @@ interface EvidenceFolderTreeNode {
 }
 
 type EvidenceTreeRow =
-  | { key: string; kind: 'folder'; folderKey: string; depth: number; label: string; expanded: boolean; fileCount: number }
+  | {
+    key: string
+    kind: 'folder'
+    folderKey: string
+    depth: number
+    label: string
+    expanded: boolean
+    fileCount: number
+    // 该目录及其子目录下的全部材料，用于目录级全选/反选。
+    evidenceIds: string[]
+  }
   | { key: string; kind: 'evidence'; depth: number; evidence: Evidence }
 const evidenceRowKey = (row: EvidenceTreeRow) => row.key
 const evidenceRowHeight = (row: EvidenceTreeRow) => row.kind === 'evidence' ? 32 : 30
 function countEvidenceTreeFiles(node: EvidenceFolderTreeNode): number {
   return node.evidences.length + node.folders.reduce((total, folder) => total + countEvidenceTreeFiles(folder), 0)
+}
+function collectEvidenceTreeIds(node: EvidenceFolderTreeNode): string[] {
+  return [
+    ...node.evidences.map((evidence) => evidence.id),
+    ...node.folders.flatMap((folder) => collectEvidenceTreeIds(folder)),
+  ]
 }
 function flattenEvidenceTree(
   node: EvidenceFolderTreeNode,
@@ -1466,6 +1485,7 @@ function flattenEvidenceTree(
       label: folder.label,
       expanded,
       fileCount: countEvidenceTreeFiles(folder),
+      evidenceIds: collectEvidenceTreeIds(folder),
     })
     if (expanded) flattenEvidenceTree(folder, collapsedFolderKeys, rows)
   }
@@ -1614,6 +1634,47 @@ function getParagraphReferences(
 
 function getReferenceKey(reference: ParagraphReference, index: number) {
   return reference.id ?? `${reference.type}-${reference.targetId}-${index}`
+}
+
+function formatUploadSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 MB'
+  }
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+// 预计剩余时间：按本轮已完成的平均单份耗时推算。
+// 只能给量级估计——每份材料的页数与解析难度差别很大，个别超大 PDF 会明显拉长。
+function getRemainingSeconds(startedAt: string | undefined, done: number, total: number) {
+  if (!startedAt || done <= 0 || total <= done) {
+    return null
+  }
+
+  const elapsed = Date.now() - new Date(startedAt).getTime()
+  // 刚开头时样本太少，先不给结论。
+  if (!Number.isFinite(elapsed) || elapsed < 5000) {
+    return null
+  }
+
+  const seconds = Math.round((elapsed / done) * (total - done))
+  if (!Number.isFinite(seconds) || seconds < 5 || seconds > 24 * 3600) {
+    return null
+  }
+  return seconds
+}
+
+function formatRemainingSeconds(seconds: number) {
+  if (seconds < 60) {
+    return '不到 1 分钟'
+  }
+  if (seconds < 3600) {
+    return `约 ${Math.round(seconds / 60)} 分钟`
+  }
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.round((seconds % 3600) / 60)
+  return minutes > 0 ? `约 ${hours} 小时 ${minutes} 分` : `约 ${hours} 小时`
 }
 
 const PARAGRAPH_REFERENCE_WARNING_TEXT: Record<string, string> = {
@@ -2381,6 +2442,8 @@ function App() {
   const [remoteRecommendedKnowledgeStatutes, setRemoteRecommendedKnowledgeStatutes] = useState<KnowledgeStatuteDocument[]>([])
   const [selectedStatuteId, setSelectedStatuteId] = useState<string | null>(null)
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null)
+  // 显式打开的法条：检索条件可能把目标法条过滤掉，靠它保证「查看全文」跳进知识库后能看到原文。
+  const [focusedStatuteId, setFocusedStatuteId] = useState<string | null>(null)
   const [settingsSelectedKnowledgeFileId, setSettingsSelectedKnowledgeFileId] = useState<string | null>(null)
   const [settingsSelectedStatuteId, setSettingsSelectedStatuteId] = useState<string | null>(null)
   const [settingsSelectedArticleId, setSettingsSelectedArticleId] = useState<string | null>(null)
@@ -2408,9 +2471,13 @@ function App() {
   const [insightPanelWidth, setInsightPanelWidth] = useState(DEFAULT_INSIGHT_PANEL_WIDTH)
   const [isInsightPanelCollapsed, setIsInsightPanelCollapsed] = useState(false)
   const [isResizingWorkbench, setIsResizingWorkbench] = useState(false)
+  // 「待补锚点」悬停浮层位置，null 表示未展开。
+  const [unlinkedPopover, setUnlinkedPopover] = useState<{ top: number; left: number } | null>(null)
+  const unlinkedPopoverTimerRef = useRef<number | null>(null)
   const [knowledgeFilesSidebarWidth, setKnowledgeFilesSidebarWidth] = useState(DEFAULT_KNOWLEDGE_FILES_SIDEBAR_WIDTH)
   const [isResizingKnowledgeFilesSidebar, setIsResizingKnowledgeFilesSidebar] = useState(false)
   const [caseDialogState, setCaseDialogState] = useState<CaseDialogState | null>(null)
+  const [isClearLinksDialogOpen, setIsClearLinksDialogOpen] = useState(false)
   const [rechargeDialogState, setRechargeDialogState] = useState<RechargeDialogState | null>(null)
   const [feedbackDialogState, setFeedbackDialogState] = useState<FeedbackDialogState | null>(null)
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateState>({
@@ -3627,6 +3694,12 @@ function App() {
     understandingTask?.evidenceIds?.includes(e.id),
   )
   const understoodCount = understandingEvidences.filter(e => e.summaryStatus === 'ready').length
+  // 剩余时间按本轮已完成的平均单份耗时推算，只能量级参考。
+  const understandingRemainingSeconds = getRemainingSeconds(
+    understandingTask?.startedAt,
+    understoodCount,
+    understandingEvidences.length,
+  )
   const evidenceFolderTree = useMemo(() => buildEvidenceFolderTree(displayCaseEvidences), [displayCaseEvidences])
   const evidenceTreeRows = useMemo(
     () => flattenEvidenceTree(evidenceFolderTree, collapsedFolderKeys),
@@ -3976,6 +4049,11 @@ function App() {
     return activeCertificate?.paragraphs.filter((item) => item.verified).length ?? 0
   }, [activeCertificate])
 
+  const unverifiedParagraphCount = useMemo(() => {
+    const total = activeCertificate?.paragraphs.length ?? 0
+    return Math.max(0, total - verifiedParagraphCount)
+  }, [activeCertificate, verifiedParagraphCount])
+
   const canMarkCaseReady = useMemo(() => {
     if (!selectedCase || !activeCertificate) {
       return false
@@ -3984,14 +4062,16 @@ function App() {
     return activeCertificate.paragraphs.length > 0 && activeCertificate.paragraphs.every((item) => item.verified)
   }, [selectedCase, activeCertificate])
 
-  const unlinkedParagraphCount = useMemo(() => {
+  // 待补锚点的段落列表：悬停「待补锚点」时展示前几条，点击可跳转到对应段落。
+  const unlinkedParagraphs = useMemo(() => {
     return activeCertificate?.paragraphs.filter((paragraph) => {
       const links = getParagraphLinks(paragraph)
       if (!paragraph.linkageFocus) return links.length === 0
       return paragraph.linkageFocus.some(focus => focus.priority !== 'skip' && focus.evidenceNeeded
         && !links.some(link => sentenceAnchorMatches(link, { index: focus.sentenceIndex, text: focus.sentenceText })))
-    }).length ?? 0
+    }) ?? []
   }, [activeCertificate])
+  const unlinkedParagraphCount = unlinkedParagraphs.length
 
   const activeParagraphReferences = useMemo(() => getParagraphReferences(activeParagraph), [activeParagraph])
   const activeStatuteReferences = useMemo(
@@ -4232,13 +4312,49 @@ function App() {
     )
   }, [filteredKnowledgeCases, selectedKnowledgeCaseId])
 
+  // 法条全集：检索结果只是它的子集，显式跳转取原文必须回到全集里找。
+  const knowledgeStatutePool = useMemo(() => {
+    const merged = new Map<string, KnowledgeStatuteDocument>()
+    for (const item of appState?.knowledgeStatutes ?? []) {
+      merged.set(item.id, item)
+    }
+    for (const item of remoteRecommendedKnowledgeStatutes) {
+      merged.set(item.id, item)
+    }
+    return [...merged.values()]
+  }, [appState?.knowledgeStatutes, remoteRecommendedKnowledgeStatutes])
+
+  // 显式打开的法条即使被检索条件过滤掉，也要出现在左侧列表里，否则弹开后是空列表。
+  const displayedKnowledgeStatutes = useMemo(() => {
+    const focused = focusedStatuteId
+      ? knowledgeStatutePool.find((item) => item.id === focusedStatuteId)
+      : null
+
+    if (!focused) {
+      return filteredKnowledgeStatutes
+    }
+
+    return filteredKnowledgeStatutes.some((item) => item.id === focused.id)
+      ? filteredKnowledgeStatutes
+      : [focused, ...filteredKnowledgeStatutes]
+  }, [filteredKnowledgeStatutes, focusedStatuteId, knowledgeStatutePool])
+
   const selectedStatute = useMemo(() => {
+    // 显式打开的法条优先：它可能因为不匹配当前检索语境而不在 filteredKnowledgeStatutes 里。
+    const focused = focusedStatuteId
+      ? knowledgeStatutePool.find((item) => item.id === focusedStatuteId)
+      : null
+
+    if (focused) {
+      return focused
+    }
+
     return (
       filteredKnowledgeStatutes.find((item) => item.id === selectedStatuteId)
       ?? filteredKnowledgeStatutes[0]
       ?? null
     )
-  }, [filteredKnowledgeStatutes, selectedStatuteId])
+  }, [filteredKnowledgeStatutes, focusedStatuteId, knowledgeStatutePool, selectedStatuteId])
 
   const selectedStatuteArticle = useMemo(() => {
     if (!selectedStatute) {
@@ -4852,6 +4968,93 @@ function App() {
     syncActiveSentence(paragraph, links[referenceIndex])
   }
 
+  // 从「待补锚点」浮层跳到对应段落：选中段落并把文书区滚动到该段落位置。
+  function handleJumpToUnlinkedParagraph(paragraphId: string) {
+    cancelUnlinkedPopoverClose()
+    setUnlinkedPopover(null)
+    focusParagraph(paragraphId)
+    setIdeContentTab('document')
+    // 选中段落会触发重渲染，等一帧再滚动，确保目标段落已在文书区内。
+    window.setTimeout(() => {
+      const target = document.querySelector(`[data-paragraph-id="${paragraphId}"]`)
+      target?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    }, 60)
+  }
+
+  // 浮层挂在 body 上，鼠标从指标移到浮层之间会短暂离开指标，延迟关闭让用户能点到条目。
+  function cancelUnlinkedPopoverClose() {
+    if (unlinkedPopoverTimerRef.current == null) return
+    window.clearTimeout(unlinkedPopoverTimerRef.current)
+    unlinkedPopoverTimerRef.current = null
+  }
+
+  function scheduleUnlinkedPopoverClose() {
+    cancelUnlinkedPopoverClose()
+    unlinkedPopoverTimerRef.current = window.setTimeout(() => {
+      unlinkedPopoverTimerRef.current = null
+      setUnlinkedPopover(null)
+    }, 180)
+  }
+
+  // 「待补锚点」指标：悬停列出待补锚点的段落，点击可跳到对应段落。
+  function renderUnlinkedParagraphMetric() {
+    if (!unlinkedParagraphCount) {
+      return null
+    }
+
+    return (
+      <span
+        className="streamlined-case-metric is-alert"
+        title="仍待补齐证据锚点的段落数量"
+        onMouseEnter={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const visibleCount = Math.min(unlinkedParagraphs.length, 5)
+          const estimatedHeight = visibleCount * 42 + 52
+          const below = rect.bottom + 6
+          const top = below + estimatedHeight > window.innerHeight - 8
+            ? Math.max(8, rect.top - estimatedHeight - 6)
+            : below
+          setUnlinkedPopover({ top, left: Math.max(8, rect.left) })
+        }}
+        onMouseLeave={() => scheduleUnlinkedPopoverClose()}
+      >
+        <span className="streamlined-case-metric-label">待补锚点</span> <b>{unlinkedParagraphCount}</b>
+        {unlinkedPopover
+          ? createPortal(
+            <div
+              className="streamlined-case-metric-popover"
+              role="tooltip"
+              style={{ top: unlinkedPopover.top, left: unlinkedPopover.left }}
+              onMouseEnter={() => cancelUnlinkedPopoverClose()}
+              onMouseLeave={() => scheduleUnlinkedPopoverClose()}
+            >
+              <div className="streamlined-case-metric-popover-title">待补锚点的段落</div>
+              {unlinkedParagraphs.slice(0, 5).map((paragraph, index) => (
+                <button
+                  key={paragraph.id}
+                  type="button"
+                  className="streamlined-case-metric-popover-item"
+                  title={paragraph.text}
+                  onClick={() => handleJumpToUnlinkedParagraph(paragraph.id)}
+                >
+                  <span className="streamlined-case-metric-popover-index">{index + 1}</span>
+                  <span className="streamlined-case-metric-popover-text">{paragraph.text}</span>
+                </button>
+              ))}
+              {unlinkedParagraphs.length > 5 ? (
+                <div className="streamlined-case-metric-popover-more">...</div>
+              ) : null}
+            </div>,
+            document.body,
+          )
+          : null}
+      </span>
+    )
+  }
+
   function handleOpenCreateCaseDialog() {
     // 首次进入时建立案件后要能接着推进到“链接文件夹”引导，
     // 此前只有云端注册路径会设置该步骤，本地账号会断链。
@@ -4988,6 +5191,17 @@ function App() {
       return
     }
 
+    if (caseDialogState.mode === 'delete') {
+      const targetCase = appState?.cases.find((item) => item.id === caseDialogState.caseId)
+      if (!targetCase) {
+        window.alert('案件不存在，无法删除。')
+        setCaseDialogState(null)
+        return
+      }
+      await handleDeleteCase(targetCase)
+      return
+    }
+
     const targetCase = appState?.cases.find((item) => item.id === caseDialogState.caseId)
     if (!targetCase) {
       window.alert('案件不存在，无法重命名。')
@@ -4997,16 +5211,20 @@ function App() {
     await handleRenameCase(targetCase)
   }
 
+  function handleOpenDeleteCaseDialog(caseFolder: CaseFolder) {
+    // 删除走应用内弹窗：原生 confirm 会冻结整个窗口，等待删除时看不到任何反馈。
+    setCaseDialogState({
+      mode: 'delete',
+      caseId: caseFolder.id,
+      title: '删除案件',
+      confirmLabel: '确认删除',
+      value: caseFolder.name,
+      notice: '该案件的证据原件、文书、法条与案例引用、助手记录都会一并清除，电脑硬盘上的原始文件不会删除。',
+    })
+  }
+
   async function handleDeleteCase(caseFolder: CaseFolder) {
-    const confirmed = window.confirm(
-      `确认删除案件“${caseFolder.name}”吗？该案件的证据原件、文书、法条与案例引用、助手记录都会一并清除，电脑硬盘上的原始文件不会删除。`,
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    await runMutation(async () => {
+    const deleted = await runMutation(async () => {
       const caseId = caseFolder.id
       const account = loginAccount.trim().toLowerCase()
       // 删除前先中断在途任务，避免生成结果或联动结果写回已删除的案件。
@@ -5043,7 +5261,11 @@ function App() {
       setRemoteRecommendedKnowledgeStatutes([])
       setSelectedKnowledgeReferenceId(null)
       applyWorkspace(workspace)
-    })
+    }, { action: 'case-delete' })
+
+    if (deleted) {
+      setCaseDialogState(null)
+    }
   }
 
   async function handleUpdateCaseDescription(description: string) {
@@ -5117,7 +5339,22 @@ function App() {
           total: sortedFileList.length,
         })
 
-        const { assets } = await api.uploadEvidenceSourceFiles(currentBatch)
+        // 上传进度按字节回告：几百兆材料没有进度，用户会以为程序卡死。
+        const { assets } = await api.uploadEvidenceSourceFilesWithProgress(currentBatch, (loaded, total) => {
+          const percent = total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0
+          setEvidenceImportProgress({
+            stage: 'parse',
+            message: `正在上传第 ${uploadedBatchCount} 批原件（${uploadedCount + 1}-${uploadedCount + currentBatch.length}/${sortedFileList.length}），${percent}%（${formatUploadSize(loaded)} / ${formatUploadSize(total)}）`,
+            completed: uploadedCount,
+            total: sortedFileList.length,
+          })
+        })
+        setEvidenceImportProgress({
+          stage: 'parse',
+          message: `正在接入第 ${uploadedBatchCount} 批原件（${uploadedCount + 1}-${uploadedCount + currentBatch.length}/${sortedFileList.length}）`,
+          completed: uploadedCount,
+          total: sortedFileList.length,
+        })
         const uploadedAssetMap = new Map<string, {
           storageKey: string
           contentHash: string
@@ -5405,11 +5642,16 @@ function App() {
     }
   }
 
-  async function handleClearFolderLinks() {
+  function handleClearFolderLinks() {
     if (!selectedCase || isSubmitting || evidenceImportProgress || directoryPreparation) return
-    if (!window.confirm('清除本案全部文件夹链接及证据列表？相关证据引用和理解结果也会清除，文书正文及电脑上的原始文件不会删除。')) return
+    // 清除链接走应用内弹窗：原生 confirm 会冻结整个窗口，等待清理时看不到任何反馈。
+    setIsClearLinksDialogOpen(true)
+  }
+
+  async function handleConfirmClearFolderLinks() {
+    if (!selectedCase || isSubmitting) return
     const caseId = selectedCase.id
-    await runMutation(async () => {
+    const cleared = await runMutation(async () => {
       const account = loginAccount.trim().toLowerCase()
       await stopCaseDirectorySync(account, caseId)
       await window.lawVerifyDesktop?.clearCaseDirectories?.({ account, caseId })
@@ -5423,7 +5665,11 @@ function App() {
       setDirectoryPreparation(null)
       applyWorkspace(workspace, { selectedCaseId: caseId, selectedEvidenceIds: [] })
       setEvidenceImportResult({ caseId, message: '已清除文件夹链接' })
-    })
+    }, { action: 'clear-links' })
+
+    if (cleared) {
+      setIsClearLinksDialogOpen(false)
+    }
   }
 
   function handleCloseRechargeDialog() {
@@ -5608,6 +5854,8 @@ function App() {
   }
 
   function handleCloseKnowledgeLibraryDialog() {
+    // 关闭后解除显式选中，下次打开知识库回到正常的检索结果。
+    setFocusedStatuteId(null)
     setIsKnowledgeLibraryDialogOpen(false)
   }
 
@@ -5797,7 +6045,10 @@ function App() {
 
   function handleIdeNavigation(target: IdeNavigationTarget) {
     setIsIdeAccountOpen(false)
-    if (target !== 'knowledge') setIsKnowledgeLibraryDialogOpen(false)
+    if (target !== 'knowledge') {
+      setIsKnowledgeLibraryDialogOpen(false)
+      setFocusedStatuteId(null)
+    }
     if (target === 'files') {
       handleToggleStreamlinedSidebar()
     } else if (target === 'document') {
@@ -5846,6 +6097,11 @@ function App() {
 
   async function handleGenerateCertificate() {
     if (!selectedCase) {
+      return
+    }
+    // 生成必须以勾选为依据：反选全部时没有可用的材料来源，直接拦下并说明原因。
+    if (!selectedEvidenceIds.length) {
+      setErrorMessage('请先在证据目录里勾选本版要使用的材料，再生成文书。')
       return
     }
 
@@ -6491,6 +6747,25 @@ function App() {
     )
   }
 
+  // 目录前的复选框：整目录已选则反选，否则全选该目录（含子目录）下的材料。
+  function toggleFolderEvidenceSelection(evidenceIds: string[]) {
+    if (!evidenceIds.length) {
+      return
+    }
+    setSelectedEvidenceIds((current) => {
+      const allSelected = evidenceIds.every((id) => current.includes(id))
+      if (allSelected) {
+        const removing = new Set(evidenceIds)
+        return current.filter((id) => !removing.has(id))
+      }
+      const merged = new Set(current)
+      for (const id of evidenceIds) {
+        merged.add(id)
+      }
+      return [...merged]
+    })
+  }
+
   async function handleUpdateActiveReference(patch: Partial<EvidenceLink>) {
     if (!activeParagraph || !activeLink) {
       return false
@@ -6726,6 +7001,12 @@ function App() {
     const summaryLines = previewEvidence.ocrText.split('\n').filter((line) => line.trim())
     const evidenceFormatLabel = getEvidenceFormatLabel(previewEvidence)
     const previewLocator = previewLink?.locator || previewEvidence.anchorHint || '未绑定具体段落'
+    const duplicateOriginalLabel = previewEvidence.duplicateOf
+      ? (() => {
+        const original = caseEvidences.find((item) => item.id === previewEvidence.duplicateOf)
+        return original ? `${original.number} ${getEvidenceDisplayFileName(original)}` : '另一份材料'
+      })()
+      : '另一份材料'
     const isSummarizingCurrentEvidence =
       summarizingEvidenceId === previewEvidence.id || previewEvidence.summaryStatus === 'processing'
     const previewInsight = [...(appState?.evidenceInsights ?? [])]
@@ -6844,10 +7125,15 @@ function App() {
             <button
               className="preview-meta-chip"
               type="button"
-              onClick={() => void handleSummarizeEvidence(previewEvidence.id, { force: Boolean(previewEvidence.summaryText?.trim()) })}
+              onClick={() => void handleSummarizeEvidence(previewEvidence.id, {
+                // 内容重复的材料默认走强制单独理解：不再沿用原件结果。
+                force: Boolean(previewEvidence.duplicateOf) || Boolean(previewEvidence.summaryText?.trim()),
+              })}
               disabled={isSummarizingCurrentEvidence}
             >
-              {isSummarizingCurrentEvidence ? 'AI 理解中...' : previewEvidence.summaryText ? '重新理解原材料' : 'AI 理解原材料'}
+              {isSummarizingCurrentEvidence ? 'AI 理解中...'
+                : previewEvidence.duplicateOf ? '强制单独理解'
+                : previewEvidence.summaryText ? '重新理解原材料' : 'AI 理解原材料'}
             </button>
             {canOpenOriginal ? (
               <a
@@ -6862,6 +7148,15 @@ function App() {
             ) : null}
           </div>
         </div>
+
+        {previewEvidence.duplicateOf ? (
+          <div className="linkage-reason context">
+            <strong>内容重复</strong>
+            <span>
+              与 {duplicateOriginalLabel} 内容相同，已沿用原件的理解结果；需要单独理解时请点「强制单独理解」。
+            </span>
+          </div>
+        ) : null}
 
         {!isManualEvidencePreview && previewLink?.reason ? (
           <div className={`linkage-reason ${previewLink.relation ?? 'support'}`}>
@@ -6994,6 +7289,7 @@ function App() {
     const isEntryCreateDialog = caseDialogState.mode === 'create'
       && entryOnboardingStep === 'create-case'
       && (!appState || appState.cases.length === 0)
+    const isDeleteDialog = caseDialogState.mode === 'delete'
 
     return (
       <div className="case-dialog-backdrop" onClick={handleCloseCaseDialog}>
@@ -7017,39 +7313,118 @@ function App() {
             </button>
           </div>
 
-          <label className="field-block">
-            案件名称
-            <input
-              value={caseDialogState.value}
-              onChange={(event) => setCaseDialogState((current) => current ? { ...current, value: event.target.value } : null)}
-              placeholder="例如：王某买卖合同纠纷"
-              autoFocus
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                  event.preventDefault()
-                  void handleSubmitCaseDialog()
-                }
-              }}
-            />
-          </label>
+          {isDeleteDialog ? (
+            <div className="case-dialog-notice">
+              <strong>确认删除案件“{caseDialogState.value}”？</strong>
+              <p>{caseDialogState.notice}</p>
+              {isActionPending('case-delete') ? (
+                <p className="case-dialog-notice-progress">
+                  正在解除文件夹链接并清理已上传的原件，材料越多耗时越长，请勿关闭窗口。
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <label className="field-block">
+                案件名称
+                <input
+                  value={caseDialogState.value}
+                  onChange={(event) => setCaseDialogState((current) => current ? { ...current, value: event.target.value } : null)}
+                  placeholder="例如：王某买卖合同纠纷"
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                      event.preventDefault()
+                      void handleSubmitCaseDialog()
+                    }
+                  }}
+                />
+              </label>
 
-          {caseDialogState.mode === 'create' ? (
-            <label className="field-block">
-              案件背景（可选）
-              <textarea
-                value={caseDialogState.description ?? ''}
-                onChange={(event) => setCaseDialogState((current) => current ? { ...current, description: event.target.value } : null)}
-                placeholder="填写案件背景、争议焦点与庭审目标，供 AI 检索与策略分析使用"
-              />
-            </label>
-          ) : null}
+              {caseDialogState.mode === 'create' ? (
+                <label className="field-block">
+                  案件背景（可选）
+                  <textarea
+                    value={caseDialogState.description ?? ''}
+                    onChange={(event) => setCaseDialogState((current) => current ? { ...current, description: event.target.value } : null)}
+                    placeholder="填写案件背景、争议焦点与庭审目标，供 AI 检索与策略分析使用"
+                  />
+                </label>
+              ) : null}
+            </>
+          )}
 
           <div className="case-dialog-actions">
             <button className="ghost-button" type="button" onClick={handleCloseCaseDialog} disabled={isSubmitting}>
               取消
             </button>
-            <button className="primary-button" type="button" onClick={() => void handleSubmitCaseDialog()} disabled={isSubmitting}>
-              {isActionPending('case-submit') ? '提交中...' : caseDialogState.confirmLabel}
+            <button
+              className={isDeleteDialog ? 'danger-button' : 'primary-button'}
+              type="button"
+              onClick={() => void handleSubmitCaseDialog()}
+              disabled={isSubmitting}
+            >
+              {isActionPending('case-delete') ? '正在删除...'
+                : isActionPending('case-submit') ? '提交中...'
+                : caseDialogState.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function renderClearLinksDialog(): ReactNode {
+    if (!isClearLinksDialogOpen) {
+      return null
+    }
+
+    const pending = isActionPending('clear-links')
+    return (
+      <div className="case-dialog-backdrop" onClick={() => { if (!pending) setIsClearLinksDialogOpen(false) }}>
+        <div
+          className="case-dialog"
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-label="清除文件夹链接"
+        >
+          <div className="case-dialog-head">
+            <div>
+              <span className="eyebrow">证据目录</span>
+              <h2>清除文件夹链接</h2>
+            </div>
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setIsClearLinksDialogOpen(false)}
+              disabled={pending}
+            >
+              关闭
+            </button>
+          </div>
+
+          <div className="case-dialog-notice">
+            <strong>确认清除本案全部文件夹链接及证据列表？</strong>
+            <p>相关证据引用和理解结果也会清除，文书正文及电脑上的原始文件不会删除。</p>
+            {pending ? (
+              <p className="case-dialog-notice-progress">
+                正在解除文件夹链接并清理证据列表，材料越多耗时越长，请勿关闭窗口。
+              </p>
+            ) : null}
+          </div>
+
+          <div className="case-dialog-actions">
+            <button className="ghost-button" type="button" onClick={() => setIsClearLinksDialogOpen(false)} disabled={pending}>
+              取消
+            </button>
+            <button
+              className="danger-button"
+              type="button"
+              onClick={() => void handleConfirmClearFolderLinks()}
+              disabled={pending}
+            >
+              {pending ? '正在清除...' : '确认清除'}
             </button>
           </div>
         </div>
@@ -7422,7 +7797,7 @@ function App() {
     return (
       <div className="knowledge-library-backdrop ide-knowledge-backdrop" onClick={handleCloseKnowledgeLibraryDialog}>
         <div
-          className="knowledge-library-dialog"
+          className={`knowledge-library-dialog ${showLibrary ? 'is-library' : ''}`}
           onClick={(event) => event.stopPropagation()}
           role="dialog"
           aria-modal="true"
@@ -7664,8 +8039,28 @@ function App() {
 
   function renderAgentDock(inline = false): ReactNode {
     const isRewriteMode = Boolean(activeCertificate)
-    const availableEvidenceCount = (selectedEvidenceIds.length ? selectedEvidenceIds : activeCertificateEvidenceIds).length
-    const canSubmit = Boolean(selectedCase && availableEvidenceCount && !isSubmitting && !documentVoiceBusy)
+    // 本版起草实际勾选的材料数：全部反选就是 0，不能回退成当前文书已引用的材料数，
+    // 否则界面的数字和真正取材的范围对不上。
+    const draftedEvidenceCount = selectedEvidenceIds.length
+    // 生成必须以勾选为依据，没勾材料就无从生成；改写是「基于现有文书继续改」，
+    // 勾选为空时可以沿用当前文书已引用的材料。
+    const submitEvidenceCount = isRewriteMode
+      ? (draftedEvidenceCount || activeCertificateEvidenceIds.length)
+      : draftedEvidenceCount
+    const evidenceStatusText = !selectedCase
+      ? '请选择案件'
+      : draftedEvidenceCount
+        ? `已选 ${draftedEvidenceCount} 份证据`
+        : '请选择证据'
+    // 文书模式的兜底只有改写才有：生成没勾材料就无从生成，改写可以沿用当前文书的引用材料。
+    const documentEvidenceStatusText = !selectedCase
+      ? '请选择案件'
+      : draftedEvidenceCount
+        ? `已选 ${draftedEvidenceCount} 份证据`
+        : isRewriteMode && activeCertificateEvidenceIds.length
+          ? `沿用当前文书的 ${activeCertificateEvidenceIds.length} 份引用材料`
+          : '请选择证据'
+    const canSubmit = Boolean(selectedCase && submitEvidenceCount && !isSubmitting && !documentVoiceBusy)
 
     return (
       <div
@@ -7685,9 +8080,7 @@ function App() {
                 title="按住拖动位置"
               >
                 <span className="agent-dock-brand-mark" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6L12 3Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-                  </svg>
+                  <img src="/lawverify-icon.svg" alt="" />
                 </span>
                 <div className="agent-dock-head-main">
                   <strong id="agent-dock-title">{agentMode === 'case' ? '案件助手' : isRewriteMode ? '修改文书' : '起草文书'}</strong>
@@ -7709,7 +8102,7 @@ function App() {
                   if (evidence) handlePreviewEvidenceItem(evidence)
                 }}
                 onModeChange={setAgentMode}
-                modeStatus={<span className="agent-mode-status-item">已选 {availableEvidenceCount} 份证据</span>}
+                modeStatus={<span className="agent-mode-status-item">{evidenceStatusText}</span>}
               /> : (
                 <div className="agent-input-shell agent-dock-input-shell">
                   <AssistantWorkModeSwitch mode="case" onChange={setAgentMode} disabled={isSubmitting || documentVoiceBusy} />
@@ -7730,7 +8123,7 @@ function App() {
               {agentMode === 'document' ? <div className="agent-input-shell agent-dock-input-shell">
                 <AssistantWorkModeSwitch mode="document" onChange={setAgentMode} disabled={isSubmitting || documentVoiceBusy}
                   status={<>
-                    <span className="agent-mode-status-item">{!selectedCase ? '请选择案件' : availableEvidenceCount ? `已选 ${availableEvidenceCount} 份证据` : '请选择证据'}</span>
+                    <span className="agent-mode-status-item">{documentEvidenceStatusText}</span>
                   </>} />
                 <AgentPromptInput ref={agentPromptInputRef} draftRef={agentPromptRef} disabled={isSubmitting || documentVoiceBusy}
                   placeholder={isRewriteMode ? '输入需要调整的内容或改写要求…' : '描述文书类型与起草要求…'} />
@@ -7838,7 +8231,7 @@ function App() {
               <strong>{selectedStatuteReferenceBinding.document.title} {selectedStatuteReferenceBinding.article.articleNumber}</strong>
               <p>{statutePreviewText}</p>
               <div className="inline-actions">
-                <span>
+                <span className="knowledge-card-meta">
                   {selectedStatuteReferenceKnowledgePreview
                     ? `知识库原文：${selectedStatuteReferenceKnowledgePreview.file.fileName}`
                     : (selectedStatuteReferenceBinding.document.sourceAuthority
@@ -7877,11 +8270,12 @@ function App() {
                       </div>
                       <p>{article.content}</p>
                       <div className="inline-actions">
-                        <span>{document.issuer}</span>
+                        <span className="knowledge-card-meta">{document.issuer}</span>
                         <div>
                           <span
                             className="text-link"
                             onClick={() => {
+                              setFocusedStatuteId(document.id)
                               setSelectedStatuteId(document.id)
                               setSelectedArticleId(article.id)
                               setActiveTab('knowledge')
@@ -7925,11 +8319,12 @@ function App() {
                   </div>
                   <p>{article.content}</p>
                   <div className="inline-actions">
-                    <span>{document.keywords.slice(0, 3).join(' / ')}</span>
+                    <span className="knowledge-card-meta">{document.keywords.slice(0, 3).join(' / ')}</span>
                     <div>
                       <span
                         className="text-link"
                         onClick={() => {
+                          setFocusedStatuteId(document.id)
                           setSelectedStatuteId(document.id)
                           setSelectedArticleId(article.id)
                           setActiveTab('knowledge')
@@ -8479,7 +8874,11 @@ function App() {
             ref={knowledgeSearchInputRef}
             className="search-input"
             value={knowledgeKeyword}
-            onChange={(event) => setKnowledgeKeyword(event.target.value)}
+            onChange={(event) => {
+              // 新的检索条件生效时解除显式选中，详情回到检索结果。
+              setFocusedStatuteId(null)
+              setKnowledgeKeyword(event.target.value)
+            }}
             placeholder={
               knowledgeTab === 'statutes'
                 ? '输入法律名称、法条编号、关键词'
@@ -8513,12 +8912,13 @@ function App() {
 
           {knowledgeTab === 'statutes' ? (
             <div className="knowledge-list">
-              {filteredKnowledgeStatutes.map((entry) => (
+              {displayedKnowledgeStatutes.map((entry) => (
                 <button
                   key={entry.id}
                   className={`knowledge-item ${selectedStatute?.id === entry.id ? 'active' : ''}`}
                   type="button"
                   onClick={() => {
+                    setFocusedStatuteId(entry.id)
                     setSelectedStatuteId(entry.id)
                     setSelectedArticleId(entry.articles[0]?.id ?? null)
                   }}
@@ -8666,7 +9066,7 @@ function App() {
                     <strong>{selectedStatuteArticle.articleNumber}</strong>
                     <p>{selectedStatuteArticle.content}</p>
                     <div className="inline-actions">
-                      <span>{selectedStatuteArticle.aliases.join(' / ')}</span>
+                      <span className="knowledge-card-meta">{selectedStatuteArticle.aliases.join(' / ')}</span>
                       <div>
                         <span
                           className="text-link"
@@ -8757,7 +9157,7 @@ function App() {
                       <strong>{selectedStatuteArticle.articleNumber}</strong>
                       <p>{selectedStatuteArticle.content}</p>
                       <div className="inline-actions">
-                        <span>{selectedStatute.sourceAuthority ?? selectedStatute.issuer}</span>
+                        <span className="knowledge-card-meta">{selectedStatute.sourceAuthority ?? selectedStatute.issuer}</span>
                         <div>
                           {selectedStatute.sourceTextUrl
                             || selectedStatute.sourcePdfUrl
@@ -8794,7 +9194,7 @@ function App() {
                               </div>
                               <p>{article.content}</p>
                               <div className="inline-actions">
-                                <span>{document.issuer}</span>
+                                <span className="knowledge-card-meta">{document.issuer}</span>
                                 <div>
                                   {document.sourceTextUrl || document.sourcePdfUrl || document.sourceUrl ? (
                                     <a
@@ -9209,6 +9609,7 @@ function App() {
                 return (
                   <section
                     key={paragraph.id}
+                    data-paragraph-id={paragraph.id}
                     className={`word-paragraph ${paragraph.id === activeParagraph?.id ? 'active' : ''} ${paragraph.verified ? 'verified' : ''}`}
                     onClick={() => {
                       if (paragraph.id !== activeParagraph?.id) {
@@ -9236,7 +9637,19 @@ function App() {
                         onSelect: () => {
                           focusParagraph(paragraph.id)
                           setVerifyInsightTab('evidence')
+                          // 左侧若停在证据预览，右侧会改渲染证据详情，批注面板就不出现，这里切回文书视图。
+                          setIdeContentTab('document')
                           setIsIdeAssistantVisible(false)
+                          // 右侧「案件助手」被收起时只切标签页看不到任何变化，这里先展开。
+                          setIsInsightPanelCollapsed(false)
+                          revealInsightPanel()
+                          // 批注面板在右侧内容区靠下，渲染完成后再滚到它所在的位置。
+                          window.setTimeout(() => {
+                            document.querySelector('.paragraph-review')?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'nearest',
+                            })
+                          }, 80)
                         },
                         dividerBefore: true,
                       },
@@ -9392,8 +9805,8 @@ function App() {
       return (
         <span
           className="evidence-tree-status evidence-tree-status-duplicate"
-          title={`重复文件：与 ${originalLabel} 内容相同，已跳过理解。`}
-          aria-label="重复文件"
+          title={`内容重复：与 ${originalLabel} 内容相同，已沿用原件理解结果。`}
+          aria-label="内容重复"
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M8 3v5.6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
@@ -9504,11 +9917,28 @@ function App() {
   function renderEvidenceTreeRow(row: EvidenceTreeRow) {
     if (row.kind === 'folder') {
       const guideCount = Math.max(0, Math.min(row.depth - 1, 6))
+      const selectedCount = row.evidenceIds.filter((id) => selectedEvidenceIds.includes(id)).length
+      const folderChecked = selectedCount > 0 && selectedCount === row.evidenceIds.length
+      const folderPartial = selectedCount > 0 && !folderChecked
       return (
         <div className="evidence-tree-row evidence-tree-row-folder">
           <span className="evidence-tree-guides" aria-hidden="true">
             {Array.from({ length: guideCount }, (_, index) => <i key={index} />)}
           </span>
+          <input
+            type="checkbox"
+            className="evidence-tree-folder-check"
+            checked={folderChecked}
+            ref={(element) => {
+              if (element) {
+                element.indeterminate = folderPartial
+              }
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onChange={() => toggleFolderEvidenceSelection(row.evidenceIds)}
+            title="全选/反选该目录下的材料"
+            aria-label={`全选或反选目录 ${row.label}`}
+          />
           <button
             type="button"
             className={`evidence-tree-folder ${row.expanded ? 'is-expanded' : 'is-collapsed'}`}
@@ -9793,15 +10223,6 @@ function App() {
                   <span className="streamlined-case-metric" title="当前材料的目录层级数量">
                     <span className="streamlined-case-metric-label">目录</span> <b>{evidenceFolderCount}</b>
                   </span>
-                  <span className="streamlined-case-metric" title="当前案件的文书版本数量">
-                    <span className="streamlined-case-metric-label">版本</span> <b>{caseCertificates.length}</b>
-                  </span>
-                  <span className="streamlined-case-metric" title="已人工核验的段落数量">
-                    <span className="streamlined-case-metric-label">已核验</span> <b>{verifiedParagraphCount}</b>
-                  </span>
-                  <span className={`streamlined-case-metric${unlinkedParagraphCount ? ' is-alert' : ''}`} title="仍待补齐证据锚点的段落数量">
-                    <span className="streamlined-case-metric-label">待补锚点</span> <b>{unlinkedParagraphCount}</b>
-                  </span>
                 </div>
               ) : null}
               <div className="case-selector-row streamlined-case-selector-row">
@@ -9861,20 +10282,25 @@ function App() {
                 <button
                   className="ghost-button case-action-icon-button is-danger"
                   type="button"
-                  onClick={() => selectedCase && void handleDeleteCase(selectedCase)}
+                  onClick={() => selectedCase && handleOpenDeleteCaseDialog(selectedCase)}
                   disabled={!selectedCase || isSubmitting}
-                  title={selectedCase ? `删除案件：${selectedCase.name}` : '请先选择案件'}
+                  title={isActionPending('case-delete') ? '正在删除案件...'
+                    : selectedCase ? `删除案件：${selectedCase.name}` : '请先选择案件'}
                   aria-label={selectedCase ? `删除案件：${selectedCase.name}` : '请先选择案件'}
                 >
-                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M2.9 4.4h10.2M6.4 4.4V3.2h3.2v1.2M4.3 4.4l.6 8.2h6.2l.6-8.2"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  {isActionPending('case-delete') ? (
+                    <span className="linkage-progress-spinner" aria-hidden="true" />
+                  ) : (
+                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="M2.9 4.4h10.2M6.4 4.4V3.2h3.2v1.2M4.3 4.4l.6 8.2h6.2l.6-8.2"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
                 </button>
               </div>
               {selectedCase ? (
@@ -9940,12 +10366,16 @@ function App() {
                   </div>
                   <button className="ghost-button evidence-toolbar-button" type="button"
                     onClick={() => void handleClearFolderLinks()}
-                    disabled={!selectedCase || isSubmitting || Boolean(evidenceImportProgress) || Boolean(directoryPreparation)}>
-                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M6.3 9.7 4.8 11.2a2.5 2.5 0 0 1-3.5-3.5l1.9-1.9M9.7 6.3l1.5-1.5a2.5 2.5 0 0 1 3.5 3.5l-1.9 1.9M3.9 3.9l8.2 8.2"
-                        stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                    </svg>
-                    <span className="evidence-toolbar-label">清除链接</span>
+                    disabled={!selectedCase || isSubmitting || isActionPending('clear-links') || Boolean(evidenceImportProgress) || Boolean(directoryPreparation)}>
+                    {isActionPending('clear-links') ? (
+                      <span className="linkage-progress-spinner" aria-hidden="true" />
+                    ) : (
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M6.3 9.7 4.8 11.2a2.5 2.5 0 0 1-3.5-3.5l1.9-1.9M9.7 6.3l1.5-1.5a2.5 2.5 0 0 1 3.5 3.5l-1.9 1.9M3.9 3.9l8.2 8.2"
+                          stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      </svg>
+                    )}
+                    <span className="evidence-toolbar-label">{isActionPending('clear-links') ? '正在清除...' : '清除链接'}</span>
                   </button>
                   <button className={`ghost-button evidence-toolbar-button${selectedCase?.agent?.autoAnalyze === false ? ' is-toggle-on' : ''}`} type="button"
                     onClick={handleToggleCaseAutoAnalyze}
@@ -10038,10 +10468,17 @@ function App() {
               ) : !evidenceImportProgress && understandingActive ? (
                 <div className="evidence-progress-card" role="status" aria-live="polite">
                   <div className="evidence-progress-head">
-                    <strong className="evidence-progress-title">
-                      <span className="linkage-progress-spinner" aria-hidden="true" />
-                      正在整理理解
-                    </strong>
+                    <span className="evidence-progress-heading">
+                      <strong className="evidence-progress-title">
+                        <span className="linkage-progress-spinner" aria-hidden="true" />
+                        正在整理理解
+                      </strong>
+                      {understandingRemainingSeconds ? (
+                        <span className="evidence-progress-eta">
+                          预计剩余 {formatRemainingSeconds(understandingRemainingSeconds)}
+                        </span>
+                      ) : null}
+                    </span>
                     <span>{understoodCount}/{understandingEvidences.length}</span>
                   </div>
                   <div className={`evidence-progress-bar ${understandingEvidences.length ? '' : 'indeterminate'}`}
@@ -10057,7 +10494,7 @@ function App() {
               ) : !evidenceImportProgress && understandingTask?.status === 'ready' ? (
                 <div className="evidence-import-result" role="status">
                   {understandingTask.skippedEvidenceIds?.length || understandingTask.duplicateEvidenceIds?.length
-                    ? `整理理解完成，已排除 ${understandingTask.skippedEvidenceIds?.length ?? 0} 份待解析材料、${understandingTask.duplicateEvidenceIds?.length ?? 0} 份重复文件`
+                    ? `整理理解完成，已跳过 ${understandingTask.skippedEvidenceIds?.length ?? 0} 份待解析材料、${understandingTask.duplicateEvidenceIds?.length ?? 0} 份内容重复的材料已沿用原件理解结果`
                     : '整理理解完成'}
                 </div>
               ) : !evidenceImportProgress && understandingTask?.status === 'failed' ? (
@@ -10117,7 +10554,7 @@ function App() {
               <button type="button" className={ideContentTab === 'document' ? 'active' : ''}
                 aria-pressed={ideContentTab === 'document'} onClick={() => setIdeContentTab('document')}
                 title={activeCertificate?.title ?? '文书工作区'}>
-                文书
+                AI 文书
               </button>
               {previewEvidence ? <button type="button" className={ideContentTab === 'evidence' ? 'active' : ''}
                 aria-pressed={ideContentTab === 'evidence'} onClick={() => setIdeContentTab('evidence')}
@@ -10135,35 +10572,39 @@ function App() {
               hidden={ideContentTab === 'evidence' && Boolean(previewEvidence)}>
             <div className="panel-header">
               <div className="panel-header-title-group">
-                <div>
-                  <span className="eyebrow">AI 文书</span>
-                  {activeCertificate?.title ? <h2>{activeCertificate.title}</h2> : null}
-                </div>
-                {selectedCase && activeCertificate ? <span className={`status-chip ${selectedCase.status}`}>{getStatusLabel(selectedCase.status)}</span> : null}
-                {selectedCase && activeCertificate ? (
-                  selectedCase.status === 'ready' ? (
+                {activeCertificate?.title ? <h2 title={activeCertificate.title}>{activeCertificate.title}</h2> : null}
+              </div>
+              {selectedCase && activeCertificate ? (
+                <div className="panel-header-status-block">
+                  <span className={`status-chip ${selectedCase.status}`}>{getStatusLabel(selectedCase.status)}</span>
+                  <span className="mark-ready-progress">
+                    已核验 {verifiedParagraphCount}/{activeCertificate.paragraphs.length} 段
+                  </span>
+                  {renderUnlinkedParagraphMetric()}
+                  {selectedCase.status === 'ready' ? (
                     <button
-                      className="ghost-button"
+                      className="header-action-button"
                       type="button"
+                      title="把案件状态从「待归档」改回「核验中」，便于继续补充核验"
                       onClick={() => void handleUpdateCaseStatus('in_review')}
                     >
                       恢复为核验中
                     </button>
                   ) : (
                     <button
-                      className="ghost-button"
+                      className="header-action-button"
                       type="button"
                       disabled={!canMarkCaseReady}
                       title={canMarkCaseReady
-                        ? '当前文书各段已完成核验，可将案件标记为已核验'
-                        : '请先在核验定稿中完成当前文书全部段落核验'}
+                        ? '把案件状态从「核验中」改为「待归档」，表示当前文书已全部核验完成'
+                        : `还有 ${unverifiedParagraphCount} 段未核验。在正文段落上右键选择「标记本段已核验」，全部段落核验完成后才能归档`}
                       onClick={() => void handleUpdateCaseStatus('ready')}
                     >
                       标记已核验
                     </button>
-                  )
-                ) : null}
-              </div>
+                  )}
+                </div>
+              ) : null}
               <div className="panel-header-actions">
                 <input
                   id={certificateUploadInputId}
@@ -10174,21 +10615,33 @@ function App() {
                   onChange={(event) => void handleCertificateUploadInput(event)}
                 />
                 <label
-                  className={`header-action-button ${!selectedCase || isSubmitting ? 'disabled' : ''}`}
+                  className={`header-action-button header-icon-button ${!selectedCase || isSubmitting ? 'disabled' : ''}`}
                   htmlFor={!selectedCase || isSubmitting ? undefined : certificateUploadInputId}
                   title="上传文书"
+                  aria-label="上传文书"
                 >
-                  <span className="icon">↑</span> 上传文书
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
+                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M8 10.5V2.5" />
+                    <path d="m4.75 5.75 3.25-3.25 3.25 3.25" />
+                    <path d="M2.5 11v2.5h11V11" />
+                  </svg>
                 </label>
 
                 <button
-                  className="header-action-button primary"
+                  className="header-action-button header-icon-button primary"
                   type="button"
                   onClick={() => activeCertificate && void exportCertificateToWord(activeCertificate, selectedCase?.name ?? '')}
                   disabled={!activeCertificate}
                   title="下载为 Word 文档"
+                  aria-label="下载为 Word 文档"
                 >
-                  <span className="icon">↓</span> 下载文书
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
+                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M8 2.5v8" />
+                    <path d="m4.75 7.25 3.25 3.25 3.25-3.25" />
+                    <path d="M2.5 11v2.5h11V11" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -10225,7 +10678,7 @@ function App() {
             >
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="m10 4-4 4 4 4" />
+                <path d="m6 4 4 4-4 4" />
               </svg>
             </button>
             <div className="ide-insight-tabs" role="group" aria-label="交互与详情栏">
@@ -10597,6 +11050,7 @@ function App() {
       {renderRechargeDialog()}
       {renderFeedbackDialog()}
       {renderCaseDialog()}
+      {renderClearLinksDialog()}
       {authToken ? appState.cases.map(folder => <CaseDirectorySync key={`${loginAccount}:${folder.id}`}
         account={loginAccount} caseId={folder.id}
         enabled={folder.agent?.autoAnalyze !== false && !isSubmitting && !directoryPreparation && !autoLinkingCertificateId}

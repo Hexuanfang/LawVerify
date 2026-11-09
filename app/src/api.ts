@@ -284,6 +284,53 @@ async function requestV1<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data
 }
 
+// 上传用 XHR 拿上传进度：fetch 不提供上传进度事件，
+// 几百兆材料上传时没有进度，用户会以为程序卡死。
+function uploadFormDataWithProgress<T>(
+  path: string,
+  body: FormData,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE_URL}${path}`)
+    const headers = new Headers()
+    applyWorkspaceAccountHeader(headers)
+    headers.forEach((value, key) => xhr.setRequestHeader(key, value))
+    xhr.timeout = 30 * 60 * 1000
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress?.(event.loaded, event.total)
+      }
+    }
+    xhr.onerror = () => reject(new Error('本地材料服务暂不可用或请求超时。材料会保留，请确认操作结果后再重试。'))
+    xhr.ontimeout = () => reject(new Error('上传超时，请检查网络或本地服务后重试。'))
+    xhr.onabort = () => reject(new Error('上传已中断。'))
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as T)
+        } catch {
+          reject(new Error('上传响应无法解析，请重试。'))
+        }
+        return
+      }
+
+      let message = `上传失败（${xhr.status}）。`
+      try {
+        const parsed = JSON.parse(xhr.responseText) as { message?: string }
+        if (parsed.message) {
+          message = parsed.message
+        }
+      } catch {
+        // 响应不是 JSON 时用兜底文案。
+      }
+      reject(new Error(message))
+    }
+    xhr.send(body)
+  })
+}
+
 async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {})
   headers.set('x-product-surface', 'desktop')
@@ -978,6 +1025,13 @@ export const api = {
     })
   },
   uploadEvidenceSourceFiles(files: Array<File & { webkitRelativePath?: string }>) {
+    return this.uploadEvidenceSourceFilesWithProgress(files)
+  },
+  // 上传走 XHR：fetch 没有上传进度事件，几百兆材料上传时用户看不到进度会以为卡死。
+  uploadEvidenceSourceFilesWithProgress(
+    files: Array<File & { webkitRelativePath?: string }>,
+    onProgress?: (loaded: number, total: number) => void,
+  ): Promise<EvidenceSourceUploadResponse> {
     const formData = new FormData()
     const manifest = files.map((file) => ({
       relativePath: file.webkitRelativePath || file.name,
@@ -990,10 +1044,7 @@ export const api = {
     })
     formData.append('manifest', JSON.stringify(manifest))
 
-    return request<EvidenceSourceUploadResponse>('/api/evidences/assets/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    return uploadFormDataWithProgress<EvidenceSourceUploadResponse>('/api/evidences/assets/upload', formData, onProgress)
   },
   syncDirectoryEvidences(payload: {
     caseId: string

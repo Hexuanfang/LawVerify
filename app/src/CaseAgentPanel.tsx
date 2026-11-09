@@ -1,11 +1,40 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { AssistantModeSwitch, AssistantWorkModeSwitch, AssistantPicker, VoiceInputButton, assistantAgents, assistantSkills, type AssistantSelection } from './AssistantControls'
-import type { AppState, CaseFolder, CasePositionDraft } from './types'
+import type { AppState, CaseFolder, CasePositionDraft, Evidence } from './types'
 
 const roleLabels: Record<CasePositionDraft['role'], string> = {
   plaintiff: '原告', defendant: '被告', third_party: '第三人',
   applicant: '申请人', respondent: '被申请人', other: '其他',
+}
+
+// 材料是否已经解析出可读文本：只剩占位提示或页标记的都算没有内容。
+// 判定口径与服务端 isPlaceholderEvidenceText 保持一致，避免两侧结论打架。
+function hasReadableEvidenceText(evidence: Evidence) {
+  const contentLines = (evidence.ocrText ?? '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => !/^-{2,}\s*第\s*\d+\s*\/\s*\d+\s*页\s*-{2,}$/u.test(line))
+  if (!contentLines.length) {
+    return false
+  }
+  const placeholderPatterns = [
+    /^【.*】$/u,
+    /^文件：/u,
+    /^1\.\s*当前内容为/u,
+    /^2\.\s*请结合/u,
+    /^3\.\s*(?:支持用于|可直接用于)/u,
+  ]
+  return !contentLines.every(line => placeholderPatterns.some(pattern => pattern.test(line)))
+}
+
+// 梳理时被排除的材料，只有在当下仍然没有内容时才需要继续提示：
+// 材料后来补齐了 OCR 文本、或已单独理解成功，旧的排除记录就该失效。
+function isStillUnparsedEvidence(evidence: Evidence | undefined) {
+  if (!evidence) return false
+  if (evidence.summaryStatus === 'ready' || evidence.summaryStatus === 'failed') return false
+  return !hasReadableEvidenceText(evidence)
 }
 
 export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence, onModeChange, modeStatus }: {
@@ -75,7 +104,8 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence, onM
       {evidence.number} {evidence.fileName}
     </button> : null
   })
-  const skippedEvidenceIds = folder.agent?.task?.skippedEvidenceIds ?? []
+  const skippedEvidenceIds = (folder.agent?.task?.skippedEvidenceIds ?? [])
+    .filter(id => isStillUnparsedEvidence(workspace.evidences.find(item => item.id === id)))
   const duplicateEvidenceIds = folder.agent?.task?.duplicateEvidenceIds ?? []
   const caseMessages = folder.agent?.messages ?? []
   return <section className="case-agent-panel case-agent-chat" aria-label="案件代理助手" aria-busy={busy}>
@@ -98,7 +128,7 @@ export function CaseAgentPanel({ folder, workspace, onWorkspace, onEvidence, onM
           <div className="case-agent-actions">{evidenceButtons(skippedEvidenceIds)}</div>
         </div> : null}
         {duplicateEvidenceIds.length ? <div className="case-agent-task-skipped">
-          <p>已排除 {duplicateEvidenceIds.length} 份重复文件（内容与已有材料相同）：</p>
+          <p>{duplicateEvidenceIds.length} 份材料与已有材料内容相同，已沿用原件理解结果：</p>
           <div className="case-agent-actions">{evidenceButtons(duplicateEvidenceIds)}</div>
         </div> : null}
       </div> : null}

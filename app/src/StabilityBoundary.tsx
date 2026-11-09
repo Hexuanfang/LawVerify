@@ -34,6 +34,6 @@ export function ServiceRecoveryNotice() {
   }, [])
   if (!['recovering', 'starting', 'failed'].includes(state)) return null
   return <aside className="stability-notice" role="status">
-    {state === 'failed' ? '本地服务暂不可用，请重新打开 LawVerify。材料和草稿会保留。' : '正在恢复本地服务，草稿会保留。'}
+    {state === 'failed' ? '本地服务暂不可用，正在后台重试；材料和草稿会保留。' : '正在恢复本地服务，草稿会保留。'}
   </aside>
 }

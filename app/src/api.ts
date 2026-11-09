@@ -1,5 +1,6 @@
 import { cloudErrorMessage } from './cloud-errors'
-import { boundedFetch } from './bounded-fetch'
+import { boundedFetch, createStreamFetch } from './bounded-fetch'
+import { resolveEvidenceMimeType } from './evidence-mime'
 import type {
   AppState,
   CasePositionDraft,
@@ -283,6 +284,53 @@ async function requestV1<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data
 }
 
+// 上传用 XHR 拿上传进度：fetch 不提供上传进度事件，
+// 几百兆材料上传时没有进度，用户会以为程序卡死。
+function uploadFormDataWithProgress<T>(
+  path: string,
+  body: FormData,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE_URL}${path}`)
+    const headers = new Headers()
+    applyWorkspaceAccountHeader(headers)
+    headers.forEach((value, key) => xhr.setRequestHeader(key, value))
+    xhr.timeout = 30 * 60 * 1000
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress?.(event.loaded, event.total)
+      }
+    }
+    xhr.onerror = () => reject(new Error('本地材料服务暂不可用或请求超时。材料会保留，请确认操作结果后再重试。'))
+    xhr.ontimeout = () => reject(new Error('上传超时，请检查网络或本地服务后重试。'))
+    xhr.onabort = () => reject(new Error('上传已中断。'))
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as T)
+        } catch {
+          reject(new Error('上传响应无法解析，请重试。'))
+        }
+        return
+      }
+
+      let message = `上传失败（${xhr.status}）。`
+      try {
+        const parsed = JSON.parse(xhr.responseText) as { message?: string }
+        if (parsed.message) {
+          message = parsed.message
+        }
+      } catch {
+        // 响应不是 JSON 时用兜底文案。
+      }
+      reject(new Error(message))
+    }
+    xhr.send(body)
+  })
+}
+
 async function requestCloud<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {})
   headers.set('x-product-surface', 'desktop')
@@ -450,6 +498,11 @@ export async function fetchWithWorkspaceAccount(input: string | URL, init?: Requ
   })
 }
 
+// 用户主动停止长耗时任务时使用的统一错误。
+export function createAbortError() {
+  return new DOMException('操作已停止。', 'AbortError')
+}
+
 export function watchWorkspace(onChange: () => void) {
   const account = sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY)?.trim().toLowerCase() ?? ''
   const source = new EventSource(`${API_BASE_URL}/api/workspace/events?${new URLSearchParams({ workspaceAccount: account })}`)
@@ -464,7 +517,9 @@ async function streamRequest<T = CertificateStreamDonePayload>(path: string, ini
     await baseStreamRequest(path, init, handlers)
     if (name) recordProductEvent(name, 'success', started)
   } catch (error) {
-    if (name) recordProductEvent(name, 'failure', started)
+    // 用户主动停止不算失败，不计入埋点。
+    const aborted = (error as { name?: string }).name === 'AbortError'
+    if (name && !aborted) recordProductEvent(name, 'failure', started)
     throw error
   }
 }
@@ -475,10 +530,15 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
   }
   applyWorkspaceAccountHeader(headers)
 
-  const response = await boundedFetch(`${API_BASE_URL}${path}`, {
+  // 流式请求按空闲计时：收到数据就重新计时，长任务不会因为总时长超限被断开。
+  const stream = createStreamFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-  }, 15 * 60 * 1000).catch(() => {
+  })
+  const response = await stream.response.catch(() => {
+    // 用户主动停止时要保留中止语义，避免被当成服务不可用。
+    if (init.signal?.aborted) throw createAbortError()
+    if (stream.isTimedOut()) throw new Error('服务端长时间没有响应，请稍后重试。')
     throw new Error('暂时无法连接服务，请检查连接后重试。')
   })
 
@@ -549,8 +609,11 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
   try {
     while (true) {
       const { done, value } = await reader.read().catch(() => {
+        if (init.signal?.aborted) throw createAbortError()
+        if (stream.isTimedOut()) throw new Error('服务端长时间没有响应，请稍后重试。')
         throw new Error('处理连接已中断，请稍后重试。')
       })
+      stream.noteActivity()
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
       if (buffer.length > 16 * 1024 * 1024) throw new Error('返回内容过大，已停止接收。请检查已有结果。')
 
@@ -883,10 +946,10 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
-  createCase(name: string) {
+  createCase(name: string, description?: string) {
     return request<{ cases: AppState['cases']; caseFolder: { id: string } }>('/api/cases?response=compact', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, description }),
     })
   },
   updateCase(caseId: string, patch: Record<string, unknown>) {
@@ -962,11 +1025,18 @@ export const api = {
     })
   },
   uploadEvidenceSourceFiles(files: Array<File & { webkitRelativePath?: string }>) {
+    return this.uploadEvidenceSourceFilesWithProgress(files)
+  },
+  // 上传走 XHR：fetch 没有上传进度事件，几百兆材料上传时用户看不到进度会以为卡死。
+  uploadEvidenceSourceFilesWithProgress(
+    files: Array<File & { webkitRelativePath?: string }>,
+    onProgress?: (loaded: number, total: number) => void,
+  ): Promise<EvidenceSourceUploadResponse> {
     const formData = new FormData()
     const manifest = files.map((file) => ({
       relativePath: file.webkitRelativePath || file.name,
       fileName: file.name,
-      sourceMimeType: file.type,
+      sourceMimeType: resolveEvidenceMimeType(file.name, file.type),
     }))
 
     files.forEach((file) => {
@@ -974,10 +1044,7 @@ export const api = {
     })
     formData.append('manifest', JSON.stringify(manifest))
 
-    return request<EvidenceSourceUploadResponse>('/api/evidences/assets/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    return uploadFormDataWithProgress<EvidenceSourceUploadResponse>('/api/evidences/assets/upload', formData, onProgress)
   },
   syncDirectoryEvidences(payload: {
     caseId: string
@@ -1084,10 +1151,11 @@ export const api = {
     role: RoleType
     focus: string
     prompt?: string
-  }, handlers: CertificateStreamHandlers) {
+  }, handlers: CertificateStreamHandlers, signal?: AbortSignal) {
     return streamRequest('/api/certificates/generate/stream', {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal,
     }, handlers)
   },
   rewriteCertificate(payload: {
@@ -1116,7 +1184,7 @@ export const api = {
     certificateId: string
     evidenceIds: string[]
     prompt: string
-  }, handlers: CertificateStreamHandlers) {
+  }, handlers: CertificateStreamHandlers, signal?: AbortSignal) {
     return streamRequest(`/api/certificates/${payload.certificateId}/rewrite/stream`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1124,6 +1192,7 @@ export const api = {
         evidenceIds: payload.evidenceIds,
         prompt: payload.prompt,
       }),
+      signal,
     }, handlers)
   },
   importCertificate(payload: {
@@ -1158,16 +1227,18 @@ export const api = {
       },
     )
   },
-  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void) {
+  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void, signal?: AbortSignal) {
     type LinkageResult = WorkspaceResponse & {
       linkedParagraphCount: number
       evidenceLinkCount: number
       statuteReferenceCount: number
+      statuteWarningCount: number
       caseReferenceCount: number
     }
     let result: LinkageResult | undefined
     await streamRequest<LinkageResult>(`/api/certificates/${certificateId}/auto-link/stream`, {
       method: 'POST',
+      signal,
     }, {
       onProgress: (event) => onProgress?.(event.text),
       onDone: (payload) => { result = payload },

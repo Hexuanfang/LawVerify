@@ -1,0 +1,53 @@
+/* 通用右键菜单：挂载在 body 上，不受面板 overflow 裁剪。 */
+
+.context-menu {
+  position: fixed;
+  z-index: 1180;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-h);
+  font: inherit;
+  font-size: var(--font-body);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--accent-bg);
+}
+
+.context-menu-item:disabled {
+  color: var(--text-subtle);
+  cursor: not-allowed;
+}
+
+.context-menu-item.danger {
+  color: var(--danger-text);
+}
+
+.context-menu-item.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.context-menu-item.has-divider {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}

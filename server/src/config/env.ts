@@ -32,8 +32,17 @@ const booleanFromEnv = z
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8787),
+  // 本地服务默认只监听回环地址：工作区与证据原件没有鉴权，
+  // 暴露到局域网会让同网段任意设备都能读取或改写案件数据。
+  // 确需从局域网调试时显式设为 0.0.0.0。
+  SERVER_HOST: z.string().default('127.0.0.1'),
   CORS_ORIGIN: z.string().default('http://127.0.0.1:5173,http://localhost:5173'),
   JSON_LIMIT: z.string().default('100mb'),
+  // 单个材料原件的大小上限（MB）：上传与原件解析共用同一上限。
+  // 上传按文件落盘处理，内存占用不随文件大小增长。
+  MAX_EVIDENCE_FILE_MB: z.coerce.number().int().positive().default(512),
+  // 单批上传的请求体上限（MB）：同样按落盘处理，只限制总量不限制单文件。
+  MAX_UPLOAD_BATCH_MB: z.coerce.number().int().positive().default(512),
   APP_NAME: z.string().default('lawverify-server'),
   API_PREFIX: z.string().default('/api'),
   API_V1_PREFIX: z.string().default('/api/v1'),
@@ -65,6 +74,32 @@ const envSchema = z.object({
   LLM_VISION_API_KEY: z.string().optional(),
   LLM_VISION_MODEL: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+  // 上游限流（429）时的退避基线（毫秒），按第几次重试成倍增加。
+  LLM_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(2000),
+  // 自动理解时同时处理的材料份数：多份材料并行理解，整体等待时间按批次数摊薄。
+  EVIDENCE_SUMMARY_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // 扫描件逐页视觉理解的页数上限：只理解前 N 页，其余页面在风险里标注未覆盖。
+  EVIDENCE_VISION_PAGE_LIMIT: z.coerce.number().int().positive().default(10),
+  // 超过该页数的 PDF 改走检索式理解：先建块级索引，再只理解被检索命中的内容块。
+  EVIDENCE_RETRIEVAL_PAGE_THRESHOLD: z.coerce.number().int().positive().default(500),
+  // 单次模型调用能覆盖的正文长度：检索式理解选中的内容超过这个量才会切块再汇总。
+  // 调大更完整但每份材料多几次模型调用，调小更快但覆盖率更低。
+  EVIDENCE_LLM_SINGLE_CALL_CHARS: z.coerce.number().int().positive().default(20000),
+  // 检索式理解的命中门槛：分数低于最高分这个比例的块不再送进模型。
+  // 块数按内容重要性动态收敛，不再为了凑满字符预算把弱相关内容也算进去。
+  EVIDENCE_RETRIEVAL_MIN_SCORE_RATIO: z.coerce.number().min(0).max(1).default(0.25),
+  // 强相关块不足这个数量时按排名补齐，避免整份材料只理解一两个片段。
+  EVIDENCE_RETRIEVAL_MIN_CHUNKS: z.coerce.number().int().positive().default(6),
+  // 材料理解阶段对模型的全局并发上限：逐页理解与材料级并发共享同一配额，
+  // 避免并发叠加后请求过密被供应商限流，导致材料理解失败。
+  EVIDENCE_UNDERSTANDING_LLM_CONCURRENCY: z.coerce.number().int().positive().default(6),
+  // 云端智能分析网关按「组织 + 用户」限制并发请求数，桌面端按同一上限排队，
+  // 避免自己的请求数超过网关上限而被判为「当前分析任务较多」。
+  CLOUD_AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // 推理模型预留的正文 token 预算（与 LLM_TIMEOUT_MS 配合使用）。
+  LLM_MIN_MAX_TOKENS: z.coerce.number().int().positive().optional(),
+  // 支持 reasoning.effort 的供应商可配置推理强度，例如 none / minimal / low。
+  LLM_REASONING_EFFORT: z.enum(['none', 'minimal', 'low', 'medium', 'high']).optional(),
   EMBEDDING_PROVIDER: z.enum(['openai-compatible']).default('openai-compatible'),
   EMBEDDING_BASE_URL: z.string().optional(),
   EMBEDDING_API_KEY: z.string().optional(),
@@ -101,6 +136,10 @@ const envSchema = z.object({
   COLLABORA_PROXY_PATH: z.string().default('/collabora'),
   COLLABORA_PROXY_TARGET: z.string().default('http://127.0.0.1:9980'),
   COLLABORA_WOPI_ALLOW_EDIT: booleanFromEnv.default(true),
+  // 调试埋点上报地址：留空表示不发送任何调试请求。
+  // 启用方式：在 server/.env.local 或系统环境变量中设置
+  // DEBUG_EVENT_URL=http://127.0.0.1:7777/event，并自行启动对应调试收集器。
+  DEBUG_EVENT_URL: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

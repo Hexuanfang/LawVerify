@@ -1,6 +1,6 @@
 import { Router, type Request } from 'express'
 import multer from 'multer'
-import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
+import { boundedFileStorage, boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import express from 'express'
 import { z } from 'zod'
 import { createRechargePaymentOrder, getBillingCatalog, getRechargePaymentOrder, listRechargePaymentOrders } from '../billing-service.js'
@@ -142,6 +142,11 @@ export function createV1Router() {
     response.flush?.()
   }
   const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
+  // 单个证据原件按落盘处理，上限与桌面端一致，不再受 50MB 内存缓冲限制。
+  const evidenceUpload = multer({
+    storage: boundedFileStorage(),
+    limits: { fileSize: env.MAX_EVIDENCE_FILE_MB * 1024 * 1024, files: 1, fields: 10, fieldSize: 2 * 1024 * 1024 },
+  })
 
   router.use((request, _response, next) => {
     runWithWorkspaceAccount(resolveWorkspaceAccount(request), () => {
@@ -340,7 +345,7 @@ export function createV1Router() {
     authenticate,
     requirePermission('evidence.upload'),
     reserveUpload,
-    upload.single('file'),
+    evidenceUpload.single('file'),
     async (request, response) => {
       if (!request.file) {
         throw new Error('请选择要上传的文件。')
@@ -475,6 +480,14 @@ export function createV1Router() {
 
   router.post('/certificates/generate/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（删除案件、手动停止）时中止模型调用，避免服务端继续生成。
+    const controller = new AbortController()
+    response.on('close', () => {
+      // 正常结束不算中断，只有连接提前断开才中止模型调用。
+      if (!response.writableEnded) {
+        controller.abort()
+      }
+    })
 
     try {
       await streamGenerateCertificate(request.body, async (event) => {
@@ -487,12 +500,14 @@ export function createV1Router() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }, { signal: controller.signal })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '生成失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !controller.signal.aborted) {
+        const message = error instanceof Error ? error.message : '生成失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 
@@ -507,6 +522,14 @@ export function createV1Router() {
 
   router.post('/certificates/:certificateId/rewrite/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（删除案件、手动停止）时中止模型调用，避免服务端继续生成。
+    const controller = new AbortController()
+    response.on('close', () => {
+      // 正常结束不算中断，只有连接提前断开才中止模型调用。
+      if (!response.writableEnded) {
+        controller.abort()
+      }
+    })
 
     try {
       await streamRewriteCertificate({
@@ -523,12 +546,14 @@ export function createV1Router() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }, { signal: controller.signal })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '改写失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !controller.signal.aborted) {
+        const message = error instanceof Error ? error.message : '改写失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 

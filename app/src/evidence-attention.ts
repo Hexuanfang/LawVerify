@@ -5,6 +5,7 @@ export function getAttentionGroups(insight: EvidenceInsight) {
   return [
     { label: '证明目的', tone: 'proof', items: insight.proofPurposes ?? [] },
     { label: '争议与矛盾', tone: 'risk', items: insight.disputedPoints ?? [] },
+    { label: '程序与形式风险', tone: 'risk', items: (insight.risks ?? []).map((risk) => risk.message) },
     { label: '证明局限与待核验', tone: 'risk', items: [...(insight.proofLimitations ?? []), ...insight.issues] },
     { label: '关键事实', tone: 'fact', items: insight.keyFacts },
     { label: '主张与立场', tone: 'fact', items: insight.positions },

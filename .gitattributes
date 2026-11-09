@@ -31,6 +31,7 @@ tmp/platform-runtime/*.json text eol=crlf
 *.gif binary
 *.webp binary
 *.ico binary
+*.icns binary
 *.pdf binary
 *.zip binary
 *.7z binary

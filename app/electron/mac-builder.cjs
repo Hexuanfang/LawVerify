@@ -21,6 +21,7 @@ module.exports = {
     ...(signed ? ['!electron/mac-test-channel.json'] : []),
   ],
   mac: {
+    icon: 'build/icon.icns',
     target: [
       { target: 'dmg', arch: ['arm64', 'x64'] },
       { target: 'zip', arch: ['arm64', 'x64'] },

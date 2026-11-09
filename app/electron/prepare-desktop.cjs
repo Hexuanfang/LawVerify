@@ -35,9 +35,12 @@ async function main() {
   }
 
   // Never copy development credentials into distributable desktop assets.
+  // 桌面端启用调试埋点：构建完成后在 .desktop/server/.env.local 中取消
+  // DEBUG_EVENT_URL 的注释并重启客户端；保持注释则不发送任何调试请求。
   fs.writeFileSync(desktopServerEnvTarget, [
     'KNOWLEDGE_RAG_MODE=local', 'AI_GATEWAY_MODE=cloud', 'LLM_TIMEOUT_MS=120000',
-    'EMBEDDING_DIMENSION=1024', `CLOUD_API_BASE_URL=${OFFICIAL_PLATFORM_BASE_URL}`, '',
+    'EMBEDDING_DIMENSION=1024', `CLOUD_API_BASE_URL=${OFFICIAL_PLATFORM_BASE_URL}`,
+    '# Debug event endpoint; leave empty to disable debug reporting.', '# DEBUG_EVENT_URL=http://127.0.0.1:7777/event', '',
   ].join('\n'), 'utf8')
 
   await prepareDefaultLawLibrary()

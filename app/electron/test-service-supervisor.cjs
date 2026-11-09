@@ -11,6 +11,8 @@ function fixture(options = {}) {
     fork(_entry, _args, configuration) {
       const child = new EventEmitter()
       child.configuration = configuration
+      child.stdout = new EventEmitter()
+      child.stderr = new EventEmitter()
       child.kill = () => { setImmediate(() => child.emit('exit', 1)); return true }
       children.push(child)
       setImmediate(() => child.emit('message', { type: 'ready' }))
@@ -40,7 +42,19 @@ test('starts once for concurrent callers and does not reset the origin', async t
   await ready
   assert.equal(children.length, 2)
   assert.equal(children[0].configuration.env.PORT, children[1].configuration.env.PORT)
-  assert.equal(children[1].configuration.stdio, 'ignore')
+  assert.equal(children[1].configuration.stdio, 'pipe')
+})
+
+test('service output is reported as diagnostics instead of being discarded', async t => {
+  const { supervisor, children } = fixture()
+  t.after(() => supervisor.stop())
+  const events = []
+  supervisor.on('diagnostic', (event) => events.push(event))
+  await supervisor.start()
+  children[0].stdout.emit('data', Buffer.from('boom'))
+  children[0].stderr.emit('data', Buffer.from('bad'))
+  assert.ok(events.some((item) => item.event === 'service-stdout' && item.text.includes('boom')))
+  assert.ok(events.some((item) => item.event === 'service-stderr' && item.text.includes('bad')))
 })
 
 test('stops after three automatic recoveries', async t => {
@@ -57,6 +71,28 @@ test('stops after three automatic recoveries', async t => {
   await failed
   assert.equal(children.length, 4)
   assert.equal(supervisor.state, 'failed')
+})
+
+test('keeps retrying in the background after the restart budget is exhausted', async t => {
+  const { supervisor, children } = fixture({ restartDelays: [1, 1], recoveryRetryMs: 5 })
+  t.after(() => supervisor.stop())
+  await supervisor.start()
+  for (let index = 0; index < 2; index++) {
+    const ready = state(supervisor, 'ready')
+    children[index].emit('exit', 1)
+    await ready
+  }
+  const failed = state(supervisor, 'failed')
+  children[2].emit('exit', 1)
+  await failed
+  assert.equal(supervisor.state, 'failed')
+
+  // 重启次数用尽也不放弃：本地服务恢复后界面应自动回到可用状态，
+  // 不必让用户重开应用、丢掉正在做的材料。
+  const readyAgain = state(supervisor, 'ready')
+  await readyAgain
+  assert.equal(supervisor.state, 'ready')
+  assert.equal(children.length, 4)
 })
 
 test('startup failure retries without rejecting the overall readiness wait', async t => {

@@ -5,14 +5,14 @@ import { z } from 'zod'
 import { env } from '../config/env.js'
 import { sendLegacyError } from '../core/api-response.js'
 import { AppError } from '../core/app-error.js'
-import { storeObject } from '../infrastructure/object-storage.js'
+import { storeObjectFromPath } from '../infrastructure/object-storage.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
-import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel } from '../integrations/llm-service.js'
+import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel, withRequestAbortSignal } from '../integrations/llm-service.js'
 import { assistantOptionsSchema } from '../intelligence/assistant-options.js'
 import { subscribeWorkspaceChanges } from '../infrastructure/workspace-events.js'
-import { boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
+import { boundedFileStorage, reserveUpload, type UploadedFile } from '../middleware/bounded-upload.js'
 import {
   bootstrap,
   caseAgentMessage,
@@ -27,7 +27,7 @@ import {
   generateCertificate,
   importCertificate,
   importEvidences,
-  getEvidenceSourceAsset,
+  getEvidenceSourceAssetStream,
   bindWorkspaceCloudAccount,
   login,
   autoLinkCertificate,
@@ -65,16 +65,52 @@ const createCloudSessionSchema = bindCloudAccountSchema
 
 const createCaseSchema = z.object({
   name: z.string().trim().min(1, '案件名称不能为空。'),
+  description: z.string().optional(),
 })
 
 export function createLegacyRouter() {
   const router = Router()
-  const upload = multer({ storage: boundedMemoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 200, fields: 10, fieldSize: 2 * 1024 * 1024 } })
+  // 材料原件按文件落盘：单文件上限可以放大，内存占用不随文件大小增长。
+  const upload = multer({
+    storage: boundedFileStorage(),
+    limits: {
+      fileSize: env.MAX_EVIDENCE_FILE_MB * 1024 * 1024,
+      files: 200,
+      fields: 10,
+      fieldSize: 2 * 1024 * 1024,
+    },
+  })
   const resolveWorkspaceAccount = (request: Request) =>
     request.header('x-workspace-account')?.trim().toLowerCase()
     ?? (typeof request.query.workspaceAccount === 'string'
       ? request.query.workspaceAccount.trim().toLowerCase()
       : null)
+
+  // #region debug-point A-B-C-D:route-reporting
+  // 启用方式：设置环境变量 DEBUG_EVENT_URL=http://127.0.0.1:7777/event 后重启服务；未设置则不发送任何调试请求。
+  const reportLegacyDebug = (hypothesisId: string, msg: string, data: Record<string, unknown> = {}) => {
+    const debugEventUrl = env.DEBUG_EVENT_URL?.trim()
+    if (!debugEventUrl) {
+      return
+    }
+
+    void fetch(debugEventUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId: 'backend-file-load',
+        runId: 'pre-fix',
+        hypothesisId,
+        location: 'server/src/routes/legacy.ts',
+        msg: `[DEBUG] ${msg}`,
+        data,
+        ts: Date.now(),
+      }),
+    }).catch(() => {})
+  }
+  // #endregion
 
   const sendWorkspacePayload = <T extends Record<string, unknown>>(response: Response, payload: T) => {
     const nextPayload = 'workspace' in payload && payload.workspace
@@ -254,11 +290,11 @@ export function createLegacyRouter() {
     try {
       const payload = createCaseSchema.parse(request.body)
       if (request.query.response === 'compact') {
-        const result = await createCaseRecord(payload.name)
+        const result = await createCaseRecord(payload.name, payload.description)
         response.json({ ...result, cases: result.cases.map(sanitizeCaseForClient), caseFolder: sanitizeCaseForClient(result.caseFolder) })
         return
       }
-      const result = await createCase(payload.name)
+      const result = await createCase(payload.name, payload.description)
       sendWorkspacePayload(response, result)
     } catch (error) {
       const message = error instanceof Error ? error.message : '案件创建失败'
@@ -338,7 +374,13 @@ export function createLegacyRouter() {
     const assets = []
     for (const [index, file] of files.entries()) {
       const manifestItem = manifest[index] ?? {}
-      const stored = await storeObject(file, {
+      const stored = await storeObjectFromPath({
+        path: (file as Partial<UploadedFile>).path!,
+        size: file.size,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        contentHash: (file as Partial<UploadedFile>).contentHash!,
+      }, {
         bucket: 'evidence',
         fileName: manifestItem.fileName?.trim() || file.originalname,
       })
@@ -349,7 +391,7 @@ export function createLegacyRouter() {
         storageKey: stored.key,
         storageUrl: stored.url,
         sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
-        contentHash: createHash('sha256').update(file.buffer).digest('hex'),
+        contentHash: stored.contentHash,
       })
     }
 
@@ -376,11 +418,36 @@ export function createLegacyRouter() {
 
   router.get('/evidences/:evidenceId/source', async (request, response) => {
     try {
-      const asset = await getEvidenceSourceAsset(request.params.evidenceId)
+      // #region debug-point D:source-route-enter
+      reportLegacyDebug('D', 'source-route-enter', {
+        requestId: request.headers['x-request-id'] ?? null,
+        evidenceId: request.params.evidenceId,
+        workspaceAccount: resolveWorkspaceAccount(request),
+        accept: request.headers.accept ?? null,
+        secFetchDest: request.headers['sec-fetch-dest'] ?? null,
+      })
+      // #endregion
+      const asset = await getEvidenceSourceAssetStream(request.params.evidenceId)
       response.setHeader('Content-Type', asset.mimeType)
       response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(asset.fileName)}"`)
       response.removeHeader('X-Frame-Options')
-      response.send(asset.buffer)
+      // #region debug-point B-C:source-route-success
+      reportLegacyDebug('B', 'source-route-success', {
+        requestId: request.headers['x-request-id'] ?? null,
+        evidenceId: request.params.evidenceId,
+        mimeType: asset.mimeType,
+        fileName: asset.fileName,
+      })
+      // #endregion
+      // 流式回传原件：几百页的扫描件不会因为一次预览就把整份文件读进内存。
+      asset.stream.once('error', () => {
+        if (!response.headersSent) {
+          sendLegacyError(response, 404, '读取证据原件失败')
+          return
+        }
+        response.destroy()
+      })
+      asset.stream.pipe(response)
     } catch (error) {
       const message = error instanceof Error ? error.message : '读取证据原件失败'
       sendLegacyError(response, 404, message)
@@ -408,9 +475,12 @@ export function createLegacyRouter() {
 
   router.post('/certificates/generate/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（用户点击“停止”）时中断模型生成，避免服务端继续消耗调用。
+    const abortController = new AbortController()
+    response.once('close', () => abortController.abort())
 
     try {
-      await streamGenerateCertificate(request.body, async (event) => {
+      await withRequestAbortSignal(abortController.signal, () => streamGenerateCertificate(request.body, async (event) => {
         if (event.type === 'done') {
           sendStreamEvent(response, 'done', {
             ...event,
@@ -420,12 +490,14 @@ export function createLegacyRouter() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '生成失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !abortController.signal.aborted) {
+        const message = error instanceof Error ? error.message : '生成失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 
@@ -445,9 +517,12 @@ export function createLegacyRouter() {
 
   router.post('/certificates/:certificateId/rewrite/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（用户点击“停止”）时中断模型改写，避免服务端继续消耗调用。
+    const abortController = new AbortController()
+    response.once('close', () => abortController.abort())
 
     try {
-      await streamRewriteCertificate({
+      await withRequestAbortSignal(abortController.signal, () => streamRewriteCertificate({
         certificateId: request.params.certificateId,
         evidenceIds: Array.isArray(request.body?.evidenceIds) ? request.body.evidenceIds : [],
         prompt: typeof request.body?.prompt === 'string' ? request.body.prompt : '',
@@ -461,12 +536,14 @@ export function createLegacyRouter() {
         }
 
         sendStreamEvent(response, event.type, event)
-      })
+      }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '改写失败'
-      sendStreamEvent(response, 'error', { message })
+      if (!response.destroyed && !abortController.signal.aborted) {
+        const message = error instanceof Error ? error.message : '改写失败'
+        sendStreamEvent(response, 'error', { message })
+      }
     } finally {
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 
@@ -491,6 +568,10 @@ export function createLegacyRouter() {
 
   router.post('/certificates/:certificateId/auto-link/stream', async (request, response) => {
     startEventStream(response)
+    // 客户端断开（用户点击“停止”或关闭窗口）时中止联动，避免服务端继续消耗模型调用。
+    const abortController = new AbortController()
+    const abortOnDisconnect = () => abortController.abort()
+    response.once('close', abortOnDisconnect)
     const heartbeat = setInterval(() => {
       if (!response.destroyed) {
         response.write(': heartbeat\n\n')
@@ -502,7 +583,7 @@ export function createLegacyRouter() {
     try {
       const result = await autoLinkCertificate(request.params.certificateId, (text) => {
         if (!response.destroyed) sendStreamEvent(response, 'progress', { text })
-      })
+      }, { signal: abortController.signal })
       if (!response.destroyed) {
         sendStreamEvent(response, 'done', {
           ...result,
@@ -510,15 +591,16 @@ export function createLegacyRouter() {
         })
       }
     } catch (error) {
-      if (!response.destroyed) {
+      if (!response.destroyed && !abortController.signal.aborted) {
         sendStreamEvent(response, 'error', {
           message: error instanceof Error ? error.message : '证据联动未完成，请稍后重试。',
         })
       }
     } finally {
       stopHeartbeat()
+      response.off('close', abortOnDisconnect)
       response.off('close', stopHeartbeat)
-      response.end()
+      if (!response.destroyed) response.end()
     }
   })
 

@@ -72,6 +72,26 @@ export async function exportCertificateToWord(certificate: Certificate, caseName
         }
       })
     )
+
+    // 核验批注：以灰色小字附在对应段落之后
+    const noteText = (p.note ?? '').replace(/\r\n|\r|\n/g, ' ').trim()
+    if (noteText) {
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `批注：${noteText}`,
+              size: 18, // 9 磅，比正文小一号
+              color: '808080',
+            })
+          ],
+          spacing: {
+            after: 200,
+            line: 360,
+          }
+        })
+      )
+    }
   }
 
   const doc = new Document({

@@ -1,0 +1,68 @@
+/* 段落核验面板：定位信息与核验批注，随文书一并导出。 */
+
+.paragraph-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+
+.paragraph-review-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.paragraph-review-head strong {
+  color: var(--text-h);
+  font-size: var(--font-title);
+}
+
+.paragraph-review-head span {
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+
+.paragraph-review .field-block {
+  gap: 6px;
+  color: var(--text-h);
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+
+.paragraph-review .field-block input,
+.paragraph-review .field-block textarea {
+  font-weight: 400;
+}
+
+.paragraph-review .field-block textarea {
+  min-height: 96px;
+}
+
+.paragraph-review-hint {
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.7;
+}
+
+.paragraph-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.paragraph-review-status {
+  color: var(--text);
+  font-size: var(--font-caption);
+}
+
+.paragraph-review-error {
+  color: var(--danger-text);
+  font-size: var(--font-caption);
+}

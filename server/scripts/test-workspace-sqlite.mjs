@@ -45,6 +45,27 @@ function read(store) {
   return store.read(() => { throw new Error('Existing database must not reinitialize') })
 }
 
+test('工作区读取不会被其它连接的写事务拖成十秒假死', t => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'lawverify-sqlite-lock-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const store = new WorkspaceSqliteStore(dir)
+  store.read(fixture)
+
+  // 模拟另一个连接正持有写事务：读取连接如果每次都重设 journal_mode，
+  // 就会在 busy_timeout 上干等到超时，表现为本地服务数十秒无响应。
+  const blocker = new DatabaseSync(path.join(dir, 'workspace.sqlite'))
+  blocker.exec('PRAGMA busy_timeout = 10000; PRAGMA journal_mode = WAL;')
+  blocker.exec('BEGIN IMMEDIATE')
+  blocker.prepare("INSERT INTO workspace_meta(key, value) VALUES('probe', '1')").run()
+
+  const started = Date.now()
+  read(store)
+  const elapsed = Date.now() - started
+  blocker.exec('ROLLBACK')
+  blocker.close()
+  assert.ok(elapsed < 3000, `工作区读取不应被写事务拖住，实际耗时 ${elapsed}ms`)
+})
+
 function worker(code, args = [], runtime = process.execPath) {
   return new Promise((resolve, reject) => {
     const child = spawn(runtime, ['--import', 'tsx', '--input-type=module', '-e', code, ...args], {
@@ -88,6 +109,14 @@ test('media is deduplicated outside SQLite and decoded without changing fingerpr
   const hash = readdirSync(path.join(dir, 'workspace-assets'))[0]
   writeFileSync(path.join(dir, 'workspace-assets', hash), 'corrupt')
   assert.throws(() => read(store), /校验失败/)
+})
+
+test('保存时发现被改动的证据原件会阻止写入', t => {
+  const { dir, store, state } = isolated(t)
+  const hash = readdirSync(path.join(dir, 'workspace-assets'))[0]
+  writeFileSync(path.join(dir, 'workspace-assets', hash), 'corrupt')
+  state.evidences[0].name = 'changed'
+  assert.throws(() => store.save(state), /校验失败/)
 })
 
 test('unchanged saves do not rewrite records; modifications affect only changed rows', t => {

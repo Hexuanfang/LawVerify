@@ -1,0 +1,91 @@
+/* 材料信息编辑面板：与 LegalReview 的局部样式保持同一组织方式。 */
+
+.evidence-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+
+.evidence-manage-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.evidence-manage-head strong {
+  color: var(--text-h);
+  font-size: var(--font-title);
+}
+
+.evidence-manage-head span {
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+
+.evidence-manage .field-block {
+  gap: 6px;
+  color: var(--text-h);
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+
+.evidence-manage .field-block input,
+.evidence-manage .field-block textarea {
+  font-weight: 400;
+}
+
+.evidence-manage .field-block textarea {
+  min-height: 140px;
+}
+
+.evidence-manage-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-caption);
+}
+
+.evidence-manage-meta span {
+  color: var(--text);
+}
+
+.evidence-manage-meta strong {
+  color: var(--text-h);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.evidence-manage-error {
+  color: var(--danger);
+  font-size: var(--font-caption);
+}
+
+.evidence-manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-manage .danger-button {
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 8px 14px;
+  background: var(--panel-bg);
+  color: var(--danger);
+  font-size: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.evidence-manage .danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

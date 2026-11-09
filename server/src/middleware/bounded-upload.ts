@@ -1,14 +1,22 @@
+import { createHash, randomUUID } from 'node:crypto'
+import { createWriteStream } from 'node:fs'
+import { mkdir, rm } from 'node:fs/promises'
+import path from 'node:path'
 import type multer from 'multer'
 import type { RequestHandler } from 'express'
 import { AppError } from '../core/app-error.js'
+import { env } from '../config/env.js'
+import { getWorkspaceDataDir } from '../config/paths.js'
 
 let activeUploads = 0
-const maxBatchBytes = 128 * 1024 * 1024
+const maxBatchBytes = env.MAX_UPLOAD_BATCH_MB * 1024 * 1024
+export const maxUploadBatchBytes = maxBatchBytes
+export const maxEvidenceFileBytes = env.MAX_EVIDENCE_FILE_MB * 1024 * 1024
 
 // Bound the aggregate payload, not just each file. Two concurrent batches maximum.
 export const reserveUpload: RequestHandler = (request, response, next) => {
   if (Number(request.header('content-length') ?? 0) > maxBatchBytes) {
-    next(new AppError('本批材料超过128MB，请拆分后上传。', 413, 'UPLOAD_BATCH_TOO_LARGE'))
+    next(new AppError(`本批材料超过${env.MAX_UPLOAD_BATCH_MB}MB，请拆分后上传。`, 413, 'UPLOAD_BATCH_TOO_LARGE'))
     return
   }
   if (activeUploads >= 2) {
@@ -56,5 +64,78 @@ export function boundedMemoryStorage(): multer.StorageEngine {
       file.stream.once('error', failed)
     },
     _removeFile(_request, file, callback) { file.buffer = Buffer.alloc(0); callback(null) },
+  }
+}
+
+export type UploadedFile = Express.Multer.File & {
+  path: string
+  contentHash: string
+}
+
+// 上传按文件落盘：内存占用与文件大小无关，几百页的扫描件也能直接接入。
+export function boundedFileStorage(): multer.StorageEngine {
+  return {
+    async _handleFile(request, file, callback) {
+      const tempDir = path.join(getWorkspaceDataDir(), 'upload-tmp')
+      try {
+        await mkdir(tempDir, { recursive: true })
+      } catch (error) {
+        callback(error as Error)
+        return
+      }
+
+      const tempPath = path.join(tempDir, randomUUID())
+      const hash = createHash('sha256')
+      const target = createWriteStream(tempPath)
+      let size = 0
+      let settled = false
+
+      const fail = (error: Error) => {
+        if (settled) {
+          return
+        }
+        settled = true
+        target.destroy()
+        void rm(tempPath, { force: true })
+        callback(error)
+      }
+
+      file.stream.on('data', (chunk: Buffer) => {
+        hash.update(chunk)
+        size += chunk.length
+      })
+      file.stream.once('error', fail)
+      target.once('error', fail)
+      target.once('finish', () => {
+        if (settled) {
+          return
+        }
+        settled = true
+        callback(null, {
+          path: tempPath,
+          size,
+          contentHash: hash.digest('hex'),
+        } as unknown as Express.Multer.File)
+      })
+
+      file.stream.pipe(target)
+    },
+    _removeFile(_request, file, callback) {
+      const tempPath = (file as Partial<UploadedFile>).path
+      if (tempPath) {
+        void rm(tempPath, { force: true })
+      }
+      callback(null)
+    },
+  }
+}
+
+// 上传中断会留下临时文件：服务启动时清空，避免大文件残留持续占用磁盘。
+export async function clearUploadTempFiles() {
+  const tempDir = path.join(getWorkspaceDataDir(), 'upload-tmp')
+  try {
+    await rm(tempDir, { recursive: true, force: true })
+  } catch {
+    // 清理失败不影响启动：临时目录可由系统手工清理。
   }
 }

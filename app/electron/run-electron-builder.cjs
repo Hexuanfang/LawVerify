@@ -7,6 +7,12 @@ const electronBuilderBin = path.join(appRoot, 'node_modules', 'electron-builder'
 const args = process.argv.slice(2)
 const requireSignature = process.env.LAWVERIFY_REQUIRE_SIGNATURE === '1' || args.includes('--check-signing')
 
+// Lets the release script build into a scratch directory when the default output folder is locked.
+const outputDirOverride = process.env.LAWVERIFY_BUILDER_OUTPUT_DIR
+if (outputDirOverride) {
+  args.push(`--config.directories.output=${outputDirOverride}`)
+}
+
 if (requireSignature) {
   const hasConfiguredCertificate = process.env.WIN_CSC_LINK || process.env.CSC_LINK
   const discovery = !hasConfiguredCertificate && process.env.CSC_IDENTITY_AUTO_DISCOVERY !== 'false'

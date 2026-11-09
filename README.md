@@ -188,6 +188,16 @@ npm --prefix app run dev:desktop
 
 两条命令二选一，勿同时启动。未配置模型时不能据此认定 AI 理解、向量检索或生成能力已经验证。
 
+Windows 上也可以用根目录的一键脚本完成"装依赖 + 起服务 + 停服务"：
+
+```powershell
+.\dev-workbench.cmd            # 安装依赖（如缺失）并启动 API + Vite
+.\dev-workbench.cmd status     # 查看状态
+.\dev-workbench.cmd stop       # 停止
+```
+
+脚本会在缺失时创建 `.env.local`，并把日志写入 `tmp\dev-workbench\`。它不替代上面的 npm 命令，只是把同一流程封装起来。
+
 ### 官网与云端平台
 
 ```powershell
@@ -249,6 +259,8 @@ npm --prefix app run verify:signature
 ```
 
 产物位于 `app/release/`，安装包名为 `LawVerify-Setup-<version>.exe`。根目录构建脚本使用当前版本，不自动升级版本号。
+
+若 `app/release` 被编辑器或杀软进程占用（表现为打包时报 `EBUSY`），构建脚本会自动改用临时输出目录 `app/release-temp` 完成打包，再把产物同步回 `app/release/`；关闭占用程序后重新打包即可恢复标准输出目录。
 
 内置法律库使用真实向量缓存，构建时校验原件指纹并复用匹配结果；法律原件变更后需配置可用 Embedding API 重新生成并导出缓存，可能产生费用，不可用空库或关键词索引替代。商业发行前必须实际验证签名。当前 `signAndEditExecutable=false`，`-Signed` 也不能单独保证产物已签名；有效签名不保证完全消除 SmartScreen 提示。
 

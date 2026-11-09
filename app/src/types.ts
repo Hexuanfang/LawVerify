@@ -98,6 +98,7 @@ export interface Evidence {
   relativePath?: string
   contentHash?: string
   sourceFingerprint?: string
+  duplicateOf?: string
   directoryId?: string
   sourceNumber?: string
   uploadedAt: string
@@ -160,6 +161,7 @@ export interface ParagraphReference {
   sentenceText?: string
   note?: string
   reason?: string
+  warning?: 'statute-repealed' | 'statute-amended' | 'statute-content-missing'
 }
 
 export interface CertificateParagraph {
@@ -234,7 +236,37 @@ export interface EvidenceInsight {
   confidence: number
   status: EvidenceInsightStatus
   error?: string
+  // 超大材料走检索式理解时的覆盖情况。
+  coverage?: EvidenceInsightCoverage
+  // 规则扫描出的程序与形式风险。
+  risks?: EvidenceRiskFinding[]
   updatedAt: string
+}
+
+export interface EvidenceInsightCoverage {
+  mode: 'full' | 'retrieval'
+  totalChunks: number
+  coveredChunks: number
+  coveredChars: number
+  totalChars: number
+  coveredChunkIndexes: number[]
+  queries: string[]
+}
+
+export type EvidenceRiskKind =
+  | 'limitation-deadline'
+  | 'evidence-form'
+  | 'original-missing'
+  | 'signature-seal'
+  | 'page-continuity'
+  | 'delivery-address'
+  | 'party-identity'
+
+export interface EvidenceRiskFinding {
+  kind: EvidenceRiskKind
+  severity: 'high' | 'medium' | 'low'
+  message: string
+  excerpt?: string
 }
 
 export interface CaseContextSupportItem {
@@ -292,6 +324,10 @@ export interface Certificate {
   paragraphIds: string[]
   paragraphs: CertificateParagraph[]
   createdAt: string
+  // 上次联动所依赖的材料指纹：材料新增、删除或重新理解后会变化。
+  linkageInputKey?: string
+  // 联动结果是否已因材料变化而过时。
+  linkageStale?: boolean
 }
 
 export interface CaseFolder {
@@ -315,7 +351,7 @@ export interface CasePositionDraft {
 export interface CaseAgentState {
   autoAnalyze?: boolean
   position?: CasePositionDraft & { version: number; confirmedAt: string }
-  task?: { revision: number; status: 'queued' | 'processing' | 'ready' | 'failed'; stage: string; error?: string; evidenceIds?: string[] }
+  task?: { revision: number; status: 'queued' | 'processing' | 'ready' | 'failed'; stage: string; error?: string; evidenceIds?: string[]; skippedEvidenceIds?: string[]; duplicateEvidenceIds?: string[]; startedAt?: string }
   messages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }>
   strategy?: {
     inputKey: string

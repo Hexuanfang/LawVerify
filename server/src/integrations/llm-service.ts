@@ -1,7 +1,7 @@
 import { env } from '../config/env.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { z } from 'zod'
-import { cloudAiFetch, hasCloudAiToken, isCloudAiEnabled } from './cloud-ai.js'
+import { cloudAiFetch, hasCloudAiToken, isCloudAiEnabled, waitBeforeRetry } from './cloud-ai.js'
 
 export interface LlmChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -30,9 +30,26 @@ interface ChatCompletionOptions {
 }
 
 const assistantModel = new AsyncLocalStorage<string>()
+// 请求级中止信号：客户端断开或用户点击“停止”后，让正在进行的 LLM 调用立即中断。
+const requestAbort = new AsyncLocalStorage<AbortSignal>()
+// 直连模式的上游限流退避：并发理解时一次 429 会让整份材料整理失败。
+const MAX_LLM_ATTEMPTS = 3
+
+export async function withRequestAbortSignal<T>(signal: AbortSignal | undefined, action: () => T): Promise<T> {
+  if (!signal) return action()
+  return requestAbort.run(signal, action)
+}
+
+function currentRequestAbortSignal() {
+  return requestAbort.getStore()
+}
+
 export async function withAssistantModel<T>(model: unknown, action: () => T): Promise<T> {
   if (model === undefined || model === '') return action()
-  if (typeof model !== 'string' || !(await getAssistantCapabilities()).models.some(m => m.id === model)) {
+  if (typeof model !== 'string') throw new Error('所选模型不可用，请重新选择。')
+  const capabilities = await getAssistantCapabilities()
+  // 模型目录为空说明上游网关未启用或未配置模型，交由上游返回准确错误，不再本地拦截。
+  if (capabilities.models.length > 0 && !capabilities.models.some(m => m.id === model)) {
     throw new Error('所选模型不可用，请重新选择。')
   }
   return assistantModel.run(model, action)
@@ -69,10 +86,19 @@ export function configuredChatModels() {
 }
 
 export async function getAssistantCapabilities(): Promise<{ models: Array<{ id: string; label: string }>; voice: boolean }> {
-  if (isCloudAiEnabled() && !hasCloudAiToken()) return { models: [], voice: false }
-  if (isCloudAiEnabled()) return z.object({
-    models: z.array(z.object({ id: z.string(), label: z.string() })), voice: z.boolean(),
-  }).parse(await (await cloudAiFetch('assistant/capabilities')).json())
+  if (isCloudAiEnabled()) {
+    // 网关已启用但当前账号未登录时直接返回空目录，避免探测请求触发 401。
+    if (!hasCloudAiToken()) return { models: [], voice: false }
+    try {
+      return z.object({
+        models: z.array(z.object({ id: z.string(), label: z.string() })), voice: z.boolean(),
+      }).parse(await (await cloudAiFetch('assistant/capabilities')).json())
+    } catch (error) {
+      // 上游网关未启用或不可用时返回空目录：能力探测失败不应让整个请求报错。
+      console.error('Assistant capabilities unavailable:', error instanceof Error ? error.message : String(error))
+      return { models: [], voice: false }
+    }
+  }
   return { models: configuredChatModels().map(id => ({ id, label: id })),
     voice: Boolean(env.ASR_BASE_URL && env.ASR_API_KEY && env.ASR_MODEL) }
 }
@@ -102,24 +128,50 @@ export async function transcribeAssistantAudio(buffer: Buffer, mime: string) {
 async function requestChat(options: ChatCompletionOptions, stream: boolean) {
   const hasImages = options.messages.some(m => Array.isArray(m.content) && m.content.some(c => c.type === 'image_url'))
   const selectedModel = options.model || (!hasImages ? assistantModel.getStore() : undefined)
+  const requestedMaxTokens = options.maxTokens ?? 3000
+  // 推理模型（thinking）会把 max_tokens 优先消耗在推理阶段，正文可能被挤为空。
+  // LLM_MIN_MAX_TOKENS 为推理模型预留出正文的 token 预算。
+  const maxTokens = env.LLM_MIN_MAX_TOKENS
+    ? Math.max(requestedMaxTokens, env.LLM_MIN_MAX_TOKENS)
+    : requestedMaxTokens
   const payload = {
     messages: options.messages, temperature: options.temperature ?? 0.1,
-    max_tokens: options.maxTokens ?? 3000, stream,
+    max_tokens: maxTokens, stream,
     response_format: options.responseFormat === 'json_object' ? { type: 'json_object' } : undefined,
+    // 仅在显式配置时下发，兼容支持 reasoning.effort 的供应商。
+    reasoning: env.LLM_REASONING_EFFORT ? { effort: env.LLM_REASONING_EFFORT } : undefined,
   }
   if (isCloudAiEnabled()) return cloudAiFetch('chat/completions', {
     ...payload, model: selectedModel, mode: hasImages ? 'vision' : 'text',
-  })
+  }, {}, currentRequestAbortSignal())
   const baseUrl = options.baseUrl || env.LLM_BASE_URL
   const apiKey = options.apiKey || env.LLM_API_KEY
   const model = selectedModel || env.LLM_MODEL
   if (!baseUrl || !apiKey || !model) throw new Error('LLM 请求缺少 baseUrl、apiKey 或 model。')
-  const response = await fetch(`${normalizeBaseUrl(baseUrl)}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ ...payload, model }), signal: AbortSignal.timeout(env.LLM_TIMEOUT_MS),
-  })
-  if (!response.ok) throw new Error('智能分析服务暂不可用，请稍后重试。')
-  return response
+  const timeoutSignal = AbortSignal.timeout(env.LLM_TIMEOUT_MS)
+  const abortSignal = currentRequestAbortSignal()
+  const url = `${normalizeBaseUrl(baseUrl)}/chat/completions`
+  const body = JSON.stringify({ ...payload, model })
+  // 直连模式没有网关的退避重试：上游限流时退避后重试，
+  // 避免多份材料并发理解把一次限流放大成整案整理失败。
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body,
+      signal: abortSignal ? AbortSignal.any([timeoutSignal, abortSignal]) : timeoutSignal,
+    })
+    if (response.ok) {
+      return response
+    }
+    await response.body?.cancel().catch(() => {})
+    if (response.status === 429 && attempt < MAX_LLM_ATTEMPTS) {
+      await waitBeforeRetry(env.LLM_RETRY_BASE_DELAY_MS * attempt, abortSignal)
+      continue
+    }
+    // 只记录状态码与模型名，不记录请求内容与响应正文。
+    console.error(`LLM request failed: status=${response.status} model=${model}`)
+    throw new Error(`智能分析服务暂不可用（${response.status}），请稍后重试。`)
+  }
 }
 
 export function getLlmRuntimeStatus() {

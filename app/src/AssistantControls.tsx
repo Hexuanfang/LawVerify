@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from './api'
 
 export const assistantAgents = [
@@ -18,6 +19,26 @@ export type AssistantSelection = {
   skill?: typeof assistantSkills[number]['id']
 }
 
+export type AssistantMode = 'position' | 'question'
+
+/**
+ * 助手模式开关：在「代理设置」与「讨论案情」之间切换。
+ * 用 radiogroup + 滑块表示两态开关，键盘可直接操作两个选项。
+ */
+export function AssistantModeSwitch({ value, onChange, disabled }: {
+  value: AssistantMode
+  onChange: (value: AssistantMode) => void
+  disabled?: boolean
+}) {
+  return <div className="assistant-mode-switch" role="radiogroup" aria-label="助手模式" data-active={value}>
+    <span className="assistant-mode-switch-thumb" aria-hidden="true" />
+    <button type="button" role="radio" aria-checked={value === 'position'} disabled={disabled}
+      className={value === 'position' ? 'active' : ''} onClick={() => onChange('position')}>代理设置</button>
+    <button type="button" role="radio" aria-checked={value === 'question'} disabled={disabled}
+      className={value === 'question' ? 'active' : ''} onClick={() => onChange('question')}>讨论案情</button>
+  </div>
+}
+
 export function AssistantPicker({ label, title, items, value, disabled, open: controlledOpen, onOpen, onSelect }: {
   label: string; title: string; items: ReadonlyArray<{ id: string; label: string; description?: string }>
   value?: string; disabled?: boolean; open?: boolean; onOpen?: (open: boolean) => void; onSelect: (id: string) => void
@@ -27,52 +48,66 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
-  const setOpen = (next: boolean) => { setLocalOpen(next); onOpen?.(next) }
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  // 面板内的绝对定位菜单会被祖先 overflow 裁剪、并被 sticky 层叠上下文限制，
+  // 统一挂到 body 上用 fixed 定位，避免被文书区或相邻面板盖住。
+  const reposition = useCallback(() => {
+    const rect = button.current?.getBoundingClientRect()
+    if (!rect) return
+    const width = Math.min(260, Math.max(200, window.innerWidth - 24))
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
+    const menuHeight = Math.min(280, Math.max(120, items.length * 46 + 44))
+    const below = window.innerHeight - rect.bottom
+    const top = below >= menuHeight + 12
+      ? rect.bottom + 6
+      : Math.max(12, rect.top - menuHeight - 6)
+    setPosition({ top, left, width })
+  }, [items.length])
+
   useLayoutEffect(() => {
-    if (!open || !menu.current || !button.current) return
-    const popup = menu.current
-    const anchor = button.current
-    // The browser top layer escapes scroll-container clipping without losing inherited styles.
-    popup.showPopover()
-    const place = () => {
-      const box = anchor.getBoundingClientRect()
-      const gap = 8
-      const above = Math.max(0, box.top - gap * 2)
-      const below = Math.max(0, window.innerHeight - box.bottom - gap * 2)
-      const preferBelow = !!anchor.closest('.assistant-mode-row')
-      const down = preferBelow ? below >= Math.min(above, 280) : above < Math.min(below, 280)
-      popup.style.maxHeight = `${Math.min(280, down ? below : above)}px`
-      const bounds = popup.getBoundingClientRect()
-      popup.style.left = `${Math.max(gap, Math.min(box.left, window.innerWidth - bounds.width - gap))}px`
-      popup.style.top = `${Math.max(gap, Math.min(window.innerHeight - bounds.height - gap,
-        down ? box.bottom + gap : box.top - bounds.height - gap))}px`
-    }
-    place()
-    const observer = new ResizeObserver(place)
-    observer.observe(anchor)
-    observer.observe(popup)
-    const container = anchor.closest('.case-agent-composer, .agent-dock-body')
-    if (container) observer.observe(container)
-    window.addEventListener('resize', place)
-    window.addEventListener('scroll', place, true)
+    if (!open) return
+    reposition()
+    const sync = () => reposition()
+    window.addEventListener('scroll', sync, true)
+    window.addEventListener('resize', sync)
     return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', place)
-      window.removeEventListener('scroll', place, true)
-      if (popup.matches(':popover-open')) popup.hidePopover()
+      window.removeEventListener('scroll', sync, true)
+      window.removeEventListener('resize', sync)
     }
-  }, [open])
+  }, [open, reposition])
+
   useEffect(() => {
     if (!open) return
-    const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (root.current?.contains(target)) return
+      if (menu.current?.contains(target)) return
+      setLocalOpen(false)
+      onOpen?.(false)
+    }
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
-  }, [open])
+  }, [open, onOpen])
+
+  const choose = (id: string) => {
+    onSelect(id)
+    setLocalOpen(false)
+    onOpen?.(false)
+    button.current?.focus()
+  }
+
   return <div className="assistant-picker" ref={root} onKeyDown={event => {
-    if (event.key === 'Escape') { setOpen(false); button.current?.focus(); event.stopPropagation() }
+    if (event.key === 'Escape' && open) {
+      setLocalOpen(false)
+      onOpen?.(false)
+      button.current?.focus()
+      event.stopPropagation()
+    }
     if (open && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault()
-      const choices = Array.from(root.current?.querySelectorAll<HTMLButtonElement>('.assistant-picker-menu button') ?? [])
+      const choices = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('.assistant-picker-menu button') ?? [])
+      if (!choices.length) return
       const index = choices.indexOf(document.activeElement as HTMLButtonElement)
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
         : event.key === 'ArrowDown' ? (index + 1) % choices.length : (index - 1 + choices.length) % choices.length
@@ -80,22 +115,98 @@ export function AssistantPicker({ label, title, items, value, disabled, open: co
     }
   }}>
     <button ref={button} className="assistant-control" type="button" disabled={disabled}
-      aria-label={title} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(!open)}>
-      <span>{label}</span><span aria-hidden="true">⌄</span>
+      aria-label={title} aria-expanded={open} aria-haspopup="dialog"
+      onClick={() => {
+        const next = !open
+        setLocalOpen(next)
+        onOpen?.(next)
+      }}>
+      <span>{label}</span>
+      <svg className="assistant-control-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </button>
-    {open ? <div ref={menu} popover="manual" className="assistant-picker-menu" role="dialog" aria-label={title}>
-      <strong>{title}</strong>
-      {items.length ? items.map(item => <button key={item.id} type="button" aria-pressed={value === item.id}
-        onClick={() => { onSelect(item.id); setOpen(false); button.current?.focus() }}>
-        <span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}
-        {value === item.id ? <b aria-hidden="true">✓</b> : null}
-      </button>) : <p>暂无可用模型，请联系管理员配置。</p>}
-    </div> : null}
+    {open && position ? createPortal(
+      <div
+        ref={menu}
+        className="assistant-picker-menu"
+        style={{ top: position.top, left: position.left, width: position.width }}
+        role="dialog"
+        aria-label={title}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            setLocalOpen(false)
+            onOpen?.(false)
+            button.current?.focus()
+            event.stopPropagation()
+          }
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            const choices = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('.assistant-picker-menu button') ?? [])
+            if (!choices.length) return
+            const index = choices.indexOf(document.activeElement as HTMLButtonElement)
+            const next = event.key === 'ArrowDown'
+              ? (index + 1) % choices.length
+              : (index - 1 + choices.length) % choices.length
+            choices[next]?.focus()
+          }
+        }}
+      >
+        <strong>{title}</strong>
+        {items.length ? items.map(item => <button key={item.id} type="button" aria-pressed={value === item.id}
+          onClick={() => choose(item.id)}>
+          <span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}
+          {value === item.id ? <b aria-hidden="true">✓</b> : null}
+        </button>) : <p>暂无可用模型，请联系管理员配置。</p>}
+      </div>,
+      document.body,
+    ) : null}
   </div>
 }
 
-export function VoiceInputButton({ disabled, onText, onError, onBusy }: {
+export function AssistantWorkModeSwitch({ mode, onChange, disabled, status }: {
+  mode: 'case' | 'document'
+  onChange: (mode: 'case' | 'document') => void
+  disabled?: boolean
+  status?: ReactNode
+}) {
+  return <div className="agent-mode-bar">
+    <div className="agent-mode-switch" role="tablist" aria-label="助手工作模式">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'case'}
+        className={mode === 'case' ? 'active' : ''}
+        disabled={disabled}
+        onClick={() => onChange('case')}
+      >
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2.6 3.9h10.8v6.6H8.3L5.1 13v-2.5H2.6V3.9z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+        案件沟通
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'document'}
+        className={mode === 'document' ? 'active' : ''}
+        disabled={disabled}
+        onClick={() => onChange('document')}
+      >
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.6 2.6h6.1l2.7 2.7v8.1H3.6V2.6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M9.4 2.7v2.8h2.9M5.9 8.6h4.2M5.9 11h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+        文书起草
+      </button>
+    </div>
+    {status ? <div className="agent-mode-status">{status}</div> : null}
+  </div>
+}
+
+export function VoiceInputButton({ disabled, onText, onError, onBusy, iconOnly }: {
   disabled?: boolean; onText: (text: string) => void; onError: (error: string) => void; onBusy?: (busy: boolean) => void
+  iconOnly?: boolean
 }) {
   const [phase, setPhase] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const active = useRef(true)
@@ -183,6 +294,6 @@ export function VoiceInputButton({ disabled, onText, onError, onBusy }: {
       <rect x="7" y="2" width="6" height="10" rx="3" stroke="currentColor" strokeWidth="1.5" />
       <path d="M4 9a6 6 0 0 0 12 0M10 15v3m-3 0h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
-    {phase === 'recording' ? '结束录音' : phase === 'transcribing' ? '处理中…' : '语音'}
+    {iconOnly ? null : phase === 'recording' ? '结束录音' : phase === 'transcribing' ? '处理中…' : '语音'}
   </button>
 }

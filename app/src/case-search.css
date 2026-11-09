@@ -1,0 +1,309 @@
+/* 外部案例检索面板：输入框、权重滑块与结果卡片的视觉规范。 */
+
+.case-search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.case-search-panel .insight-card-hint {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+
+.case-search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.case-search-fields {
+  display: grid;
+  /* 固定两列：法院、法官并排铺满整行，避免 auto-fit 生成多余空列留下右侧空白 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+
+.case-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.case-search-field-keyword {
+  grid-column: 1 / -1;
+}
+
+.case-search-label {
+  color: var(--text);
+  font-size: var(--font-micro);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.case-search-field input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: var(--font-caption);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.case-search-field input::placeholder {
+  color: var(--text-subtle);
+}
+
+.case-search-field input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px rgba(63, 99, 243, 0.12);
+}
+
+.case-search-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.case-search-input-wrap input {
+  padding-left: 30px;
+}
+
+.case-search-input-icon {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--text-subtle);
+}
+
+.case-search-input-wrap:focus-within .case-search-input-icon {
+  color: var(--accent);
+}
+
+/* 权重设置：独立浅底分组，滑块进度与数值徽章同步。 */
+.case-search-weights {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+}
+
+.case-search-weights-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.case-search-weights-head strong {
+  color: var(--text-h);
+  font-size: var(--font-caption);
+}
+
+.case-search-weights-head span {
+  color: var(--text-subtle);
+  font-size: var(--font-micro);
+}
+
+.case-search-weight {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.case-search-weight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.case-search-weight-row label {
+  color: var(--text);
+  font-size: var(--font-caption);
+}
+
+.case-search-weight-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: var(--font-micro);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.case-search-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.case-search-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--range-progress, 40%)),
+    rgba(99, 110, 150, 0.18);
+}
+
+.case-search-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--panel-bg);
+  box-shadow: 0 1px 4px rgba(63, 99, 243, 0.32);
+}
+
+.case-search-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(99, 110, 150, 0.18);
+}
+
+.case-search-range::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.case-search-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--panel-bg);
+}
+
+.case-search-range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.case-search-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-subtle);
+  font-size: var(--font-micro);
+}
+
+.case-search-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.case-search-tip {
+  color: var(--text-subtle);
+  font-size: var(--font-micro);
+  line-height: 1.5;
+}
+
+.case-search-actions .primary-button {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-size: var(--font-caption);
+}
+
+.case-search-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+
+.case-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.case-search-result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.case-search-result-head strong {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.case-search-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.case-search-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: var(--font-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.case-search-result-meta {
+  color: var(--text);
+  font-size: var(--font-micro);
+  line-height: 1.5;
+}
+
+.case-search-result p {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.65;
+}
+
+.case-search-result-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 窄面板下检索条件自动降为单列（auto-fit 按容器宽度换行）。 */

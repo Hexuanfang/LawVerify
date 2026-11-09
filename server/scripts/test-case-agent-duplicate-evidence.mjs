@@ -53,7 +53,7 @@ async function waitReady() {
   throw new Error('Agent did not finish')
 }
 
-test('重复文件被标记并跳过理解，不阻断整案梳理', async t => {
+test('重复文件沿用原件的理解结果，不重复扣费也不阻断整案梳理', async t => {
   t.after(() => { globalThis.fetch = originalFetch; rmSync(directory, { recursive: true, force: true }) })
   await runWithWorkspaceAccount('duplicate@test.invalid', async () => {
     rememberCaseAgentCredential('test-only')
@@ -81,13 +81,17 @@ test('重复文件被标记并跳过理解，不阻断整案梳理', async t => 
     const task = state.cases[0].agent.task
     assert.equal(task.status, 'ready', '重复文件不应让整案梳理失败')
     assert.deepEqual(task.duplicateEvidenceIds, [duplicate.id])
-    assert.match(task.stage, /已排除 1 份重复文件/)
+    assert.match(task.stage, /1 份内容重复的材料已沿用原件理解结果/)
     const summaryCharges = calls.filter(c => c.url.endsWith('/points/consume') && c.body.actionType === 'evidence_summary')
     assert.equal(summaryCharges.length, 0, '重复文件不应触发材料理解扣费')
-    const skipped = state.evidences.find(e => e.id === duplicate.id)
-    assert.equal(skipped.summaryStatus, 'idle', '重复文件不应被送去理解')
+    const inherited = state.evidences.find(e => e.id === duplicate.id)
+    assert.equal(inherited.summaryStatus, 'ready', '重复文件应沿用原件的理解结果')
+    assert.equal(inherited.summaryText, '存在转账记录')
+    const inheritedInsight = state.evidenceInsights.find(i => i.evidenceId === duplicate.id)
+    assert.ok(inheritedInsight, '重复文件应有独立的理解记录')
+    assert.equal(inheritedInsight.status, 'ready')
     const memory = state.caseContextMemories.find(m => m.caseId === 'duplicate-case')
     assert.ok(memory)
-    assert.equal(memory.evidenceInsightIds.length, 1, '重复文件不应进入案件记忆')
+    assert.equal(memory.evidenceInsightIds.length, 2, '重复文件也要进入案件记忆，否则用户以为加了新证据')
   })
 })

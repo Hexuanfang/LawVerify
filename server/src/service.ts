@@ -308,6 +308,79 @@ function isEvidenceNoContentFailure(reason: string | undefined | null) {
   return Boolean(reason?.includes('尚无可供模型理解的文本或图片原件'))
 }
 
+// 重复材料不重复调用模型：把原件已经得出的理解结果复制一份过来。
+// 不复制的话这份材料在案件记忆里没有任何记忆，等于用户新加的证据没有生效。
+async function inheritDuplicateInsight(workspace: WorkspaceState, material: Evidence) {
+  // 用户已经强制单独理解过的重复件保留自己的理解结果，不再被原件覆盖。
+  const ownInsight = getLatestEvidenceInsight(workspace, material.id)
+  if (ownInsight?.status === 'ready') {
+    return
+  }
+
+  const original = resolveDuplicateOriginal(workspace, material)
+  if (!original) {
+    return
+  }
+
+  const originalInsight = getLatestEvidenceInsight(workspace, original.id)
+  if (!originalInsight || originalInsight.status !== 'ready') {
+    // 原件还没理解完成：这份材料等下一轮再继承。
+    return
+  }
+
+  const nextEvidence: Evidence = {
+    ...material,
+    // 原件与重复件指向同一份字节，原件的解析结果可以直接沿用；
+    // 逐页页图不复制：那是原件的视觉理解输入，重复件不重复做视觉理解。
+    ocrText: original.ocrText,
+    sourceMimeType: original.sourceMimeType,
+    pages: original.pages,
+    previewDataUrl: original.previewDataUrl,
+    summaryStatus: 'ready',
+    summaryText: original.summaryText,
+    summaryUpdatedAt: original.summaryUpdatedAt,
+    summaryError: undefined,
+  }
+  nextEvidence.summaryCacheKey = computeEvidenceSummaryCacheKey(nextEvidence)
+
+  const nextInsight: EvidenceInsight = {
+    ...originalInsight,
+    id: createId('evidence-insight'),
+    evidenceId: material.id,
+    version: 1,
+    updatedAt: new Date().toISOString(),
+  }
+
+  await runExclusiveWorkspaceMutation(async () => {
+    const latest = await readWorkspace()
+    // 落库前再确认一次：期间用户可能已经强制单独理解过，不能用原件结果覆盖。
+    if (!latest.evidences.some((item) => item.id === material.id)) {
+      return
+    }
+    if (getLatestEvidenceInsight(latest, material.id)?.status === 'ready') {
+      return
+    }
+    latest.evidences = latest.evidences.map((item) => item.id === material.id ? nextEvidence : item)
+    upsertEvidenceInsight(latest, nextInsight)
+    await writeWorkspace(latest)
+  })
+}
+
+// 重复件可能指向另一份重复件：沿标记链找到最初的那份原件。
+function resolveDuplicateOriginal(workspace: WorkspaceState, material: Evidence) {
+  let current = material
+  const visited = new Set<string>([material.id])
+  while (current.duplicateOf) {
+    const original = workspace.evidences.find((item) => item.id === current.duplicateOf)
+    if (!original || visited.has(original.id)) {
+      return null
+    }
+    visited.add(original.id)
+    current = original
+  }
+  return current.id === material.id ? null : current
+}
+
 async function drainBackgroundEvidenceProcessingQueue() {
   try {
     while (backgroundEvidenceProcessingQueue.size) {
@@ -360,8 +433,16 @@ async function drainBackgroundEvidenceProcessingQueue() {
               if (!currentFolder || currentFolder.agent?.autoAnalyze === false) return { evidenceId, outcome: 'done', analyzed: false }
               const material = current.evidences.find(e => e.id === evidenceId)
               if (!material) return { evidenceId, outcome: 'done', analyzed: false }
-              // 重复文件只标记不理解，避免重复扣费并阻断整案梳理。
-              if (material.duplicateOf) return { evidenceId, outcome: 'duplicate', analyzed: false }
+              // 重复文件不重复调用模型：沿用原件的理解结果，避免重复扣费并阻断整案梳理。
+              // 用户强制单独理解过的重复件按已理解处理，不再继承原件。
+              if (material.duplicateOf) {
+                const ownInsight = getLatestEvidenceInsight(current, material.id)
+                if (ownInsight?.status === 'ready') {
+                  return { evidenceId, outcome: 'done', analyzed: false }
+                }
+                await inheritDuplicateInsight(current, material)
+                return { evidenceId, outcome: 'duplicate', analyzed: false }
+              }
               const run = async () => {
                 const result = await summarizeEvidence(evidenceId, { background: true })
                 if (result.workspace.evidences.find(e => e.id === evidenceId)?.summaryStatus === 'failed') {
@@ -401,6 +482,22 @@ async function drainBackgroundEvidenceProcessingQueue() {
               duplicateEvidenceIds.push(result.value.evidenceId)
             }
           }
+          // 重复材料若这一轮没能继承到原件的记忆（原件可能正在同时理解），收尾时再试一次。
+          const duplicateIds = outcomes
+            .filter((result) => result.ok)
+            .map((result) => result.value)
+            .filter((result) => result.outcome === 'duplicate')
+            .map((result) => result.evidenceId)
+          if (duplicateIds.length) {
+            const afterProcessing = await readWorkspace()
+            for (const duplicateId of duplicateIds) {
+              const material = afterProcessing.evidences.find((item) => item.id === duplicateId)
+              if (!material || getLatestEvidenceInsight(afterProcessing, duplicateId)) {
+                continue
+              }
+              await inheritDuplicateInsight(afterProcessing, material)
+            }
+          }
           // 新证据进来后，回头在超大材料里找与新证据相关的内容：已覆盖的块不会重做。
           const analyzedEvidenceIds = outcomes
             .filter((result) => result.ok)
@@ -415,7 +512,7 @@ async function drainBackgroundEvidenceProcessingQueue() {
           if (next?.revision === revision) {
             const notes: string[] = []
             if (skippedEvidenceIds.length) notes.push(`已跳过 ${skippedEvidenceIds.length} 份待解析材料`)
-            if (duplicateEvidenceIds.length) notes.push(`已排除 ${duplicateEvidenceIds.length} 份重复文件`)
+            if (duplicateEvidenceIds.length) notes.push(`${duplicateEvidenceIds.length} 份内容重复的材料已沿用原件理解结果`)
             next.evidenceIds = []
             next.skippedEvidenceIds = skippedEvidenceIds
             next.duplicateEvidenceIds = duplicateEvidenceIds
@@ -3401,7 +3498,7 @@ function ensureEvidenceInsightsForCase(
       continue
     }
 
-    // 重复文件不参与案件记忆，避免同一份内容被重复计算。
+    // 没有自己理解结果的重复文件不参与案件记忆，避免同一份内容被重复计算。
     if (evidence.duplicateOf) {
       continue
     }
@@ -3559,6 +3656,8 @@ async function buildCaseContextMemoryDraftWithLlm(
         number: evidence.number,
         name: evidence.name,
         type: evidence.type,
+        // 内容重复的材料与原件字节相同：事实与支持矩阵只按一份证据计算。
+        duplicateOf: evidence.duplicateOf ?? null,
         summary: insight?.summary ?? '',
         keyFacts: insight?.keyFacts ?? [],
         timelineEvents: insight?.timelineEvents ?? [],
@@ -3596,6 +3695,7 @@ async function buildCaseContextMemoryDraftWithLlm(
           '不要编造不存在的事实，不要把猜测写成结论。',
           '底稿和当事人单方陈述是主张或线索，不是已证实事实；证件仅核验身份资格。支持矩阵不得把底稿当作独立履行凭证。',
           '对照材料的 proofPurposes/proofLimitations/disputedPoints，围绕同一事项发现矛盾、证明缺口和待补强原件，不制造泛化争议。',
+          '标记了 duplicateOf 的材料与已有材料内容相同，属于同一份证据：事实与支持矩阵只计一份，不要当成两份独立证据。',
         ].join(' '),
       },
       {
@@ -4361,8 +4461,11 @@ function applyDuplicateMarks(workspace: WorkspaceState, caseId: string) {
     }
 
     const duplicateOf = duplicateById.get(item.id)
-    // 重复文件不进入理解流程，避免一直显示处理中。
-    const summaryStatus = duplicateOf && item.summaryStatus === 'processing' ? 'idle' : item.summaryStatus
+    // 重复文件不进入理解流程，避免一直显示处理中；
+    // 已经强制单独理解过的重复件保留自己的理解状态。
+    const ownInsight = getLatestEvidenceInsight(workspace, item.id)
+    const summaryStatus = duplicateOf && item.summaryStatus === 'processing' && ownInsight?.status !== 'ready'
+      ? 'idle' : item.summaryStatus
     if (duplicateOf === item.duplicateOf && summaryStatus === item.summaryStatus) {
       return item
     }
@@ -6446,6 +6549,15 @@ async function prepareEvidenceSummary(
 
   if (!evidence) {
     throw new Error('证据不存在。')
+  }
+
+  // 强制理解：用户明确要求单独理解这份材料，此后不再沿用原件的结果。
+  if (options.force && evidence.duplicateOf) {
+    workspace.evidences = workspace.evidences.map((item) => item.id === evidenceId
+      ? { ...item, duplicateOf: undefined }
+      : item)
+    evidence = workspace.evidences.find((item) => item.id === evidenceId) ?? evidence
+    await writeWorkspace(workspace)
   }
 
   // 应用原件解析补丁：材料内容变化时旧的摘要缓存作废。

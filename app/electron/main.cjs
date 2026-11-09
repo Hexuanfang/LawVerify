@@ -142,6 +142,15 @@ function primeAuthInputFocus(window) {
   }, 80)
 }
 
+// 窗口/任务栏图标：开发态从 public/ 取，打包时 vite 已把 public 复制进 dist/。
+function resolveAppIconPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'public', 'lawverify-icon.png'),
+    path.join(__dirname, '..', 'dist', 'lawverify-icon.png'),
+  ]
+  return candidates.find((candidate) => fs.existsSync(candidate))
+}
+
 function createWindow() {
   // 窗口必须贴合屏幕工作区：固定 1440×960 在小屏或高缩放下会超出屏幕，
   // 导致右侧与底部内容落在可视区之外被裁切。
@@ -156,6 +165,7 @@ function createWindow() {
     minWidth: Math.min(1080, workArea.width),
     minHeight: Math.min(720, workArea.height),
     title: '律师证据质证助手',
+    icon: resolveAppIconPath(),
     autoHideMenuBar: true,
     show: false,
     backgroundColor: '#f5f7fb',

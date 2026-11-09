@@ -96,6 +96,7 @@
                                 "package.json"
                             ],
                   "win":  {
+                              "icon":  "build/icon.ico",
                               "signAndEditExecutable":  false,
                               "signtoolOptions":  {
                                                       "signingHashAlgorithms":  [

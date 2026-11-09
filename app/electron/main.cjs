@@ -167,6 +167,8 @@ function createWindow() {
     title: '律师证据质证助手',
     icon: resolveAppIconPath(),
     autoHideMenuBar: true,
+    // 启动默认最大化：占满工作区但保留任务栏与标题栏，按 F11 可再切到全屏。
+    maximizable: true,
     show: false,
     backgroundColor: '#f5f7fb',
     webPreferences: {
@@ -177,6 +179,7 @@ function createWindow() {
   })
 
   window.once('ready-to-show', () => {
+    window.maximize()
     window.show()
     focusWindowContents(window)
     primeAuthInputFocus(window)
@@ -184,6 +187,13 @@ function createWindow() {
 
   window.on('restore', () => {
     focusWindowContents(window)
+  })
+
+  // F11 在全屏与窗口模式之间切换。
+  window.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'F11') return
+    event.preventDefault()
+    window.setFullScreen(!window.isFullScreen())
   })
 
   window.webContents.setWindowOpenHandler(({ url }) => {

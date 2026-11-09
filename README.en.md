@@ -167,7 +167,7 @@ npm --prefix app run verify:signature
 
 Artifacts are written to `app/release/`, with installers named `LawVerify-Setup-<version>.exe`. The root build script uses the current version and does not bump it automatically.
 
-`prepare:desktop` regenerates the bundled legal library's embedding index. It requires a working embedding API and may incur charges; do not delete legal source files to bypass failures. Verify actual signatures before commercial distribution. Currently `signAndEditExecutable=false`; the `-Signed` flag alone does not establish that artifacts are signed. Valid signatures do not guarantee removal of all SmartScreen warnings.
+`prepare:desktop` regenerates the bundled legal library's embedding index. It requires a working embedding API and may incur charges; do not delete legal source files to bypass failures. Verify actual signatures before commercial distribution. The default build is unsigned (`signExecutable=false`) but still writes the application icon and version metadata; `-Signed` fails outright when no certificate is available. Valid signatures do not guarantee removal of all SmartScreen warnings.
 
 ## Data and Security
 

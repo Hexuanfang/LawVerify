@@ -28,7 +28,7 @@ if (requireSignature) {
 if (args.includes('--check-signing')) process.exit(0)
 
 if (requireSignature) {
-  args.push('-c.win.signAndEditExecutable=true', '-c.forceCodeSigning=true')
+  args.push('-c.win.signExecutable=true', '-c.forceCodeSigning=true')
 }
 
 const result = spawnSync(process.execPath, [electronBuilderBin, ...args], {

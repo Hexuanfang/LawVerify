@@ -262,7 +262,7 @@ npm --prefix app run verify:signature
 
 若 `app/release` 被编辑器或杀软进程占用（表现为打包时报 `EBUSY`），构建脚本会自动改用临时输出目录 `app/release-temp` 完成打包，再把产物同步回 `app/release/`；关闭占用程序后重新打包即可恢复标准输出目录。
 
-内置法律库使用真实向量缓存，构建时校验原件指纹并复用匹配结果；法律原件变更后需配置可用 Embedding API 重新生成并导出缓存，可能产生费用，不可用空库或关键词索引替代。商业发行前必须实际验证签名。当前 `signAndEditExecutable=false`，`-Signed` 也不能单独保证产物已签名；有效签名不保证完全消除 SmartScreen 提示。
+内置法律库使用真实向量缓存，构建时校验原件指纹并复用匹配结果；法律原件变更后需配置可用 Embedding API 重新生成并导出缓存，可能产生费用，不可用空库或关键词索引替代。商业发行前必须实际验证签名。当前默认构建不签名（`signExecutable=false`，但仍会写入应用图标与版本信息），`-Signed` 缺少证书时直接失败；有效签名不保证完全消除 SmartScreen 提示。
 
 macOS 的双架构构建、签名、公证与验证流程见 [Mac 构建与发行](docs/mac-desktop-build.md)，下载完整性检查见 [发行下载验证](docs/download-release-verification.md)。
 

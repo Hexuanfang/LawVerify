@@ -42,6 +42,6 @@ After the script reports success, confirm the artifact exists and summarize:
 Expected build warnings (not failures — do not treat as errors):
 - Vite "chunks are larger than 500 kB" — benign.
 - `TRAE Sandbox Error: hit restricted` on `...\Windows\Recent\CustomDestinations\*.temp` — sandbox only blocks writing Windows "recent documents"; it happens after the exe is built and does not affect the artifact.
-- electron-builder `signAndEditExecutable is false` — code signing is handled separately; see `docs/windows-code-signing.md` when signing is requested.
+- electron-builder `signExecutable is false` — the build stays unsigned but still applies the app icon and version metadata; see `docs/windows-code-signing.md` when signing is requested.
 
 If the script throws (a step exits non-zero or the artifact is missing), report the failing `npm` step and the exit code, and stop — do not hand-patch around the failure.

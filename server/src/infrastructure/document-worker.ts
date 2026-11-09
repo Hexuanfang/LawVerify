@@ -1,6 +1,7 @@
 import * as mammoth from 'mammoth'
 import { PDFParse } from 'pdf-parse'
 import { readFile } from 'node:fs/promises'
+import { extractLegacyDocText, isLegacyDocFile } from './legacy-doc-text.js'
 
 let buffer = Buffer.alloc(0)
 let parser: PDFParse | undefined
@@ -23,7 +24,10 @@ process.on('message', async (message: unknown) => {
     await ready
     let result: unknown
     if (action === 'word') {
-      result = (await mammoth.extractRawText({ buffer })).value
+      // .docx 是 zip+mammoth；旧版 .doc 是 OLE2 二进制，只能自己按 MS-DOC 解析。
+      result = isLegacyDocFile(buffer)
+        ? extractLegacyDocText(buffer)
+        : (await mammoth.extractRawText({ buffer })).value
       if ((result as string).length > 8000000) throw new Error('Document text too large')
     } else if (action === 'info') {
       const info = await pdf().getInfo()

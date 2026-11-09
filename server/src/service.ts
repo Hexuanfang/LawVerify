@@ -2721,11 +2721,18 @@ async function extractEvidenceContentFromSourceAsset(
     }
   }
 
-  if (lowerName.endsWith('.docx')) {
-    const text = await extractWordText(asset.path ?? asset.buffer!)
-    return {
-      sourceMimeType: asset.mimeType,
-      ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
+  if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc')) {
+    try {
+      const text = await extractWordText(asset.path ?? asset.buffer!)
+      return {
+        sourceMimeType: asset.mimeType,
+        ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
+      }
+    } catch (error) {
+      // 旧版 .doc 抽不出正文时按「无可理解原件」处理：这份材料单独跳过，不拖累整案梳理。
+      throw new Error(
+        `${EVIDENCE_NO_CONTENT_REASON}旧版 Word 文件解析失败：${error instanceof Error ? error.message : '未知错误'}`,
+      )
     }
   }
 
@@ -8142,7 +8149,7 @@ async function extractKnowledgeUploadText(file: Express.Multer.File, resolvedFil
     }
   }
 
-  if (lowerName.endsWith('.docx')) {
+  if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc')) {
     try {
       const text = await extractWordText(file.buffer)
       return {
@@ -8153,16 +8160,16 @@ async function extractKnowledgeUploadText(file: Express.Multer.File, resolvedFil
       return {
         extractedText: '',
         extractionStatus: 'failed' as const,
-        extractionError: error instanceof Error ? error.message : 'DOCX 正文抽取失败。',
+        extractionError: error instanceof Error ? error.message : 'Word 正文抽取失败。',
       }
     }
   }
 
-  if (lowerName.endsWith('.doc') || lowerName.endsWith('.wps')) {
+  if (lowerName.endsWith('.wps')) {
     return {
       extractedText: '',
       extractionStatus: 'pending' as const,
-      extractionError: '旧版 Word/WPS 文件已上传，建议另存为 .docx 后再导入。',
+      extractionError: 'WPS 专有格式已上传，当前版本暂不支持抽取正文，建议另存为 .docx 后再导入。',
     }
   }
 

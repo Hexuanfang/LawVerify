@@ -27,6 +27,11 @@ export const CHUNK_MAX_CHARS = 800
 export const MAX_INDEXED_CHUNKS = 20000
 // 命中后带回的相邻块数量：命中块的前后各一块。
 export const NEIGHBOR_CHUNK_SIZE = 1
+// 命中块之间的分数门槛：与最高分同量级的才算相关内容。
+// 低于门槛的块不再纳入，块数随材料内容的重要性变化。
+export const DEFAULT_MIN_SCORE_RATIO = 0.25
+// 强相关块过少时的下限：至少理解这么多块，避免整份材料只落到一两个片段上。
+export const DEFAULT_MIN_RELEVANT_CHUNKS = 6
 
 const PAGE_MARKER = /-{2,}\s*第\s*(\d+)\s*\/\s*(\d+)\s*页\s*-{2,}/g
 
@@ -252,6 +257,8 @@ export function selectEvidenceChunksForUnderstanding(input: {
   maxChunks?: number
   neighborSize?: number
   excludeChunkIndexes?: number[]
+  minScoreRatio?: number
+  minChunks?: number
 }): EvidenceChunkSelection {
   const chunks = buildEvidenceChunks(input.text)
   const totalChars = input.text.length
@@ -267,18 +274,27 @@ export function selectEvidenceChunksForUnderstanding(input: {
   }
 
   const index = buildEvidenceChunkIndex(chunks)
-  const ranked = rankEvidenceChunks(index, input.queries).slice(0, Math.max(0, input.maxChunks ?? 64))
+  const maxChunks = Math.max(0, input.maxChunks ?? 64)
   const excluded = new Set(input.excludeChunkIndexes ?? [])
+  const allRanked = rankEvidenceChunks(index, input.queries)
+  // 已被覆盖的块不参与排序：门槛要相对「还没读过的最好命中」来定，
+  // 否则增量补齐会因为旧块分数更高而始终读不到新内容。
+  const ranked = allRanked.filter((item) => !excluded.has(item.chunkIndex)).slice(0, maxChunks)
 
   const maxChars = input.maxChars ?? 48000
   const neighborSize = input.neighborSize ?? NEIGHBOR_CHUNK_SIZE
   const selectedIndexes = new Set<number>()
   let coveredChars = 0
+  const relevant = pickRelevantChunkIndexes(ranked, {
+    minScoreRatio: input.minScoreRatio ?? DEFAULT_MIN_SCORE_RATIO,
+    minChunks: input.minChunks ?? DEFAULT_MIN_RELEVANT_CHUNKS,
+  })
   // 检索词全部落空时按均匀间隔兜底采样：检索依赖语言与用词，
   // 均匀覆盖不依赖，遇到英文或与争点无关的材料时仍然能读到有代表性的内容。
-  const candidates = ranked.length
-    ? ranked.map((item) => item.chunkIndex)
-    : spreadChunkIndexes(chunks.length, input.maxChunks ?? 64)
+  // 命中块都已被覆盖时不再兜底采样：增量补齐只补没读过的内容。
+  const candidates = relevant.length
+    ? relevant
+    : allRanked.length ? [] : spreadChunkIndexes(chunks.length, maxChunks)
   // 按命中分数从高到低取块，命中块连同前后相邻块一起带走，顺序按原文排列。
   for (const chunkIndex of candidates) {
     for (const neighbor of expandChunkIndexes([chunkIndex], chunks.length, neighborSize)) {
@@ -304,6 +320,29 @@ export function selectEvidenceChunksForUnderstanding(input: {
     coveredChars,
     coveredChunkIndexes: orderedIndexes,
   }
+}
+
+// 按相关度挑选要理解的块：只保留与最高分同量级的命中块。
+// 块数随内容重要性变化，不为了凑满字符预算把弱相关内容也送进模型。
+function pickRelevantChunkIndexes(
+  ranked: Array<{ chunkIndex: number; score: number }>,
+  options: { minScoreRatio: number; minChunks: number },
+) {
+  if (!ranked.length) {
+    return []
+  }
+
+  const topScore = ranked[0].score
+  const strong = topScore > 0
+    ? ranked.filter((item) => item.score >= topScore * options.minScoreRatio)
+    : ranked
+  if (strong.length >= options.minChunks) {
+    return strong.map((item) => item.chunkIndex)
+  }
+
+  // 强相关块不足下限时按排名补齐：宁可多读一点，也不要整份材料只理解一两个片段。
+  const take = Math.min(ranked.length, Math.max(options.minChunks, strong.length))
+  return ranked.slice(0, take).map((item) => item.chunkIndex)
 }
 
 // 均匀间隔取块：检索落空时保证整份材料仍有代表性的内容被理解。

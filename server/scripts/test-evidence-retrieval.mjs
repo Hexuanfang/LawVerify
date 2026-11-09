@@ -124,3 +124,38 @@ test('检索词完全落空时按均匀间隔兜底采样，不放弃整份材�
   assert.ok(selection.coveredChunks > 0, '检索落空时也应覆盖一部分内容')
   assert.ok(selection.chunks.some((chunk) => chunk.content.includes('Clause')), '兜底采样应取到原文内容')
 })
+
+test('块数按命中重要度收敛：弱相关内容不再挤占理解预算', () => {
+  const weak = '双方就合同项下的履行方式达成一致，并记录了当天的会议安排。'.repeat(200)
+  const strong = '本案争议焦点为借款是否清偿以及利息计算标准。'
+  const text = [weak, strong, weak].join('\n')
+
+  const strict = selectEvidenceChunksForUnderstanding({
+    text,
+    queries: ['争议焦点', '合同'],
+    maxChars: 40000,
+    maxChunks: 64,
+    minScoreRatio: 0.9,
+    minChunks: 1,
+  })
+  const loose = selectEvidenceChunksForUnderstanding({
+    text,
+    queries: ['争议焦点', '合同'],
+    maxChars: 40000,
+    maxChunks: 64,
+    minScoreRatio: 0,
+    minChunks: 1,
+  })
+  const padded = selectEvidenceChunksForUnderstanding({
+    text,
+    queries: ['争议焦点', '合同'],
+    maxChars: 40000,
+    maxChunks: 64,
+    minScoreRatio: 0.9,
+    minChunks: 4,
+  })
+
+  assert.ok(strict.chunks.some((chunk) => chunk.content.includes('争议焦点')), '强相关块必须被选中')
+  assert.ok(strict.coveredChunks < loose.coveredChunks, '高门槛下覆盖的块应明显更少')
+  assert.ok(padded.coveredChunks > strict.coveredChunks, '强相关块不足下限时按排名补齐')
+})

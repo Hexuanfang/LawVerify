@@ -4099,8 +4099,13 @@ async function understandEvidenceWithRetrieval(
   const selection = selectEvidenceChunksForUnderstanding({
     text: meaningfulText,
     queries: searchQueries,
-    maxChars: 48000,
+    // 选中的内容不超过单次调用上限（预留块间分隔符开销）：
+    // 这样一份超大材料一次模型调用就能完成理解。
+    maxChars: Math.max(4000, env.EVIDENCE_LLM_SINGLE_CALL_CHARS - 1000),
     maxChunks: 64,
+    // 块数按命中重要度收敛：弱相关内容不再占用预算，理解结果不会被无关片段稀释。
+    minScoreRatio: env.EVIDENCE_RETRIEVAL_MIN_SCORE_RATIO,
+    minChunks: env.EVIDENCE_RETRIEVAL_MIN_CHUNKS,
     excludeChunkIndexes: existingCoverage?.coveredChunkIndexes ?? [],
   })
 
@@ -4142,22 +4147,25 @@ async function understandEvidenceTextWithLlm(
   meaningfulText: string,
   options: { skipVision?: boolean } = {},
 ) {
-  if (meaningfulText.length > 12000) {
+  // 单次调用能覆盖的正文长度：检索式理解选中的内容通常在这个量级内，
+  // 一次读完比切块再汇总少几次模型调用，是大体量材料最主要的耗时来源。
+  const singleCallLimit = Math.max(4000, env.EVIDENCE_LLM_SINGLE_CALL_CHARS)
+  if (meaningfulText.length > singleCallLimit) {
+    const chunkStep = Math.max(1, Math.floor(singleCallLimit * 0.875))
     const chunks: string[] = []
-    for (let offset = 0; offset < meaningfulText.length; offset += 10000) {
-      chunks.push(meaningfulText.slice(offset, offset + 12000))
+    for (let offset = 0; offset < meaningfulText.length; offset += chunkStep) {
+      chunks.push(meaningfulText.slice(offset, offset + singleCallLimit))
     }
     // 长文本分块同样改为限流并发，避免分块数多时等待时间成倍增加。
-    const chunkResults = await mapSettledWithConcurrency<string, EvidencePageInsightDraft>(
+    const chunkResults = await mapSettledWithConcurrency<string, EvidenceInsightDraft>(
       chunks,
       EVIDENCE_VISION_CONCURRENCY,
       async (text, index) => {
         const chunkEvidence = { ...evidence, ocrText: text, pageImageDataUrls: [], previewDataUrl: undefined, sourceDataUrl: undefined }
-        const draft = await buildEvidenceInsightDraftWithLlm(chunkEvidence, [])
-        return { ...draft, pageNumber: index + 1 }
+        return buildEvidenceInsightDraftWithLlm(chunkEvidence, [])
       },
     )
-    const drafts: EvidencePageInsightDraft[] = []
+    const drafts: EvidenceInsightDraft[] = []
     const failedChunks: number[] = []
     for (const [index, result] of chunkResults.entries()) {
       if (!result.ok) {
@@ -4170,13 +4178,20 @@ async function understandEvidenceTextWithLlm(
     if (!drafts.length) {
       throw new Error('长文本分段理解失败，且没有可用文本可回退。')
     }
+    if (drafts.length === 1) {
+      // 只有一段时不必再汇总一次模型调用。
+      const only = withFailedPagesNote(drafts[0], failedChunks)
+      return { ...only, keyExcerpts: only.keyExcerpts?.map(({ pageNumber: _page, ...excerpt }) => excerpt),
+        sourceFragmentIds: fragments.map(f => f.id) }
+    }
+    const pageDrafts: EvidencePageInsightDraft[] = drafts.map((draft, index) => ({ ...draft, pageNumber: index + 1 }))
     const fallback = buildFallbackEvidenceInsightDraft(evidence, fragments)
     let merged: EvidenceInsightDraft
     try {
-      merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', drafts, fallback)
+      merged = await aggregateEvidencePageInsightsWithLlm(evidence, fragments, '', pageDrafts, fallback)
     } catch {
       // 汇总失败退回逐段结果，不让整份材料因汇总失败而作废。
-      merged = mergeEvidencePageInsightDrafts(drafts, fallback)
+      merged = mergeEvidencePageInsightDrafts(pageDrafts, fallback)
     }
     const noted = withFailedPagesNote(merged, failedChunks)
     return { ...noted, keyExcerpts: noted.keyExcerpts?.map(({ pageNumber: _page, ...excerpt }) => excerpt),

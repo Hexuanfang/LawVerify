@@ -82,6 +82,14 @@ const envSchema = z.object({
   EVIDENCE_VISION_PAGE_LIMIT: z.coerce.number().int().positive().default(10),
   // 超过该页数的 PDF 改走检索式理解：先建块级索引，再只理解被检索命中的内容块。
   EVIDENCE_RETRIEVAL_PAGE_THRESHOLD: z.coerce.number().int().positive().default(500),
+  // 单次模型调用能覆盖的正文长度：检索式理解选中的内容超过这个量才会切块再汇总。
+  // 调大更完整但每份材料多几次模型调用，调小更快但覆盖率更低。
+  EVIDENCE_LLM_SINGLE_CALL_CHARS: z.coerce.number().int().positive().default(20000),
+  // 检索式理解的命中门槛：分数低于最高分这个比例的块不再送进模型。
+  // 块数按内容重要性动态收敛，不再为了凑满字符预算把弱相关内容也算进去。
+  EVIDENCE_RETRIEVAL_MIN_SCORE_RATIO: z.coerce.number().min(0).max(1).default(0.25),
+  // 强相关块不足这个数量时按排名补齐，避免整份材料只理解一两个片段。
+  EVIDENCE_RETRIEVAL_MIN_CHUNKS: z.coerce.number().int().positive().default(6),
   // 材料理解阶段对模型的全局并发上限：逐页理解与材料级并发共享同一配额，
   // 避免并发叠加后请求过密被供应商限流，导致材料理解失败。
   EVIDENCE_UNDERSTANDING_LLM_CONCURRENCY: z.coerce.number().int().positive().default(6),

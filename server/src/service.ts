@@ -401,7 +401,10 @@ async function drainBackgroundEvidenceProcessingQueue() {
         // 若每次都重扫全部材料，批次一多就会退化成材料数乘批次数次读写。
         const pendingEvidenceIds = task.evidenceIds.filter((evidenceId) => {
           const material = initial.evidences.find((item) => item.id === evidenceId)
-          return material && material.summaryStatus !== 'ready' && material.summaryStatus !== 'failed'
+          // 非文档材料（压缩包、镜像等）没有可理解内容，不进理解流程，
+          // 否则它们会以「待解析材料」的形式堆满排除提示。
+          return material && material.type !== 'other'
+            && material.summaryStatus !== 'ready' && material.summaryStatus !== 'failed'
         })
         if (!pendingEvidenceIds.length) {
           // 没有待理解的材料：收尾并把队列清空，等记忆重建完成再报「已更新」。
@@ -3503,6 +3506,11 @@ function ensureEvidenceInsightsForCase(
       continue
     }
 
+    // 非文档材料无法进入核验链，不参与案件记忆。
+    if (evidence.type === 'other') {
+      continue
+    }
+
     const fallbackDraft = buildFallbackEvidenceInsightDraft(evidence, getEvidenceFragmentsForEvidence(workspace, evidence.id))
     const nextInsight: EvidenceInsight = {
       id: existing?.id ?? createId('evidence-insight'),
@@ -3650,7 +3658,8 @@ async function buildCaseContextMemoryDraftWithLlm(
   const promptPayload = {
     caseName: caseFolder.name,
     caseDescription: caseFolder.description,
-    evidences: evidences.map((evidence) => {
+    // 非文档材料无法进入核验链，不送进案件记忆，避免占位内容干扰梳理。
+    evidences: evidences.filter((evidence) => evidence.type !== 'other').map((evidence) => {
       const insight = insights.find((item) => item.evidenceId === evidence.id)
       return {
         number: evidence.number,
@@ -6171,7 +6180,9 @@ export async function rebuildCaseMemory(caseId: string) {
     throw new Error('当前案件尚未链接本地材料，无法建立案件记忆。')
   }
 
-  markCaseAgentQueued(caseFolder, caseEvidences.filter(e => e.summaryStatus !== 'ready').map(e => e.id))
+  markCaseAgentQueued(caseFolder, caseEvidences
+    .filter(e => e.type !== 'other' && e.summaryStatus !== 'ready')
+    .map(e => e.id))
   await writeWorkspace(workspace)
   queueBackgroundEvidenceProcessing(caseId, [])
   return { workspace }
@@ -6235,10 +6246,21 @@ export async function importEvidences(payload: EvidenceImportPayload) {
   const created: typeof workspace.evidences = []
   const touchedEvidenceIds = new Set<string>()
   const maxEvidenceNumber = caseEvidences.reduce((max, item) => {
-    const matched = item.number.match(/\d+/)
+    // 附件编号（X01）不参与证据序列计算，否则会凭空多跳号。
+    const matched = item.number.match(/^E(\d+)$/)
     return Math.max(max, matched ? Number(matched[0]) : 0)
   }, 0)
   let nextEvidenceNumber = maxEvidenceNumber
+  // 无法进入核验链的材料（其它类型）单独编号，不占用证据序列：
+  // 证据编号要能一一对应到论证里引用的材料，附件不该挤在里面。
+  const maxAttachmentNumber = caseEvidences.reduce((max, item) => {
+    if (!item.number.startsWith('X')) {
+      return max
+    }
+    const matched = item.number.match(/\d+/)
+    return Math.max(max, matched ? Number(matched[0]) : 0)
+  }, 0)
+  let nextAttachmentNumber = maxAttachmentNumber
 
   for (const rawFile of sortedFiles) {
     const file = normalizeImportedEvidenceFile(rawFile)
@@ -6306,7 +6328,13 @@ export async function importEvidences(payload: EvidenceImportPayload) {
       continue
     }
 
-    nextEvidenceNumber += 1
+    // 其它类型的材料无法进入核验链，单独用 X 编号，不占用证据序列。
+    const isAttachment = file.type === 'other'
+    if (isAttachment) {
+      nextAttachmentNumber += 1
+    } else {
+      nextEvidenceNumber += 1
+    }
     const nextEvidence = {
       id: createId('evidence'),
       contentHash: file.contentHash,
@@ -6314,7 +6342,9 @@ export async function importEvidences(payload: EvidenceImportPayload) {
       directoryId: file.directoryId,
       sourceNumber: evidenceSourceNumber(file.relativePath ?? file.fileName),
       caseId: payload.caseId,
-      number: `E${String(nextEvidenceNumber).padStart(2, '0')}`,
+      number: isAttachment
+        ? `X${String(nextAttachmentNumber).padStart(2, '0')}`
+        : `E${String(nextEvidenceNumber).padStart(2, '0')}`,
       name: file.name.trim() || buildNormalizedEvidenceName(file.fileName, file.relativePath),
       type: file.type,
       fileName: file.fileName,
@@ -6356,9 +6386,13 @@ export async function importEvidences(payload: EvidenceImportPayload) {
   }
   if (processInBackground) {
     const folder = workspace.cases.find(c => c.id === caseFolder.id)!
-    if (touchedEvidenceIds.size) markCaseAgentQueued(folder, Array.from(touchedEvidenceIds))
+    // 非文档材料（压缩包、镜像等）没有可理解内容，不排队等待理解，
+    // 也不计入「待解析材料」的排除提示。
+    const queueEvidenceIds = Array.from(touchedEvidenceIds).filter((evidenceId) =>
+      workspace.evidences.find((item) => item.id === evidenceId)?.type !== 'other')
+    if (queueEvidenceIds.length) markCaseAgentQueued(folder, queueEvidenceIds)
     await writeWorkspace(workspace)
-    if (touchedEvidenceIds.size) queueBackgroundEvidenceProcessing(caseFolder.id, Array.from(touchedEvidenceIds))
+    if (queueEvidenceIds.length) queueBackgroundEvidenceProcessing(caseFolder.id, queueEvidenceIds)
     return { workspace, created }
   }
 
@@ -7602,6 +7636,8 @@ export async function autoLinkCertificate(
     }
 
     const caseEvidences = workspace.evidences.filter((item) => item.caseId === certificate.caseId)
+    // 其它类型的材料（附件）没有可核验内容，不进入联动候选。
+    const linkableEvidences = caseEvidences.filter((item) => item.type !== 'other')
     const caseFolder = workspace.cases.find((item) => item.id === certificate.caseId) ?? null
     reportProgress('正在梳理案件背景、争议焦点与证据薄弱点')
     const caseContextMemory = caseFolder && caseEvidences.length
@@ -7612,7 +7648,7 @@ export async function autoLinkCertificate(
     const analyses = await analyzeCertificateAutoLinksWithLlm(
       workspace,
       certificate,
-      caseEvidences,
+      linkableEvidences,
       caseContextMemory,
       reportProgress,
     )
@@ -7620,14 +7656,14 @@ export async function autoLinkCertificate(
 
     // 争议焦点在整理过程中才逐步明确：拿到焦点后对超大材料再做一次增量检索与理解。
     reportProgress('正在按争议焦点补齐超大材料的理解')
-    await enrichRetrievalLimitedInsights(workspace, caseEvidences, collectFocusQueriesFromAnalyses(analyses))
+    await enrichRetrievalLimitedInsights(workspace, linkableEvidences, collectFocusQueriesFromAnalyses(analyses))
     throwIfLinkageAborted(signal)
 
     // 补齐后的理解结果写回了工作区，联动要基于最新材料记忆来做。
     const linkageWorkspace = await readWorkspace()
 
     reportProgress('正在整理证据与关键句子的证明关系')
-    const evidenceLinkedCertificate = attachAutoEvidenceLinksToCertificateWithLlm(linkageWorkspace, certificate, caseEvidences, analyses)
+    const evidenceLinkedCertificate = attachAutoEvidenceLinksToCertificateWithLlm(linkageWorkspace, certificate, linkableEvidences, analyses)
     throwIfLinkageAborted(signal)
     reportProgress('正在核验争议对应的法律依据')
     const statuteLinkedCertificate = await attachAutoStatuteReferencesToCertificateWithLlm(

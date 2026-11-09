@@ -50,6 +50,8 @@ export interface CaseAgentState {
     evidenceIds: string[]
     skippedEvidenceIds?: string[]
     duplicateEvidenceIds?: string[]
+    // 本轮梳理的开始时间：前端据此估算剩余时间。
+    startedAt?: string
     updatedAt: string
     error?: string
   }

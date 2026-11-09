@@ -351,7 +351,7 @@ export interface CasePositionDraft {
 export interface CaseAgentState {
   autoAnalyze?: boolean
   position?: CasePositionDraft & { version: number; confirmedAt: string }
-  task?: { revision: number; status: 'queued' | 'processing' | 'ready' | 'failed'; stage: string; error?: string; evidenceIds?: string[]; skippedEvidenceIds?: string[]; duplicateEvidenceIds?: string[] }
+  task?: { revision: number; status: 'queued' | 'processing' | 'ready' | 'failed'; stage: string; error?: string; evidenceIds?: string[]; skippedEvidenceIds?: string[]; duplicateEvidenceIds?: string[]; startedAt?: string }
   messages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }>
   strategy?: {
     inputKey: string

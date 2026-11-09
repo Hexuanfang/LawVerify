@@ -308,6 +308,16 @@ function isEvidenceNoContentFailure(reason: string | undefined | null) {
   return Boolean(reason?.includes('尚无可供模型理解的文本或图片原件'))
 }
 
+// 排除记录只反映梳理当时的状态：材料后来补齐了文本或已理解成功，就不再算「未完成 OCR / 解析」。
+function filterStaleSkippedEvidenceIds(workspace: WorkspaceState, skippedIds: string[] | undefined) {
+  return (skippedIds ?? []).filter((evidenceId) => {
+    const material = workspace.evidences.find((item) => item.id === evidenceId)
+    if (!material) return false
+    if (material.summaryStatus === 'ready' || material.summaryStatus === 'failed') return false
+    return !getMeaningfulEvidenceText(material.ocrText)
+  })
+}
+
 // 重复材料不重复调用模型：把原件已经得出的理解结果复制一份过来。
 // 不复制的话这份材料在案件记忆里没有任何记忆，等于用户新加的证据没有生效。
 async function inheritDuplicateInsight(workspace: WorkspaceState, material: Evidence) {
@@ -411,6 +421,9 @@ async function drainBackgroundEvidenceProcessingQueue() {
           task.status = 'processing'
           task.stage = '正在整理案件记忆'
           task.evidenceIds = []
+          // 材料后来补齐了 OCR 文本或已理解成功：历史遗留的「未完成 OCR / 解析」排除记录要清掉，
+          // 否则提示会一直挂在案件助手里。
+          task.skippedEvidenceIds = filterStaleSkippedEvidenceIds(initial, task.skippedEvidenceIds)
           task.updatedAt = new Date().toISOString()
           await writeWorkspace(initial)
           scheduleCaseMemoryRebuild(caseId, revision, [])
@@ -5923,11 +5936,17 @@ export async function bootstrap() {
 function markCaseAgentQueued(folder: CaseFolder, evidenceIds: string[]) {
   folder.agent ??= { autoAnalyze: true }
   const previous = folder.agent.task
+  const now = new Date().toISOString()
   folder.agent.task = {
     revision: (previous?.revision ?? 0) + 1,
     status: 'queued', stage: '正在梳理案件',
     evidenceIds: [...new Set([...(previous?.evidenceIds ?? []), ...evidenceIds])],
-    updatedAt: new Date().toISOString(),
+    // 本轮梳理的起点：前端按已完成的平均单份耗时估算剩余时间。
+    // 上一轮还没跑完就继续追加材料时沿用原起点：工作量是连续的，计时不该重置。
+    startedAt: previous && ['queued', 'processing'].includes(previous.status)
+      ? (previous.startedAt ?? now)
+      : now,
+    updatedAt: now,
   }
 }
 

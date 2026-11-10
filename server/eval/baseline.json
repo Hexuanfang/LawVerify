@@ -1,0 +1,11 @@
+{
+  "generatedAt": "2026-11-10T09:25:15.149Z",
+  "corpus": "synthetic",
+  "metrics": {
+    "recall_at_5": 1,
+    "gating_accuracy": 1,
+    "grounded_rate": 1,
+    "numbering_accuracy": 1,
+    "parse_success_rate": 1
+  }
+}

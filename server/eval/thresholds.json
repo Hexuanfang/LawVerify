@@ -1,0 +1,13 @@
+{
+  "offline": {
+    "recall_at_5": 0.8,
+    "gating_accuracy": 0.9,
+    "grounded_rate": 0.95,
+    "numbering_accuracy": 0.95,
+    "parse_success_rate": 1.0
+  },
+  "live": {
+    "link_accuracy": 0.8,
+    "wrong_link_rate_max": 0.1
+  }
+}

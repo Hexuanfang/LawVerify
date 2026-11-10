@@ -4590,7 +4590,9 @@
 }
 
 .knowledge-library-body-library .knowledge-context-combined {
-  max-height: 190px;
+  /* 卡片在检索列是弹性子项，默认会被压缩到只剩一两行，这里禁止收缩并放大到三倍高度。 */
+  flex: 0 0 auto;
+  max-height: 570px;
   overflow-y: auto;
 }
 

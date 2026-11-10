@@ -7,6 +7,17 @@ assert.deepEqual(parseReleaseFileName('LawVerify-Setup-0.1.56-unsigned.exe'), { 
 assert.deepEqual(parseReleaseFileName('LawVerify-Mac-0.1.52-arm64.dmg'), { version: '0.1.52', platform: 'darwin', arch: 'arm64', channel: 'stable' })
 assert.deepEqual(parseReleaseFileName('LawVerify-Mac-0.1.52-x64.dmg'), { version: '0.1.52', platform: 'darwin', arch: 'x64', channel: 'stable' })
 assert.deepEqual(parseReleaseFileName('LawVerify-Mac-0.1.52-arm64-unsigned.dmg'), { version: '0.1.52', platform: 'darwin', arch: 'arm64', channel: 'test' })
+for (const arch of ['arm64', 'x64']) {
+  assert.deepEqual(parseReleaseFileName(`LawVerify-Mac-0.1.60-${arch}-signed-only.dmg`), {
+    version: '0.1.60', platform: 'darwin', arch, channel: 'test', signingStatus: 'signed',
+  })
+}
+assert.deepEqual(parseReleaseFileName('LAWVERIFY-MAC-0.1.60-ARM64-SIGNED-ONLY.DMG'), {
+  version: '0.1.60', platform: 'darwin', arch: 'arm64', channel: 'test', signingStatus: 'signed',
+})
+assert.equal(parseReleaseFileName('LawVerify-Mac-0.1.60-arm64-signed-only.zip'), null)
+assert.equal(parseReleaseFileName('LawVerify-Mac-0.1.60-unknown-signed-only.dmg'), null)
+assert.equal(parseReleaseFileName('../LawVerify-Mac-0.1.60-arm64-signed-only.dmg'), null)
 assert.equal(parseReleaseFileName('LawVerify-Mac-0.1.52-arm64.zip'), null)
 assert.equal(parseReleaseFileName('../LawVerify-Mac-0.1.52-arm64.dmg'), null)
 assert.equal(parseReleaseFileName('../LawVerify-Setup-0.1.56-unsigned.exe'), null)

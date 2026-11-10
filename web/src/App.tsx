@@ -104,6 +104,7 @@ interface ReleaseItem {
   version: string
   platform?: 'win32' | 'darwin'
   arch?: 'x64' | 'arm64'
+  signingStatus?: 'signed'
   channel: string
   sizeLabel: string
   publishedAt: string
@@ -961,7 +962,9 @@ function DownloadPage({ releases, releasesStatus }: { releases: ReleaseItem[]; r
                   {release.channel === 'test' ? (
                     <p className="dl-how dl-unsigned">
                       {release.platform === 'darwin'
-                        ? '未进行 Apple Developer ID 签名及公证，首次打开可能需要在系统设置的“隐私与安全性”中允许。'
+                        ? release.signingStatus === 'signed'
+                          ? '已进行 Apple Developer ID 签名，尚未完成 Apple 公证，首次打开可能需要在系统设置的“隐私与安全性”中允许。'
+                          : '未进行 Apple Developer ID 签名及公证，首次打开可能需要在系统设置的“隐私与安全性”中允许。'
                         : '未进行代码签名，Windows 可能显示未知发布者或 SmartScreen 提示。'}
                     </p>
                   ) : null}

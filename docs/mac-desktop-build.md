@@ -145,3 +145,15 @@ node --import tsx src/scripts/test-mac-download.ts --base https://lawagent.zhiji
 
 测试覆盖两套真实 DMG 的元数据、稳定更新隔离、文件长度、Range、
 校验文件及完整下载后的 SHA256。测试包开放下载不代表已完成 Apple 公证或 GUI 验收。
+
+### 已签名但未公证的安装包
+
+命名为 `LawVerify-Mac-<version>-<arm64|x64>-signed-only.dmg`，
+配套校验文件保留 `.dmg.sha256` 后缀。完整上传到服务端的 `app/release/`
+后，下载页自动按版本号显示各芯片的最新包，无需修改页面或重启服务。
+该命名属于测试通道，接口返回 `signingStatus: signed`，页面显示已签名、未公证，
+不会进入正式自动更新。同版本优先展示正式包，其次为已签名未公证包，再次为未签名包。
+服务器须部署支持 `signed-only` 的发布服务；旧服务会忽略该后缀。
+
+部署脚本 `scripts/deploy-platform-release.ps1` 当前只上传 Windows 安装包，
+Mac DMG 及校验文件需另行上传到同一发布目录。

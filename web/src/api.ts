@@ -270,6 +270,7 @@ export const api = {
         version: string
         platform?: 'win32' | 'darwin'
         arch?: 'x64' | 'arm64'
+        signingStatus?: 'signed'
         channel: string
         sizeLabel: string
         publishedAt: string

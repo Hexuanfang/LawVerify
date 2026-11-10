@@ -66,7 +66,10 @@ async function getLocalReleaseAssets(): Promise<LocalReleaseAsset[]> {
     return assets.sort((left, right) => {
       const a = left.version.split('.').map(Number)
       const b = right.version.split('.').map(Number)
+      const rank = (asset: LocalReleaseAsset) => asset.channel === 'stable' ? 2 : asset.signingStatus === 'signed' ? 1 : 0
       return b[0] - a[0] || b[1] - a[1] || b[2] - a[2]
+        || rank(right) - rank(left)
+        || Date.parse(right.publishedAt) - Date.parse(left.publishedAt)
     })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []

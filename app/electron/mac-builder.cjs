@@ -1,13 +1,19 @@
 const { build } = require('../package.json')
 
 const signed = process.env.LAWVERIFY_MAC_SIGNED === '1'
+const signedOnly = signed && process.env.LAWVERIFY_MAC_SIGNED_ONLY === '1'
+const notarized = signed && !signedOnly
+const suffix = signedOnly ? '-signed-only' : signed ? '' : '-unsigned'
 const { electronDist: _electronDist, win: _win, nsis: _nsis, ...shared } = build
 
 // Download the matching Darwin runtime instead of reusing the host's Electron.
 module.exports = {
   ...shared,
   extends: null,
-  directories: { ...shared.directories, output: signed ? 'release-mac' : 'release-mac-unsigned' },
+  directories: {
+    ...shared.directories,
+    output: signedOnly ? 'release-mac-signed-only' : signed ? 'release-mac' : 'release-mac-unsigned',
+  },
   forceCodeSigning: signed,
   files: [
     ...shared.files,
@@ -18,7 +24,7 @@ module.exports = {
     '!electron/export-*.cjs',
     '!electron/prepare-*.cjs',
     '!electron/*.ps1',
-    ...(signed ? ['!electron/mac-test-channel.json'] : []),
+    ...(notarized ? ['!electron/mac-test-channel.json'] : []),
   ],
   mac: {
     icon: 'build/icon.icns',
@@ -26,11 +32,11 @@ module.exports = {
       { target: 'dmg', arch: ['arm64', 'x64'] },
       { target: 'zip', arch: ['arm64', 'x64'] },
     ],
-    artifactName: `LawVerify-Mac-\${version}-\${arch}${signed ? '' : '-unsigned'}.\${ext}`,
+    artifactName: `LawVerify-Mac-\${version}-\${arch}${suffix}.\${ext}`,
     category: 'public.app-category.productivity',
     hardenedRuntime: signed,
     identity: signed ? undefined : '-',
-    notarize: signed,
+    notarize: notarized,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
     extendInfo: {

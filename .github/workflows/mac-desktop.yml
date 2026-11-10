@@ -10,6 +10,10 @@ on:
         description: Developer ID signed and Apple notarized release
         type: boolean
         default: false
+      signed_only:
+        description: Developer ID signed test package without notarization or validation
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,7 +30,7 @@ jobs:
           - runner: macos-15-intel
             arch: x64
     runs-on: ${{ matrix.runner }}
-    environment: ${{ inputs.signed && 'mac-signing' || 'mac-test' }}
+    environment: ${{ (inputs.signed || inputs.signed_only) && 'mac-signing' || 'mac-test' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -71,18 +75,20 @@ jobs:
           npm_config_fetch_retries: '2'
         run: npm ci --prefix app --no-audit --no-fund --foreground-scripts --loglevel info
       - name: Verify desktop account networking
+        if: ${{ !inputs.signed_only }}
         run: npm run test:account --prefix app
       - name: Verify Mac automatic update and rollback
+        if: ${{ !inputs.signed_only }}
         working-directory: app
         run: |
           node --test electron/test-mac-update.cjs electron/test-update-download.cjs electron/test-update-release.cjs electron/test-mac-platform.cjs electron/test-mac-stapler.cjs
           node electron/test-mac-update-native.cjs
       - name: Build unsigned test package
-        if: ${{ !inputs.signed }}
+        if: ${{ !inputs.signed && !inputs.signed_only }}
         working-directory: app
         run: npm run build:mac -- --arch ${{ matrix.arch }}
       - name: Build signed and notarized package
-        if: ${{ inputs.signed }}
+        if: ${{ inputs.signed && !inputs.signed_only }}
         working-directory: app
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -91,10 +97,18 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run build:mac:signed -- --arch ${{ matrix.arch }}
-      - name: Upload verified packages
+      - name: Build signed-only test package without validation
+        if: ${{ inputs.signed_only }}
+        timeout-minutes: 20
+        working-directory: app
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: npm run build:mac -- --signed-only --arch ${{ matrix.arch }}
+      - name: Upload packages and integrity reports
         uses: actions/upload-artifact@v4
         with:
-          name: LawVerify-Mac-${{ matrix.arch }}-${{ inputs.signed && 'signed' || 'unsigned' }}
+          name: LawVerify-Mac-${{ matrix.arch }}-${{ inputs.signed_only && 'signed-only' || inputs.signed && 'signed' || 'unsigned' }}
           if-no-files-found: error
           retention-days: 30
           path: |
@@ -102,3 +116,4 @@ jobs:
             app/release-mac*/*.zip
             app/release-mac*/*.sha256
             app/release-mac*/verification-*.json
+            app/release-mac*/build-report-*.json

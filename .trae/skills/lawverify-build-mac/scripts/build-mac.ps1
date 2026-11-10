@@ -1,5 +1,6 @@
 param(
   [switch]$Signed,
+  [switch]$SignedOnly,
   [switch]$Push,
   [switch]$KeepDownloads,
   [string]$Ref
@@ -22,6 +23,7 @@ $packageJsonPath = Join-Path $appRoot 'package.json'
 $remoteNames = @(& git remote)
 $remoteName = if ($remoteNames -contains 'origin') { 'origin' } elseif ($remoteNames -contains 'github') { 'github' } else { throw 'No origin or github remote configured.' }
 $workflowName = 'mac-desktop.yml'
+if ($Signed -and $SignedOnly) { throw 'Choose -Signed or -SignedOnly, not both.' }
 
 if (-not (Test-Path $packageJsonPath)) { throw "Desktop package.json not found: $packageJsonPath" }
 if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) { throw 'git not found on PATH.' }
@@ -29,9 +31,16 @@ if (-not (Get-Command 'gh' -ErrorAction SilentlyContinue)) { throw 'gh CLI not f
 
 function Invoke-Checked {
   param([Parameter(Mandatory = $true)][string]$Command, [string[]]$Args, [string]$WorkingDir = $repoRoot)
-  $output = & $Command @Args 2>&1 | ForEach-Object { "$_" }
-  if ($LASTEXITCODE -ne 0) {
-    throw "Command failed ($LASTEXITCODE): $Command $($Args -join ' ')`n$($output -join "`n")"
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $output = & $Command @Args 2>&1 | ForEach-Object { "$_" }
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  if ($exitCode -ne 0) {
+    throw "Command failed ($exitCode): $Command $($Args -join ' ')`n$($output -join "`n")"
   }
   return $output
 }
@@ -43,6 +52,7 @@ Write-Host ''
 Write-Host '== LawVerify Mac Build (GitHub Actions) ==' -ForegroundColor Cyan
 Write-Host "Version   : $version"
 Write-Host "Signed    : $Signed"
+Write-Host "SignedOnly: $SignedOnly"
 Write-Host "RepoRoot  : $repoRoot"
 Write-Host ''
 
@@ -101,9 +111,10 @@ if ($Push) {
 }
 
 # -- trigger ----------------------------------------------------------------
-$signedFlag = if ($Signed) { 'true' } else { 'false' }
+$signedFlag = if ($Signed -or $SignedOnly) { 'true' } else { 'false' }
 Write-Host "Triggering workflow $workflowName (signed=$signedFlag)..."
 $triggerArgs = @('workflow', 'run', $workflowName, '--repo', $repoSlug, '-f', "signed=$signedFlag")
+if ($SignedOnly) { $triggerArgs += @('-f', 'signed_only=true') }
 if ($Ref) { $triggerArgs += @('--ref', $Ref) }
 $trigger = Invoke-Checked 'gh' $triggerArgs
 Write-Host ($trigger -join "`n")
@@ -116,13 +127,13 @@ $runInfo = (Invoke-Checked 'gh' $listArgs | Out-String | ConvertFrom-Json)
 if (-not $runInfo -or -not $runInfo.databaseId) { throw 'Could not find the triggered workflow run.' }
 $runId = $runInfo.databaseId
 Write-Host "Watching run #$runId (branch=$($runInfo.headBranch), status=$($runInfo.status))..."
-Invoke-Checked 'gh' @('run', 'watch', $runId, '--repo', $repoSlug, '--exit-status')
+Invoke-Checked 'gh' @('run', 'watch', $runId, '--repo', $repoSlug, '--exit-status', '--interval', '30')
 
 $runFinal = (Invoke-Checked 'gh' @('run', 'view', $runId, '--repo', $repoSlug, '--json', 'conclusion') | Out-String | ConvertFrom-Json)
 if ($runFinal.conclusion -ne 'success') { throw "Workflow run #$runId ended with '$($runFinal.conclusion)'. See: gh run view $runId --repo $repoSlug" }
 
 # -- download ---------------------------------------------------------------
-$destDir = Join-Path $appRoot ($(if ($Signed) { 'release-mac' } else { 'release-mac-unsigned' }))
+$destDir = Join-Path $appRoot ($(if ($SignedOnly) { 'release-mac-signed-only' } elseif ($Signed) { 'release-mac' } else { 'release-mac-unsigned' }))
 $destDir = Join-Path $destDir "$version-run-$runId"
 if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir | Out-Null }
 Write-Host "Downloading artifacts to $destDir ..."
@@ -166,7 +177,11 @@ if ($failCount -gt 0) { throw "$failCount artifact hash(es) failed to verify." }
 
 Write-Host ''
 Write-Host '== Mac Build Complete ==' -ForegroundColor Green
-Write-Host "Version   : $version (signed=$Signed)"
+Write-Host "Version   : $version (signed=$($Signed -or $SignedOnly), signed-only=$SignedOnly)"
 Write-Host "Artifacts : $destDir"
 $reports | Format-Table -AutoSize
-Write-Host 'Note: unsigned test packages must be allowed manually in macOS Settings > Privacy & Security on first launch.'
+if ($SignedOnly) {
+  Write-Host 'Signed-only packages are not notarized or validated. macOS Gatekeeper may block them.'
+} elseif (-not $Signed) {
+  Write-Host 'Note: unsigned test packages must be allowed manually in macOS Settings > Privacy & Security on first launch.'
+}

@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process')
 const os = require('node:os')
 const { pathToFileURL } = require('node:url')
 const { version } = require('../package.json')
+const { runStapler } = require('./verify-mac-stapler.cjs')
 
 assert.equal(process.platform, 'darwin', 'Mac verification requires macOS')
 const args = process.argv.slice(2)
@@ -15,8 +16,8 @@ const selectedArch = archIndex >= 0 ? args[archIndex + 1] : 'all'
 assert.ok(['all', 'arm64', 'x64'].includes(selectedArch), 'Invalid architecture')
 const root = path.resolve(__dirname, '..', signed ? 'release-mac' : 'release-mac-unsigned')
 
-function run(command, commandArgs, env = process.env) {
-  const result = spawnSync(command, commandArgs, { env, encoding: 'utf8', timeout: 1_800_000 })
+function run(command, commandArgs, env = process.env, timeout = 1_800_000) {
+  const result = spawnSync(command, commandArgs, { env, encoding: 'utf8', timeout })
   if (result.error) throw result.error
   assert.equal(result.status, 0, result.stderr || result.stdout || `${command} failed`)
   return result.stdout
@@ -66,7 +67,8 @@ async function main() {
     run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appDir])
     if (signed) {
       run('spctl', ['--assess', '--type', 'execute', '--verbose=2', appDir])
-      run('xcrun', ['stapler', 'validate', appDir])
+      console.log(`Validating Apple notarization ticket for ${arch} application.`)
+      await runStapler('validate', appDir)
     }
     for (const extension of ['dmg', 'zip']) {
       const fileName = `LawVerify-Mac-${version}-${arch}${signed ? '' : '-unsigned'}.${extension}`
@@ -76,11 +78,15 @@ async function main() {
         run('hdiutil', ['verify', file])
         if (signed) {
           // The builder notarizes the app; submit the final DMG as well.
-          run('xcrun', ['notarytool', 'submit', file, '--wait',
+          console.log(`Submitting ${fileName} for final Apple notarization.`)
+          const submission = JSON.parse(run('xcrun', ['notarytool', 'submit', file, '--wait',
+            '--output-format', 'json',
             '--apple-id', process.env.APPLE_ID, '--password', process.env.APPLE_APP_SPECIFIC_PASSWORD,
-            '--team-id', process.env.APPLE_TEAM_ID])
-          run('xcrun', ['stapler', 'staple', file])
-          run('xcrun', ['stapler', 'validate', file])
+            '--team-id', process.env.APPLE_TEAM_ID], process.env, 5_400_000))
+          assert.equal(submission.status, 'Accepted', `Final DMG notarization failed: ${submission.status}`)
+          console.log(`Apple accepted ${fileName} (submission ${submission.id}).`)
+          await runStapler('staple', file)
+          await runStapler('validate', file)
         }
       } else {
         run('unzip', ['-tq', file])

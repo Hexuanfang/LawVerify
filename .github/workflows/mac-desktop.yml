@@ -27,7 +27,7 @@ jobs:
             arch: x64
     runs-on: ${{ matrix.runner }}
     environment: ${{ inputs.signed && 'mac-signing' || 'mac-test' }}
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,7 +75,7 @@ jobs:
       - name: Verify Mac automatic update and rollback
         working-directory: app
         run: |
-          node --test electron/test-mac-update.cjs electron/test-update-download.cjs electron/test-update-release.cjs electron/test-mac-platform.cjs
+          node --test electron/test-mac-update.cjs electron/test-update-download.cjs electron/test-update-release.cjs electron/test-mac-platform.cjs electron/test-mac-stapler.cjs
           node electron/test-mac-update-native.cjs
       - name: Build unsigned test package
         if: ${{ !inputs.signed }}

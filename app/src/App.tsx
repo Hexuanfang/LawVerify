@@ -9,6 +9,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { exportCertificateToWord } from './export-word'
+import { ExportOptionsDialog } from './ExportOptionsDialog'
+import { DEFAULT_EXPORT_OPTIONS, type CertificateExportContext, type CertificateExportOptions } from './export-context'
 import { AttentionText, EvidenceAttention } from './EvidenceAttention'
 import { EvidenceManagePanel } from './EvidenceManagePanel'
 import { FolderLinkGuidePopup } from './FolderLinkGuidePopup'
@@ -3853,6 +3855,47 @@ function App() {
 
     return appState?.draftMemories.find((item) => item.certificateId === activeCertificate.id) ?? null
   }, [activeCertificate, appState])
+
+  // 导出选项：先弹对话框确认要附带哪些附录，再真正生成 Word 文件。
+  const [isExportOptionsOpen, setIsExportOptionsOpen] = useState(false)
+  const [exportOptions, setExportOptions] = useState<CertificateExportOptions>(DEFAULT_EXPORT_OPTIONS)
+
+  function handleOpenExportOptions() {
+    if (!activeCertificate) return
+    setIsExportOptionsOpen(true)
+  }
+
+  async function handleConfirmExport() {
+    if (!activeCertificate) {
+      setIsExportOptionsOpen(false)
+      return
+    }
+
+    const context: CertificateExportContext = {
+      certificate: activeCertificate,
+      caseFolder: selectedCase
+        ? { id: selectedCase.id, name: selectedCase.name, status: selectedCase.status }
+        : null,
+      evidences: caseEvidences.map(evidence => ({
+        id: evidence.id,
+        number: evidence.number,
+        sourceNumber: evidence.sourceNumber,
+        name: evidence.name,
+        fileName: evidence.fileName,
+        type: evidence.type,
+        pages: evidence.pages,
+        relativePath: evidence.relativePath,
+      })),
+      roleLabel: activeCertificate.role === 'defendant' ? '被告' : '原告',
+      appVersion: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
+      exportedAt: new Date(),
+      operator: sessionStorage.getItem(LOGIN_ACCOUNT_STORAGE_KEY)?.trim() || undefined,
+      options: exportOptions,
+    }
+
+    setIsExportOptionsOpen(false)
+    await exportCertificateToWord(context)
+  }
 
   const activeParagraph = useMemo(() => {
     return activeCertificate?.paragraphs.find((item) => item.id === activeParagraphId) ?? activeCertificate?.paragraphs[0] ?? null
@@ -10711,7 +10754,7 @@ function App() {
                 <button
                   className="header-action-button header-icon-button primary"
                   type="button"
-                  onClick={() => activeCertificate && void exportCertificateToWord(activeCertificate, selectedCase?.name ?? '')}
+                  onClick={handleOpenExportOptions}
                   disabled={!activeCertificate}
                   title="下载为 Word 文档"
                   aria-label="下载为 Word 文档"
@@ -11131,6 +11174,15 @@ function App() {
       {renderFeedbackDialog()}
       {renderCaseDialog()}
       {renderClearLinksDialog()}
+      {isExportOptionsOpen ? (
+        <ExportOptionsDialog
+          open={isExportOptionsOpen}
+          options={exportOptions}
+          onChange={setExportOptions}
+          onConfirm={() => void handleConfirmExport()}
+          onCancel={() => setIsExportOptionsOpen(false)}
+        />
+      ) : null}
       {authToken ? appState.cases.map(folder => <CaseDirectorySync key={`${loginAccount}:${folder.id}`}
         account={loginAccount} caseId={folder.id}
         enabled={folder.agent?.autoAnalyze !== false && !isSubmitting && !directoryPreparation && !autoLinkingCertificateId}

@@ -1,0 +1,88 @@
+.export-options-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(6px);
+}
+
+.export-options-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(560px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 24px;
+  background: var(--panel-glass);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.16);
+}
+
+.export-options-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.export-options-head h2 {
+  margin: 4px 0 0;
+}
+
+.export-options-head p {
+  margin: 8px 0 0;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.export-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.export-option-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.export-option-item:hover {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.export-option-item input {
+  margin-top: 3px;
+}
+
+.export-option-item span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-option-item strong {
+  font-weight: 600;
+}
+
+.export-option-item em {
+  font-style: normal;
+  color: var(--text-muted, var(--text));
+  opacity: 0.78;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.export-options-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

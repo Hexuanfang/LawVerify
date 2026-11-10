@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "test:linkage": "node --import tsx --test scripts/test-semantic-linkage.mjs scripts/test-llm-call-cache.mjs scripts/test-evidence-understanding-concurrency.mjs scripts/test-linkage-concurrency.mjs",
     "test:legal": "node --import tsx --test scripts/test-legal-verification.mjs",
+    "test:export": "node --import tsx --test scripts/test-export-documents.mjs",
     "test:statute": "node --import tsx --test scripts/test-statute-version-guard.mjs",
     "test:retrieval": "node --import tsx --test scripts/test-evidence-retrieval.mjs",
     "test:understanding": "node --import tsx --test scripts/test-evidence-understanding-mode.mjs",

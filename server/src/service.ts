@@ -75,6 +75,7 @@ import { isPkulawCaseSearchConfigured, searchPkulawCases } from './integrations/
 import { isWkCaseSearchConfigured, searchWkCases } from './integrations/wk-mcp.js'
 import { isYuandianCaseSearchConfigured, searchYuandianCases } from './integrations/yuandian-mcp.js'
 import { shouldUseCommercialKnowledgeStore } from './knowledge-mode.js'
+import { searchWorkspace, type SearchScope } from './search/workspace-search.js'
 import { OFFICIAL_LEGAL_SOURCES } from './legal-source-catalog.js'
 import { removeLocalKnowledgeFileIndex, replaceLocalKnowledgeFileIndex, searchLocalKnowledgeRagChunks } from './local-rag-store.js'
 import { getCurrentWorkspaceAccount, mutateWorkspaceCases, readWorkspace, runWithWorkspaceAccount, writeWorkspace } from './store.js'
@@ -7944,6 +7945,24 @@ export async function getKnowledgeCaseDetail(caseId: string) {
   }
 
   return entry
+}
+
+/**
+ * 全局搜索：只查本地语料（材料 / 文书段落 / 法条 / 本地案例）。
+ * 外部案例库不自动调用——付费接口交由前端显式按钮触发。
+ */
+export async function searchWorkspaceForAccount(query: string, options: {
+  caseId?: string
+  scopes?: SearchScope[]
+  limit?: number
+} = {}) {
+  const workspace = await readWorkspace()
+  const { results, truncated } = searchWorkspace(workspace, query, options)
+  const externalCaseSearch = {
+    query: query.trim(),
+    available: isYuandianCaseSearchConfigured() || isWkCaseSearchConfigured() || isPkulawCaseSearchConfigured(),
+  }
+  return { results, truncated, externalCaseSearch }
 }
 
 function normalizeImportedKnowledgeCase(item: WorkspaceState['knowledgeCases'][number]) {

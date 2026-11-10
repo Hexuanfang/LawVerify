@@ -15,6 +15,8 @@ import type {
   RechargePackage,
   ReleaseItem,
   RoleType,
+  SearchScope,
+  WorkspaceSearchResponse,
 } from './types'
 
 // 流式响应的大小上限：
@@ -674,6 +676,13 @@ export const api = {
   searchWeightedCases(payload: { keyword?: string; courtName?: string; judgeName?: string; courtWeight?: number; judgeWeight?: number }) {
     return requestV1<{ items: AppState['knowledgeCases']; configuredProviders: number; failedProviders: number }>(
       '/api/v1/knowledge/cases/search', { method: 'POST', body: JSON.stringify(payload) })
+  },
+  searchWorkspace(query: string, options: { caseId?: string; scopes?: SearchScope[]; limit?: number } = {}) {
+    const params = new URLSearchParams({ q: query })
+    if (options.caseId) params.set('caseId', options.caseId)
+    if (options.scopes?.length) params.set('scope', options.scopes.join(','))
+    if (options.limit) params.set('limit', String(options.limit))
+    return requestV1<WorkspaceSearchResponse>(`/api/v1/search?${params.toString()}`)
   },
   trackEvents(events: Array<{ id: string; name: string; surface: 'desktop' | 'web'; outcome: 'success' | 'failure'; durationMs: number }>) {
     return requestCloudEnvelope('/api/account/events', { method: 'POST', body: JSON.stringify({ events }) })

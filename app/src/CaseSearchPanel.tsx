@@ -7,8 +7,8 @@ function weightProgress(value: number) {
   return `${Math.round((value / 5) * 100)}%`
 }
 
-export function CaseSearchPanel({ onOpen }: { onOpen: (entry: KnowledgeCase) => void }) {
-  const [keyword, setKeyword] = useState('')
+export function CaseSearchPanel({ initialKeyword, onOpen }: { initialKeyword?: string; onOpen: (entry: KnowledgeCase) => void }) {
+  const [keyword, setKeyword] = useState(initialKeyword?.trim() ?? '')
   const [courtName, setCourt] = useState('')
   const [judgeName, setJudge] = useState('')
   const [courtWeight, setCourtWeight] = useState(2)
@@ -19,6 +19,7 @@ export function CaseSearchPanel({ onOpen }: { onOpen: (entry: KnowledgeCase) => 
   const revision = useRef(0)
   const changed = () => { revision.current++; setItems([]); setNotice(''); setBusy(false) }
   const canSearch = Boolean(keyword.trim() || courtName.trim() || judgeName.trim())
+
   return <section className="insight-card case-search-panel">
     <div className="preview-section-head">
       <strong>外部案例检索</strong>

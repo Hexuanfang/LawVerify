@@ -1,3 +1,5 @@
+import { tokenize } from '../search/tokenize.js'
+
 export type EvidenceChunk = {
   index: number
   content: string
@@ -34,31 +36,6 @@ export const DEFAULT_MIN_SCORE_RATIO = 0.25
 export const DEFAULT_MIN_RELEVANT_CHUNKS = 6
 
 const PAGE_MARKER = /-{2,}\s*第\s*(\d+)\s*\/\s*(\d+)\s*页\s*-{2,}/g
-
-function tokenize(text: string) {
-  const tokens: string[] = []
-  const lower = text.toLowerCase()
-
-  for (const matched of lower.matchAll(/[a-z0-9]{2,}/g)) {
-    tokens.push(matched[0])
-  }
-
-  // 中文按二元组切分：不需要分词词典，也比单字更有区分度。
-  for (const part of lower.replace(/[^\u4e00-\u9fa5]+/g, ' ').split(/\s+/)) {
-    if (!part) {
-      continue
-    }
-    if (part.length === 1) {
-      tokens.push(part)
-      continue
-    }
-    for (let index = 0; index < part.length - 1; index += 1) {
-      tokens.push(part.slice(index, index + 2))
-    }
-  }
-
-  return tokens
-}
 
 export function splitEvidenceTextIntoPages(text: string) {
   const pages: Array<{ page?: number; content: string }> = []

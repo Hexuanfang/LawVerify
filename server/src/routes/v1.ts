@@ -52,6 +52,7 @@ import {
   recommendKnowledgeCases,
   recommendKnowledgeStatutes,
   sanitizeWorkspaceForClient,
+  searchWorkspaceForAccount,
   streamGenerateCertificate,
   streamRewriteCertificate,
   summarizeEvidence,
@@ -61,6 +62,7 @@ import {
   updateParagraph,
 } from '../service.js'
 import type { WorkspaceState } from '../domain.js'
+import type { SearchScope as WorkspaceSearchScope } from '../search/workspace-search.js'
 import { searchWeightedCases, verifyLegalText } from '../legal-verification-service.js'
 
 const loginSchema = z.object({
@@ -578,6 +580,30 @@ export function createV1Router() {
 
   router.post('/certificates/:certificateId/paragraphs/:paragraphId/ai-review', async (request, response) => {
     const result = await reviewParagraphMatches(request.params.certificateId, request.params.paragraphId)
+    sendSuccess(response, result)
+  })
+
+  router.get('/search', async (request, response) => {
+    const query = z.object({
+      q: z.string().trim().min(1, '请输入搜索关键词。').max(100, '搜索关键词过长。'),
+      scope: z.string().trim().optional(),
+      caseId: z.string().trim().max(64).optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+    }).parse(request.query)
+    const scopes = query.scope
+      ? query.scope.split(',').map(item => item.trim()).filter(Boolean)
+      : undefined
+    for (const scope of scopes ?? []) {
+      if (!['evidence', 'paragraph', 'statute', 'case'].includes(scope)) {
+        response.status(400).json({ message: `不支持的搜索范围：${scope}` })
+        return
+      }
+    }
+    const result = await searchWorkspaceForAccount(query.q, {
+      caseId: query.caseId || undefined,
+      scopes: scopes as WorkspaceSearchScope[] | undefined,
+      limit: query.limit,
+    })
     sendSuccess(response, result)
   })
 

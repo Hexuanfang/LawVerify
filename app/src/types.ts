@@ -330,6 +330,31 @@ export interface Certificate {
   linkageStale?: boolean
 }
 
+/** 全局搜索范围 */
+export type SearchScope = 'evidence' | 'paragraph' | 'statute' | 'case'
+
+export interface SearchResult {
+  id: string
+  scope: SearchScope
+  title: string
+  snippet: string
+  score: number
+  target: {
+    caseId?: string
+    evidenceId?: string
+    certificateId?: string
+    paragraphId?: string
+    statuteId?: string
+    knowledgeCaseId?: string
+  }
+}
+
+export interface WorkspaceSearchResponse {
+  results: SearchResult[]
+  truncated: boolean
+  externalCaseSearch: { query: string; available: boolean }
+}
+
 export interface CaseFolder {
   id: string
   name: string

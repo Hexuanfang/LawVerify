@@ -10,6 +10,7 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { exportCertificateToWord } from './export-word'
 import { ExportOptionsDialog } from './ExportOptionsDialog'
+import { CommandPalette } from './CommandPalette'
 import { DEFAULT_EXPORT_OPTIONS, type CertificateExportContext, type CertificateExportOptions } from './export-context'
 import { AttentionText, EvidenceAttention } from './EvidenceAttention'
 import { EvidenceManagePanel } from './EvidenceManagePanel'
@@ -59,6 +60,7 @@ import type {
   RechargeOrder,
   RechargePackage,
   ReleaseItem,
+  SearchResult,
 } from './types'
 
 const AUTH_STORAGE_KEY = 'lawverify-auth-session'
@@ -3859,6 +3861,80 @@ function App() {
   // 导出选项：先弹对话框确认要附带哪些附录，再真正生成 Word 文件。
   const [isExportOptionsOpen, setIsExportOptionsOpen] = useState(false)
   const [exportOptions, setExportOptions] = useState<CertificateExportOptions>(DEFAULT_EXPORT_OPTIONS)
+
+  // 全局搜索（⌘K）：只查本地语料，外部案例库由用户显式触发。
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+  // 外部案例检索的关键词与递增序号：序号变化一次，右侧案例检索面板就重挂一次并带上新关键词。
+  const [externalCaseSearch, setExternalCaseSearch] = useState({ keyword: '', nonce: 0 })
+
+  function handleSelectSearchResult(result: SearchResult) {
+    setIsCommandPaletteOpen(false)
+    const target = result.target
+
+    if (result.scope === 'evidence' && target.evidenceId) {
+      const evidence = appState?.evidences.find(item => item.id === target.evidenceId)
+      if (evidence) {
+        if (target.caseId && target.caseId !== selectedCaseId) {
+          setSelectedCaseId(target.caseId)
+        }
+        handlePreviewEvidenceItem(evidence)
+        return
+      }
+    }
+
+    if (result.scope === 'paragraph' && target.certificateId && target.paragraphId) {
+      const certificate = appState?.certificates.find(item => item.id === target.certificateId)
+      const paragraph = certificate?.paragraphs.find(item => item.id === target.paragraphId)
+      if (certificate && paragraph) {
+        if (target.caseId && target.caseId !== selectedCaseId) {
+          setSelectedCaseId(target.caseId)
+        }
+        const links = getParagraphLinks(paragraph)
+        setSelectedCertificateId(certificate.id)
+        setIdeContentTab('document')
+        setActiveParagraphId(paragraph.id)
+        setManualPreviewEvidenceId(null)
+        setImageViewerState(null)
+        setActiveReferenceIndex(0)
+        setLocatorDraft(links[0]?.locator ?? '段落 1')
+        setActiveSentenceIndex(getDefaultSentenceIndex(paragraph))
+        setActiveSentenceText(getDefaultSentenceText(paragraph))
+        // 选中段落会触发重渲染，等一帧再滚动，确保目标段落已在文书区内。
+        window.setTimeout(() => {
+          const target = document.querySelector(`[data-paragraph-id="${paragraph.id}"]`)
+          target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 60)
+        return
+      }
+    }
+
+    if (result.scope === 'statute' && target.statuteId) {
+      setFocusedStatuteId(target.statuteId)
+      setSelectedStatuteId(target.statuteId)
+      setActiveTab('knowledge')
+      setKnowledgeTab('statutes')
+      setKnowledgeLibraryView('library')
+      setIsKnowledgeLibraryDialogOpen(true)
+      return
+    }
+
+    if (result.scope === 'case' && target.knowledgeCaseId) {
+      const entry = appState?.knowledgeCases.find(item => item.id === target.knowledgeCaseId)
+      if (entry) {
+        void handleOpenKnowledgeCaseDetail(entry)
+        return
+      }
+    }
+
+    setErrorMessage('这条结果对应的内容已经不在当前工作区。')
+  }
+
+  function handleExternalCaseSearch(keyword: string) {
+    setIsCommandPaletteOpen(false)
+    setExternalCaseSearch(current => ({ keyword, nonce: current.nonce + 1 }))
+    setVerifyInsightTab('case')
+    revealInsightPanel()
+  }
 
   function handleOpenExportOptions() {
     if (!activeCertificate) return
@@ -8506,7 +8582,8 @@ function App() {
         <LegalReview editor={activeParagraphId ? paragraphEditorsRef.current[activeParagraphId] ?? null : null}
           active account={loginAccount} automatic={false} />
         <CaseSearchPanel
-          key={selectedCase?.id ?? 'no-case'}
+          key={`${selectedCase?.id ?? 'no-case'}:${externalCaseSearch.nonce}`}
+          initialKeyword={externalCaseSearch.keyword}
           onOpen={entry => { void handleOpenKnowledgeCaseDetail(entry) }}
         />
         {selectedCaseReference && selectedCaseReferenceBinding ? (
@@ -11183,6 +11260,14 @@ function App() {
           onCancel={() => setIsExportOptionsOpen(false)}
         />
       ) : null}
+      <CommandPalette
+        open={isCommandPaletteOpen}
+        caseId={selectedCaseId}
+        onOpen={() => setIsCommandPaletteOpen(true)}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onSelect={handleSelectSearchResult}
+        onExternalCaseSearch={handleExternalCaseSearch}
+      />
       {authToken ? appState.cases.map(folder => <CaseDirectorySync key={`${loginAccount}:${folder.id}`}
         account={loginAccount} caseId={folder.id}
         enabled={folder.agent?.autoAnalyze !== false && !isSubmitting && !directoryPreparation && !autoLinkingCertificateId}

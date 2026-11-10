@@ -19,7 +19,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot | Split-Path -Parent | Split-Path -Parent | Split-Path -Parent | Split-Path -Parent
 $appRoot = Join-Path $repoRoot 'app'
 $packageJsonPath = Join-Path $appRoot 'package.json'
-$remoteName = 'origin'
+$remoteNames = @(& git remote)
+$remoteName = if ($remoteNames -contains 'origin') { 'origin' } elseif ($remoteNames -contains 'github') { 'github' } else { throw 'No origin or github remote configured.' }
 $workflowName = 'mac-desktop.yml'
 
 if (-not (Test-Path $packageJsonPath)) { throw "Desktop package.json not found: $packageJsonPath" }
@@ -78,18 +79,18 @@ if ($Ref) {
   if ($refInfo -ne $head) { throw "Selected remote ref $Ref does not match local HEAD $head." }
   Write-Host "[ok] pinned remote ref $Ref => $head"
 } else {
-$division = (& 'git' 'rev-list' '--left-right' '--count' "origin/$branch...HEAD" 2>&1)
+$division = (& 'git' 'rev-list' '--left-right' '--count' "$remoteName/$branch...HEAD" 2>&1)
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "[warn] Cannot compare with origin/$branch (branch may be untracked). Trusting -Push flag." -ForegroundColor Yellow
+  Write-Host "[warn] Cannot compare with $remoteName/$branch (branch may be untracked). Trusting -Push flag." -ForegroundColor Yellow
 } else {
   $parts = "$division" -split '\s+'
   $behind = [int]$parts[0]
   $ahead = if ($parts.Count -gt 1) { [int]$parts[1] } else { 0 }
   if ($behind -gt 0) {
-    throw "Local branch is $behind commit(s) BEHIND origin/$branch. Run 'git pull --rebase' first."
+    throw "Local branch is $behind commit(s) BEHIND $remoteName/$branch. Run 'git pull --rebase' first."
   }
   if ($ahead -gt 0 -and -not $Push) {
-    throw "Local branch is $ahead commit(s) AHEAD of origin/$branch. Pass -Push to push, or push manually."
+    throw "Local branch is $ahead commit(s) AHEAD of $remoteName/$branch. Pass -Push to push, or push manually."
   }
 }
 if ($Push) {

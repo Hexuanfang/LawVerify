@@ -39,10 +39,37 @@ jobs:
           cache-dependency-path: |
             app/package-lock.json
             server/package-lock.json
-      - name: Install dependencies
+      - name: Prepare CI dependency downloads
         run: |
-          npm ci --prefix server
-          npm ci --prefix app
+          node <<'NODE'
+          const fs = require('node:fs');
+          for (const file of ['server/package-lock.json', 'app/package-lock.json']) {
+            const lock = JSON.parse(fs.readFileSync(file, 'utf8'));
+            let changed = 0;
+            for (const pkg of Object.values(lock.packages || {})) {
+              if (pkg.resolved?.startsWith('https://registry.npmmirror.com/')) {
+                pkg.resolved = pkg.resolved.replace('https://registry.npmmirror.com/', 'https://registry.npmjs.org/');
+                changed++;
+              }
+            }
+            fs.writeFileSync(file, JSON.stringify(lock, null, 2) + '\n');
+            console.log(`${file}: using official registry for ${changed} locked packages`);
+          }
+          NODE
+      - name: Install server dependencies
+        timeout-minutes: 10
+        env:
+          npm_config_registry: https://registry.npmjs.org
+          npm_config_fetch_timeout: '30000'
+          npm_config_fetch_retries: '2'
+        run: npm ci --prefix server --no-audit --no-fund --foreground-scripts --loglevel info
+      - name: Install app dependencies
+        timeout-minutes: 10
+        env:
+          npm_config_registry: https://registry.npmjs.org
+          npm_config_fetch_timeout: '30000'
+          npm_config_fetch_retries: '2'
+        run: npm ci --prefix app --no-audit --no-fund --foreground-scripts --loglevel info
       - name: Verify desktop account networking
         run: npm run test:account --prefix app
       - name: Verify Mac automatic update and rollback

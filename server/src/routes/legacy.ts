@@ -29,6 +29,7 @@ import {
   importEvidences,
   getEvidenceSourceAssetStream,
   bindWorkspaceCloudAccount,
+  buildLinkageDelta,
   login,
   autoLinkCertificate,
   rebuildCaseMemory,
@@ -585,9 +586,15 @@ export function createLegacyRouter() {
         if (!response.destroyed) sendStreamEvent(response, 'progress', { text })
       }, { signal: abortController.signal })
       if (!response.destroyed) {
+        // 只回传联动改写过的文书与本案记忆：
+        // 全量工作区快照有十几 MB，会超过客户端流式接收的上限。
         sendStreamEvent(response, 'done', {
-          ...result,
-          workspace: sanitizeWorkspaceForClient(result.workspace),
+          linkedParagraphCount: result.linkedParagraphCount,
+          evidenceLinkCount: result.evidenceLinkCount,
+          statuteReferenceCount: result.statuteReferenceCount,
+          statuteWarningCount: result.statuteWarningCount,
+          caseReferenceCount: result.caseReferenceCount,
+          linkage: buildLinkageDelta(result.workspace, request.params.certificateId),
         })
       }
     } catch (error) {

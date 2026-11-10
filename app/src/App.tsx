@@ -335,6 +335,43 @@ function isEmailAccount(value: string) {
   return /\S+@\S+\.\S+/.test(value.trim())
 }
 
+// 合并服务端下发的增量记录：同 id 按字段覆盖，服务端新增的记录补进来。
+// 按字段合并而不是整条替换：服务端不下发的字段（例如归档材料）保留本地值。
+function mergeRecordsById<T extends { id: string }>(current: T[], incoming: T[] | undefined) {
+  if (!incoming?.length) return current
+  const incomingById = new Map(incoming.map((item) => [item.id, item]))
+  const currentIds = new Set(current.map((item) => item.id))
+  const merged = current.map((item) => {
+    const next = incomingById.get(item.id)
+    return next ? ({ ...item, ...next } as T) : item
+  })
+  for (const item of incoming) {
+    if (!currentIds.has(item.id)) merged.push(item)
+  }
+  return merged
+}
+
+// 把联动结果合并进本地工作区：
+// 联动只改写文书、案件记忆和本案材料理解，其余数据保持本地状态。
+function mergeLinkageIntoWorkspace(
+  workspace: AppState,
+  linkage: {
+    certificate: AppState['certificates'][number]
+    evidenceInsights: AppState['evidenceInsights']
+    caseContextMemories: AppState['caseContextMemories']
+  },
+): AppState {
+  const certificate = linkage.certificate
+  return {
+    ...workspace,
+    certificates: workspace.certificates.some((item) => item.id === certificate.id)
+      ? workspace.certificates.map((item) => item.id === certificate.id ? certificate : item)
+      : [...workspace.certificates, certificate],
+    evidenceInsights: mergeRecordsById(workspace.evidenceInsights, linkage.evidenceInsights),
+    caseContextMemories: mergeRecordsById(workspace.caseContextMemories, linkage.caseContextMemories),
+  }
+}
+
 // 识别用户主动停止（AbortError）产生的错误，与真实失败区分开。
 function isAbortError(error: unknown) {
   return Boolean(error) && (error as { name?: string }).name === 'AbortError'
@@ -6706,13 +6743,23 @@ function App() {
           throw error
         }
         if (cancelled) return
-        const { workspace } = result
-        applyWorkspace(workspace, {
+        // 联动只回传改写过的文书与本案记忆，其余数据本地已有，合并后更新。
+        const { linkage } = result
+        const currentWorkspace = localWorkspaceRef.current
+        const nextWorkspace = currentWorkspace
+          ? mergeLinkageIntoWorkspace(currentWorkspace, linkage)
+          // 本地还没有工作区快照（极少发生）：退回到全量拉取。
+          : (await api.getWorkspace()).workspace
+        applyWorkspace(nextWorkspace, {
           selectedCaseId: activeCertificate.caseId,
           selectedCertificateId: activeCertificate.id,
           activeParagraphId: activeParagraph?.id ?? activeCertificate.paragraphs[0]?.id ?? null,
           selectedEvidenceIds,
         })
+        // 联动期间后台可能已经更新了材料理解，补一次全量同步；失败不影响联动结果。
+        void api.getWorkspace()
+          .then(({ workspace }) => applyWorkspace(workspace, {}, { preserveManualPreview: true }))
+          .catch(() => {})
 
         const { linkedParagraphCount, evidenceLinkCount, statuteReferenceCount, statuteWarningCount, caseReferenceCount } = result
         const totalMatches = evidenceLinkCount + statuteReferenceCount + caseReferenceCount

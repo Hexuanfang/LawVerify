@@ -71,6 +71,7 @@ test('真实界面处理函数在编辑保存后调用联动，并拦截重复�
   const noop = () => {}
   const handlers = loadFunctions('../../app/src/App.tsx', [
     'handleUpdateParagraphById', 'handleAutoLinkCertificate',
+    'mergeRecordsById', 'mergeLinkageIntoWorkspace', 'isAbortError',
   ], {
     activeCertificate: certificate, activeParagraph: { id: 'p' }, selectedEvidenceIds: [],
     sessionStorage: { getItem: () => 'test-account' }, LOGIN_ACCOUNT_STORAGE_KEY: 'login-account',
@@ -79,12 +80,18 @@ test('真实界面处理函数在编辑保存后调用联动，并拦截重复�
     documentTaskQueueRef: { current: createDocumentTaskQueue() },
     documentAnalysisRunningRef: { current: false },
     autoLinkAbortRef: { current: null },
+    localWorkspaceRef: { current: { certificates: [], evidenceInsights: [], caseContextMemories: [] } },
     api: {
       updateParagraph: async () => { events.push('save'); await gate; return { workspace: {} } },
+      // 联动只回传改写过的文书与本案记忆，不再返回全量工作区。
       autoLinkCertificate: async () => {
         events.push('link')
-        return { workspace: {}, linkedParagraphCount: 0, evidenceLinkCount: 0, statuteReferenceCount: 0, caseReferenceCount: 0 }
+        return {
+          linkage: { certificate, evidenceInsights: [], caseContextMemories: [] },
+          linkedParagraphCount: 0, evidenceLinkCount: 0, statuteReferenceCount: 0, caseReferenceCount: 0,
+        }
       },
+      getWorkspace: async () => ({ workspace: { certificates: [], evidenceInsights: [], caseContextMemories: [] } }),
     },
     runMutation: async task => { await task(); return true },
     applyWorkspace: noop, setAutoLinkFeedback: noop, setLockedPreviewEvidenceId: noop,

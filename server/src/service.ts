@@ -2657,6 +2657,22 @@ export function sanitizeWorkspaceForClient(workspace: WorkspaceState): Workspace
   }
 }
 
+// 证据联动只需要回传改写后的文书与本案记忆：
+// 全量工作区快照动辄十几 MB，走 SSE 会超过客户端的接收上限。
+export function buildLinkageDelta(workspace: WorkspaceState, certificateId: string) {
+  const sanitized = sanitizeWorkspaceForClient(workspace)
+  const certificate = sanitized.certificates.find((item) => item.id === certificateId)
+  if (!certificate) {
+    return null
+  }
+  const caseId = certificate.caseId
+  return {
+    certificate,
+    evidenceInsights: sanitized.evidenceInsights.filter((item) => item.caseId === caseId),
+    caseContextMemories: sanitized.caseContextMemories.filter((item) => item.caseId === caseId),
+  }
+}
+
 export async function getEvidenceSourceAsset(evidenceId: string) {
   const workspace = await readWorkspace()
   const evidence = workspace.evidences.find((item) => item.id === evidenceId)

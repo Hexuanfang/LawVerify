@@ -17,6 +17,12 @@ import type {
   RoleType,
 } from './types'
 
+// 流式响应的大小上限：
+// 完整事件块允许更大，避免大结果被误判为过大而中断；
+// 拼接不完整的残留缓冲仍受较小上限约束，防止异常响应无限占用内存。
+const MAX_STREAM_EVENT_CHARS = 64 * 1024 * 1024
+const MAX_STREAM_TAIL_CHARS = 16 * 1024 * 1024
+
 function getDevServiceHost() {
   if (typeof window !== 'undefined' && window.location.hostname) {
     const hostname = window.location.hostname
@@ -615,7 +621,8 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
       })
       stream.noteActivity()
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
-      if (buffer.length > 16 * 1024 * 1024) throw new Error('返回内容过大，已停止接收。请检查已有结果。')
+      // 单个事件块允许很大：结果已经完整到达时不应被当成"过大"而中断。
+      if (buffer.length > MAX_STREAM_EVENT_CHARS) throw new Error('返回内容过大，已停止接收。请检查已有结果。')
 
       let separator = /\r?\n\r?\n/.exec(buffer)
       while (separator) {
@@ -624,6 +631,8 @@ async function baseStreamRequest<T = CertificateStreamDonePayload>(path: string,
         handleEventBlock(block)
         separator = /\r?\n\r?\n/.exec(buffer)
       }
+      // 拼接不出完整事件的残留缓冲仍要受限，避免异常响应无限占用内存。
+      if (buffer.length > MAX_STREAM_TAIL_CHARS) throw new Error('返回内容过大，已停止接收。请检查已有结果。')
 
       if (done) {
         break
@@ -1228,13 +1237,20 @@ export const api = {
     )
   },
   async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void, signal?: AbortSignal) {
-    type LinkageResult = WorkspaceResponse & {
+    type LinkageDelta = {
+      certificate: AppState['certificates'][number]
+      evidenceInsights: AppState['evidenceInsights']
+      caseContextMemories: AppState['caseContextMemories']
+    }
+    type LinkageResult = {
+      linkage: LinkageDelta | null
       linkedParagraphCount: number
       evidenceLinkCount: number
       statuteReferenceCount: number
       statuteWarningCount: number
       caseReferenceCount: number
     }
+    type LinkageOutcome = Omit<LinkageResult, 'linkage'> & { linkage: LinkageDelta }
     let result: LinkageResult | undefined
     await streamRequest<LinkageResult>(`/api/certificates/${certificateId}/auto-link/stream`, {
       method: 'POST',
@@ -1244,7 +1260,9 @@ export const api = {
       onDone: (payload) => { result = payload },
     })
     if (!result) throw new Error('证据联动未完成，请稍后重试。')
-    return result
+    if (!result.linkage) throw new Error('证据联动未完成，请稍后重试。')
+    const outcome: LinkageOutcome = { ...result, linkage: result.linkage }
+    return outcome
   },
   reviewParagraph(certificateId: string, paragraphId: string) {
     return request<WorkspaceResponse & { reviewedCount: number }>(

@@ -36,7 +36,8 @@ module.exports = {
     category: 'public.app-category.productivity',
     hardenedRuntime: signed,
     identity: signed ? undefined : '-',
-    notarize: notarized,
+    // build-mac.cjs owns durable submissions and bounded, visible status polling.
+    notarize: false,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
     extendInfo: {

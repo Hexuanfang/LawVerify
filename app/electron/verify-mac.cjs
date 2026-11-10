@@ -7,6 +7,7 @@ const os = require('node:os')
 const { pathToFileURL } = require('node:url')
 const { version } = require('../package.json')
 const { runStapler } = require('./verify-mac-stapler.cjs')
+const { notarizeFile } = require('./verify-mac-notary.cjs')
 
 assert.equal(process.platform, 'darwin', 'Mac verification requires macOS')
 const args = process.argv.slice(2)
@@ -77,13 +78,11 @@ async function main() {
       if (extension === 'dmg') {
         run('hdiutil', ['verify', file])
         if (signed) {
-          // The builder notarizes the app; submit the final DMG as well.
+          // The app is already notarized; the final DMG needs its own durable submission.
           console.log(`Submitting ${fileName} for final Apple notarization.`)
-          const submission = JSON.parse(run('xcrun', ['notarytool', 'submit', file, '--wait',
-            '--output-format', 'json',
-            '--apple-id', process.env.APPLE_ID, '--password', process.env.APPLE_APP_SPECIFIC_PASSWORD,
-            '--team-id', process.env.APPLE_TEAM_ID], process.env, 5_400_000))
-          assert.equal(submission.status, 'Accepted', `Final DMG notarization failed: ${submission.status}`)
+          const submission = await notarizeFile(file, {
+            validateAccepted: () => runStapler('validate', file),
+          })
           console.log(`Apple accepted ${fileName} (submission ${submission.id}).`)
           await runStapler('staple', file)
           await runStapler('validate', file)

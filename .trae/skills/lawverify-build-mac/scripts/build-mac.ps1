@@ -3,7 +3,8 @@ param(
   [switch]$SignedOnly,
   [switch]$Push,
   [switch]$KeepDownloads,
-  [string]$Ref
+  [string]$Ref,
+  [string]$ResumeRunId
 )
 
 # One-shot LawVerify macOS builder (via GitHub Actions mac-desktop.yml).
@@ -24,6 +25,9 @@ $remoteNames = @(& git remote)
 $remoteName = if ($remoteNames -contains 'origin') { 'origin' } elseif ($remoteNames -contains 'github') { 'github' } else { throw 'No origin or github remote configured.' }
 $workflowName = 'mac-desktop.yml'
 if ($Signed -and $SignedOnly) { throw 'Choose -Signed or -SignedOnly, not both.' }
+if ($ResumeRunId -and (-not $Signed -or $SignedOnly -or $ResumeRunId -notmatch '^\d+$')) {
+  throw '-ResumeRunId requires -Signed and a numeric GitHub run ID. Use the same source commit as that run.'
+}
 
 if (-not (Test-Path $packageJsonPath)) { throw "Desktop package.json not found: $packageJsonPath" }
 if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) { throw 'git not found on PATH.' }
@@ -115,6 +119,7 @@ $signedFlag = if ($Signed -or $SignedOnly) { 'true' } else { 'false' }
 Write-Host "Triggering workflow $workflowName (signed=$signedFlag)..."
 $triggerArgs = @('workflow', 'run', $workflowName, '--repo', $repoSlug, '-f', "signed=$signedFlag")
 if ($SignedOnly) { $triggerArgs += @('-f', 'signed_only=true') }
+if ($ResumeRunId) { $triggerArgs += @('-f', "resume_run_id=$ResumeRunId") }
 if ($Ref) { $triggerArgs += @('--ref', $Ref) }
 $trigger = Invoke-Checked 'gh' $triggerArgs
 Write-Host ($trigger -join "`n")
@@ -137,7 +142,9 @@ $destDir = Join-Path $appRoot ($(if ($SignedOnly) { 'release-mac-signed-only' } 
 $destDir = Join-Path $destDir "$version-run-$runId"
 if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir | Out-Null }
 Write-Host "Downloading artifacts to $destDir ..."
-Invoke-Checked 'gh' @('run', 'download', $runId, '--repo', $repoSlug, '--dir', $destDir)
+$artifactSuffix = if ($SignedOnly) { 'signed-only' } elseif ($Signed) { 'signed' } else { 'unsigned' }
+Invoke-Checked 'gh' @('run', 'download', $runId, '--repo', $repoSlug, '--dir', $destDir,
+  '--pattern', "LawVerify-Mac-*-$artifactSuffix")
 
 # Flatten artifact subfolders (LawVerify-Mac-arm64-unsigned/, ...-) into dest root.
 $artifactFiles = Get-ChildItem -Path $destDir -Recurse -File | Where-Object { $_.Extension -in @('.dmg', '.zip', '.sha256', '.json') }

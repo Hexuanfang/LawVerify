@@ -7,6 +7,8 @@
     "dev": "node ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -p tsconfig.json",
     "migrate": "node ./node_modules/tsx/dist/cli.mjs src/scripts/migrate.ts",
+    "admin": "node dist/scripts/admin-account.js",
+    "admin:dev": "node ./node_modules/tsx/dist/cli.mjs src/scripts/admin-account.ts",
     "test:ai": "node --import tsx src/scripts/test-ai-gateway.ts",
     "test:chat-provider": "node --import tsx --test src/scripts/test-chat-provider.ts",
     "test:download": "node --import tsx src/scripts/test-release-download.ts",

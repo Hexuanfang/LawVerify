@@ -261,60 +261,152 @@ export async function registerAccount(input: RegisterAccountInput) {
   } finally { client.release() }
 }
 
-export async function seedAdminAccount() {
-  const email = 'admin'
-  const password = 'admin@123'
-  const name = '超级管理员'
-  const orgName = 'LawVerify 运营中心'
-  const passwordHash = await bcrypt.hash(password, 10)
+const ADMIN_ORG_NAME = 'LawVerify 运营中心'
+const ADMIN_DISPLAY_NAME = '超级管理员'
+
+type AdminAccountInput = {
+  email: string
+  password: string
+  name?: string
+}
+
+export type AdminAccountStatus = {
+  email: string
+  exists: boolean
+  status?: string
+  name?: string
+}
+
+// Creates a platform operator account. Existing accounts are never modified here,
+// so a restart cannot silently reset a password that was changed on the server.
+export async function createAdminAccount(input: AdminAccountInput) {
+  const email = normalizeEmail(input.email)
+  const name = input.name?.trim() || ADMIN_DISPLAY_NAME
+  const passwordHash = await bcrypt.hash(input.password, 10)
 
   if (!isDatabaseEnabled()) {
     return updateDevStore(async (store) => {
-      const user = store.users.find(u => u.email === email)
-      if (user) {
-        user.passwordHash = passwordHash
-        return
+      if (store.users.some(u => u.email === email)) {
+        throw new AppError('该账号已存在。', 409, 'ACCOUNT_EXISTS')
       }
 
       const organizationId = randomUUID()
       const userId = randomUUID()
-      const membershipId = randomUUID()
 
-      store.organizations.push({ id: organizationId, name: orgName, slug: 'admin-org', status: 'active' })
+      store.organizations.push({ id: organizationId, name: ADMIN_ORG_NAME, slug: createSlug(`admin-${email}`), status: 'active' })
       store.users.push({ id: userId, email, passwordHash, name, status: 'active' })
-      store.memberships.push({ id: membershipId, organizationId, userId, role: 'owner', title: '管理员', status: 'active', createdAt: new Date().toISOString() })
+      store.memberships.push({ id: randomUUID(), organizationId, userId, role: 'owner', title: '管理员', status: 'active', createdAt: new Date().toISOString() })
       store.pointAccounts.push({ organizationId, userId, balancePoints: 999999 })
+      return { email }
     })
-  }
-
-  const existing = await query('SELECT id FROM users WHERE email = $1', [email])
-  if (existing.rowCount) {
-    await query('UPDATE users SET password_hash = $1 WHERE email = $2', [passwordHash, email])
-    return
   }
 
   const pool = getPool()
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    
-    const orgRes = await client.query('INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id', [orgName, 'admin-org'])
-    const orgId = orgRes.rows[0].id
+    const existing = await client.query('SELECT id FROM users WHERE email = $1', [email])
+    if (existing.rowCount) {
+      throw new AppError('该账号已存在。', 409, 'ACCOUNT_EXISTS')
+    }
 
+    const orgRes = await client.query('INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id', [ADMIN_ORG_NAME, createSlug(`admin-${email}-${Date.now()}`)])
+    const orgId = orgRes.rows[0].id
     const userRes = await client.query('INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id', [email, passwordHash, name])
     const userId = userRes.rows[0].id
-
     await client.query('INSERT INTO organization_memberships (organization_id, user_id, role, title) VALUES ($1, $2, $3, $4)', [orgId, userId, 'owner', '管理员'])
-    
     await client.query('INSERT INTO point_accounts (organization_id, user_id, balance_points) VALUES ($1, $2, $3)', [orgId, userId, 999999])
-
     await client.query('COMMIT')
+    return { email }
   } catch (e) {
     await client.query('ROLLBACK')
     throw e
   } finally {
     client.release()
   }
+}
+
+// Changing a password signs the account out everywhere.
+export async function setAccountPassword(emailInput: string, password: string) {
+  const email = normalizeEmail(emailInput)
+  const passwordHash = await bcrypt.hash(password, 10)
+
+  if (!isDatabaseEnabled()) {
+    return updateDevStore(async (store) => {
+      const user = store.users.find(u => u.email === email)
+      if (!user) throw new AppError('账号不存在。', 404, 'ACCOUNT_NOT_FOUND')
+      user.passwordHash = passwordHash
+      user.currentSessionId = null
+      const now = new Date().toISOString()
+      for (const session of user.sessions ?? []) session.revokedAt ??= now
+      return { email }
+    })
+  }
+
+  const updated = await query<{ id: string }>('UPDATE users SET password_hash = $1, current_session_id = NULL WHERE email = $2 RETURNING id', [passwordHash, email])
+  if (!updated.rowCount) throw new AppError('账号不存在。', 404, 'ACCOUNT_NOT_FOUND')
+  await query('UPDATE account_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [updated.rows[0].id])
+  return { email }
+}
+
+export async function setAccountEmail(currentEmailInput: string, nextEmailInput: string) {
+  const currentEmail = normalizeEmail(currentEmailInput)
+  const nextEmail = normalizeEmail(nextEmailInput)
+
+  if (!isDatabaseEnabled()) {
+    return updateDevStore(async (store) => {
+      const user = store.users.find(u => u.email === currentEmail)
+      if (!user) throw new AppError('账号不存在。', 404, 'ACCOUNT_NOT_FOUND')
+      if (store.users.some(u => u.email === nextEmail)) throw new AppError('新账号名已被使用。', 409, 'ACCOUNT_EXISTS')
+      user.email = nextEmail
+      user.currentSessionId = null
+      const now = new Date().toISOString()
+      for (const session of user.sessions ?? []) session.revokedAt ??= now
+      return { email: nextEmail }
+    })
+  }
+
+  const conflict = await query('SELECT id FROM users WHERE email = $1', [nextEmail])
+  if (conflict.rowCount) throw new AppError('新账号名已被使用。', 409, 'ACCOUNT_EXISTS')
+  const updated = await query<{ id: string }>('UPDATE users SET email = $1, current_session_id = NULL WHERE email = $2 RETURNING id', [nextEmail, currentEmail])
+  if (!updated.rowCount) throw new AppError('账号不存在。', 404, 'ACCOUNT_NOT_FOUND')
+  await query('UPDATE account_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [updated.rows[0].id])
+  return { email: nextEmail }
+}
+
+export async function getAccountStatuses(emails: string[]): Promise<AdminAccountStatus[]> {
+  const normalized = emails.map(normalizeEmail)
+
+  if (!isDatabaseEnabled()) {
+    const store = await readDevStore()
+    return normalized.map((email) => {
+      const user = store.users.find(u => u.email === email)
+      return user ? { email, exists: true, status: user.status, name: user.name } : { email, exists: false }
+    })
+  }
+
+  const result = await query<{ email: string, status: string, name: string }>('SELECT email, status, name FROM users WHERE email = ANY($1)', [normalized])
+  return normalized.map((email) => {
+    const user = result.rows.find(row => row.email === email)
+    return user ? { email, exists: true, status: user.status, name: user.name } : { email, exists: false }
+  })
+}
+
+// Seeds the first operator account only when it does not exist yet. Credentials come
+// from ADMIN_INITIAL_EMAIL / ADMIN_INITIAL_PASSWORD; afterwards use `npm run admin`.
+export async function seedAdminAccount() {
+  const email = config.ADMIN_INITIAL_EMAIL
+  const [status] = await getAccountStatuses([email])
+  if (status.exists) return
+
+  const password = config.ADMIN_INITIAL_PASSWORD || (isDatabaseEnabled() ? '' : 'admin@123')
+  if (!password) {
+    console.warn(`Admin account "${email}" does not exist. Create it with: node dist/scripts/admin-account.js create ${email}`)
+    return
+  }
+
+  await createAdminAccount({ email, password })
+  console.log(`Admin account "${email}" created.`)
 }
 
 export async function loginAccount(input: LoginAccountInput) {

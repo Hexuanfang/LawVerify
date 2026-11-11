@@ -37,6 +37,8 @@ const schema = z.object({
   CLOUD_PUBLIC_BASE_URL: z.string().default('https://lawagent.zhijing.fun'),
   RELEASE_DOWNLOAD_BASE_URL: z.string().url().startsWith('https://').optional(),
   ADMIN_EMAILS: z.string().default('admin,972167580@qq.com'),
+  ADMIN_INITIAL_EMAIL: z.string().trim().min(1).default('admin'),
+  ADMIN_INITIAL_PASSWORD: z.string().optional(),
   JSON_LIMIT: z.string().default('2mb'),
   DATABASE_URL: z.string().optional(),
   AUTO_RUN_MIGRATIONS: booleanFromEnv.default(false),

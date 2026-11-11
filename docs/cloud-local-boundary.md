@@ -157,7 +157,7 @@
 
 ```text
 AI_GATEWAY_MODE=cloud
-CLOUD_API_BASE_URL=https://lawagent.zhijing.fun
+CLOUD_API_BASE_URL=https://lawverify.zhijing.fun
 ```
 
 用户无法在安装包里选择"本地直连模型"。这有两个后果：

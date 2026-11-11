@@ -1,5 +1,5 @@
 const ACCOUNT_REQUEST_CHANNEL = 'lawverify:account-request'
-const ACCOUNT_BASE_URL = 'https://lawagent.zhijing.fun'
+const ACCOUNT_BASE_URL = 'https://lawverify.zhijing.fun'
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const allowedHeaders = new Set(['authorization', 'content-type', 'accept', 'x-product-surface'])

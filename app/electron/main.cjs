@@ -63,7 +63,7 @@ const updateChannel = process.platform === 'darwin'
 const startupUpdateJob = process.platform === 'darwin' && app.isPackaged ? readStartupJob({
   userData: app.getPath('userData'), execPath: process.execPath, version: app.getVersion(),
 }) : null
-const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
+const OFFICIAL_PLATFORM_BASE_URL = 'https://lawverify.zhijing.fun'
 let desktopServer
 let desktopServerUrl
 let desktopServerPromise

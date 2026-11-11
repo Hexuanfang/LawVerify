@@ -9,7 +9,7 @@ const serverDistSource = path.join(serverRoot, 'dist')
 const migrationsSource = path.join(serverRoot, 'migrations')
 const desktopServerRoot = path.join(desktopRoot, 'server')
 const desktopServerEnvTarget = path.join(desktopServerRoot, '.env.local')
-const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
+const OFFICIAL_PLATFORM_BASE_URL = 'https://lawverify.zhijing.fun'
 
 function ensureExists(targetPath, label) {
   if (!fs.existsSync(targetPath)) {

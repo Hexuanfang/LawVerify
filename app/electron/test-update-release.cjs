@@ -4,7 +4,7 @@ const { verifyUpdateRelease } = require('./update-release.cjs')
 
 const release = {
   version: '0.1.60', platform: 'darwin', arch: 'arm64', channel: 'test',
-  downloadUrl: 'https://lawagent.zhijing.fun/api/web/releases/test/download', sha256: 'a'.repeat(64),
+  downloadUrl: 'https://lawverify.zhijing.fun/api/web/releases/test/download', sha256: 'a'.repeat(64),
 }
 const options = {
   envelope: { success: true, data: release }, payload: release,

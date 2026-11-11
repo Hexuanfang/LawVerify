@@ -62,7 +62,7 @@ function send(ws, method, params) {
     try {
       const r = await fetch('/api/cloud/api/account/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-cloud-base-url': 'https://lawagent.zhijing.fun' },
+        headers: { 'Content-Type': 'application/json', 'x-cloud-base-url': 'https://lawverify.zhijing.fun' },
         body: payload,
       })
       out.localStatus = r.status
@@ -71,7 +71,7 @@ function send(ws, method, params) {
       out.localError = { name: e.name, message: e.message, cause: e.cause ? String(e.cause) : null }
     }
     try {
-      const r2 = await fetch('https://lawagent.zhijing.fun/api/web/site/config', { method: 'GET', mode: 'no-cors' })
+      const r2 = await fetch('https://lawverify.zhijing.fun/api/web/site/config', { method: 'GET', mode: 'no-cors' })
       out.directType = r2.type
     } catch (e2) {
       out.directError = { name: e2.name, message: e2.message, cause: e2.cause ? String(e2.cause) : null }

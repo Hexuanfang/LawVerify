@@ -1,7 +1,7 @@
 # 新域名 lawverify.zhijing.fun 上线操作清单
 
-仓库侧已完成域名切换（官网链接、canonical、下载链接、注册邀请链接统一到 `lawverify.zhijing.fun`，
-`lawagent.zhijing.fun` 继续可用）。本文件只描述**服务器侧**需要人工执行的步骤。
+仓库侧已完成域名切换（官网链接、canonical、下载链接、注册邀请链接、桌面客户端云端接口统一到 `lawverify.zhijing.fun`，
+`lawagent.zhijing.fun` 仅作为兼容域名保留）。本文件只描述**服务器侧**需要人工执行的步骤。
 
 ## 现状（已在服务器上核实）
 
@@ -12,9 +12,9 @@
 | LawVerify 官网 | 容器 `lawverify-web-1`，宿主机端口 `8090`，外层反代 `proxy_pass http://172.19.0.1:8090` |
 | 云端接口 | 容器 `lawverify-cloud-server-1`，由官网容器内 nginx 以 `/api/*` 同源反代 |
 | 证书 | `/opt/diagnosis-test/certs/<域名>.pem|.key`，由 `/opt/lawverify/deploy/issue-cert.sh` 用 certbot 容器 webroot 方式签发 |
-| 续期 | root crontab，每周一次执行 `issue-cert.sh`（当前只签 `lawagent.zhijing.fun`） |
+| 续期 | root crontab，每周一次执行 `issue-cert.sh`（两个域名各一条） |
 
-因为新域名尚未在 nginx 中配置，也没有证书，`https://lawverify.zhijing.fun/` 目前命中默认站点并证书校验失败。
+新域名已在 nginx 中配置并签发证书，`https://lawverify.zhijing.fun/` 可直接访问。
 
 ## 步骤
 
@@ -158,6 +158,6 @@ curl -s https://lawverify.zhijing.fun/api/web/site/config   # 期望返回 siteN
 
 ## 注意
 
-- 桌面客户端的云端接口地址仍固定为 `lawagent.zhijing.fun`（两个域名指向同一套服务），
-  这样新域名证书未就绪时不会让已发布的客户端全线不可用；待新域名稳定运行后再统一切换。
+- 桌面客户端的云端接口地址已统一切换为 `lawverify.zhijing.fun`；`lawagent.zhijing.fun`
+  仍指向同一套服务，旧版本客户端继续可用，但也因此必须长期保留该域名的解析与证书。
 - `CLOUD_WEB_ORIGIN` 漏配新域名时，跨域调用云端接口会被 CORS 拒绝，页面能打开但接口报错。

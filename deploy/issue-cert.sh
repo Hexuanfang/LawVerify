@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # 用 certbot 容器以 webroot 方式签发 / 续期证书，复制到外层 nginx 的证书目录并重载。
 # 适用于 80/443 由宿主机上另一个 nginx 统一接入、LawVerify 只监听 WEB_PORT 的情况。
-#   DOMAIN=lawagent.example.com ACME_WEBROOT=/path/to/certbot-www CERT_DIR=/path/to/certs \
+#   DOMAIN=lawverify.example.com ACME_WEBROOT=/path/to/certbot-www CERT_DIR=/path/to/certs \
 #   NGINX_CONTAINER=outer-nginx ./issue-cert.sh
 # 证书未到续期时间时 certbot 不会重新签发，适合放进每周的 cron。
 set -eu

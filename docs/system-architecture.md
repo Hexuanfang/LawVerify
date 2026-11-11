@@ -146,7 +146,7 @@ flowchart LR
 | `FRONTEND_DIST_DIR` | `app/dist` |
 | `AUTO_RUN_MIGRATIONS` | `false` |
 | `AI_GATEWAY_MODE` | `cloud`（由 `.desktop/server/.env.local` 提供） |
-| `CLOUD_API_BASE_URL` | `https://lawagent.zhijing.fun`（仅当原值是本机地址时替换） |
+| `CLOUD_API_BASE_URL` | `https://lawverify.zhijing.fun`（仅当原值是本机地址时替换） |
 
 ### 3.2 开发态
 

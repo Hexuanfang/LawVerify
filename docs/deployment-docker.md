@@ -118,5 +118,5 @@ docker compose exec -T postgres pg_dump -U lawverify lawverify_cloud | gzip > ba
 ## 注意事项
 
 - 当前反向代理只提供 HTTP。正式对外（尤其支付回调）需要域名与 HTTPS，可在外层 nginx/负载均衡终止 TLS 后转发到 `WEB_PORT`。
-- 已发布的桌面客户端默认连接 `https://lawagent.zhijing.fun`；指向其他平台地址需要相应构建客户端。
+- 已发布的桌面客户端默认连接 `https://lawverify.zhijing.fun`；指向其他平台地址需要相应构建客户端。
 - 生产环境保持 `DEV_PAYMENT_SIMULATION=false`。

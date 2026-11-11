@@ -43,12 +43,12 @@ const API_BASE_URL = (
   || (import.meta.env.DEV ? `http://${DEV_SERVICE_HOST}:8787` : '')
 ).replace(/\/$/, '')
 
-// 云端接口地址：与官网同源部署但独立取值，两个域名等价，
-// 这里固定用 lawagent，避免新域名证书未就绪时客户端全线不可用。
+// 云端接口地址：与官网同源部署但独立取值，
+// 这里固定用 lawverify.zhijing.fun。
 // 官网页面地址（注册、账单等）由 App.tsx 的 ACCOUNT_CENTER_BASE_URL 负责。
 const CLOUD_API_BASE_URL = (
   (import.meta.env.DEV ? import.meta.env.VITE_CLOUD_API_BASE_URL?.trim() : '')
-  || (import.meta.env.DEV ? 'http://127.0.0.1:8788' : 'https://lawagent.zhijing.fun')
+  || (import.meta.env.DEV ? 'http://127.0.0.1:8788' : 'https://lawverify.zhijing.fun')
 ).replace(/\/$/, '')
 const CLOUD_TOKEN_STORAGE_KEY = 'lawverify-cloud-token'
 const LOGIN_ACCOUNT_STORAGE_KEY = 'lawverify-login-account'

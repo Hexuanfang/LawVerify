@@ -86,7 +86,8 @@ const createRechargeOrderSchema = z.object({
 
 const registerSchema = z.object({
   organizationName: z.string().min(2, '请输入组织名称。'),
-  ownerName: z.string().min(2, '请输入负责人姓名。'),
+  // 负责人姓名已从注册表单移除；旧客户端仍会传入，非空时照旧保存。
+  ownerName: z.string().trim().min(2, '请输入负责人姓名。').optional(),
   email: z.string().email('请输入正确邮箱。'),
   password: z.string().min(8, '密码至少 8 位。'),
 })

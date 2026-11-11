@@ -168,7 +168,6 @@ interface CloudAccountSessionProfile {
 
 interface DesktopRegisterForm {
   organizationName: string
-  ownerName: string
   email: string
   password: string
   inviteCode?: string
@@ -2436,7 +2435,6 @@ function App() {
   const [isLoginPasswordVisible, setIsLoginPasswordVisible] = useState(false)
   const [registerForm, setRegisterForm] = useState<DesktopRegisterForm>({
     organizationName: '',
-    ownerName: '',
     email: '',
     password: '',
   })
@@ -4978,6 +4976,9 @@ function App() {
       cloudAccountProfileRef.current = nextProfile
       persistCloudAuthToken(cloudLogin.token)
       await completeDesktopAuthSession(trimmedAccount, nextProfile)
+      // 登录成功后不再保留明文密码。
+      setLoginForm((current) => ({ ...current, password: '' }))
+      setIsLoginPasswordVisible(false)
       setEntryOnboardingStep('create-case')
     }, { alert: false, action: 'login' })
 
@@ -4999,11 +5000,6 @@ function App() {
       return
     }
 
-    if (!registerForm.ownerName.trim()) {
-      setErrorMessage('请输入负责人姓名。')
-      return
-    }
-
     if (!email) {
       setErrorMessage('请输入注册邮箱。')
       return
@@ -5014,7 +5010,6 @@ function App() {
       try {
         cloudRegister = await api.registerCloudAccount({
           organizationName: registerForm.organizationName.trim(),
-          ownerName: registerForm.ownerName.trim(),
           email,
           password: registerForm.password,
           inviteCode: registerForm.inviteCode?.trim() || undefined,
@@ -5051,6 +5046,9 @@ function App() {
       cloudAccountProfileRef.current = nextProfile
       persistCloudAuthToken(cloudRegister.token)
       await completeDesktopAuthSession(email, nextProfile)
+      // 注册成功后不再保留明文密码。
+      setRegisterForm((current) => ({ ...current, password: '' }))
+      setIsRegisterPasswordVisible(false)
       setEntryOnboardingStep('create-case')
     }, { alert: false, action: 'register' })
   }
@@ -5079,6 +5077,11 @@ function App() {
     persistCloudAuthToken(null)
     setAuthToken(null)
     setLoginAccount('')
+    // 退出后必须清空登录/注册表单里的密码，避免密码残留在输入框或内存里。
+    setLoginForm((current) => ({ ...current, password: '' }))
+    setRegisterForm((current) => ({ ...current, password: '' }))
+    setIsLoginPasswordVisible(false)
+    setIsRegisterPasswordVisible(false)
     // 登录态失效后必须释放所有旧的加载/提交锁，避免回到认证页后无法继续输入。
     setIsSubmitting(false)
     setIsLoading(false)
@@ -11046,17 +11049,6 @@ function App() {
                       setRegisterForm((current) => ({ ...current, organizationName: event.target.value }))
                     }
                     placeholder="请输入律所或团队名称"
-                  />
-                </label>
-
-                <label>
-                  负责人姓名
-                  <input
-                    value={registerForm.ownerName}
-                    onChange={(event) =>
-                      setRegisterForm((current) => ({ ...current, ownerName: event.target.value }))
-                    }
-                    placeholder="请输入负责人姓名"
                   />
                 </label>
 

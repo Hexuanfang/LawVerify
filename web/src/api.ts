@@ -157,7 +157,7 @@ export const api = {
   },
   register(payload: {
     organizationName: string
-    ownerName: string
+    ownerName?: string
     email: string
     password: string
     inviteCode?: string

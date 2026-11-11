@@ -70,6 +70,8 @@ async function persistSession(userId: string, sessionId: string, token: string) 
 export async function registerAccount(input: RegisterAccountInput) {
   const email = normalizeEmail(input.email)
   const sessionId = randomUUID()
+  // 负责人姓名已从注册表单移除，旧客户端仍可能带上；没带就存空串。
+  const ownerName = input.ownerName?.trim() ?? ''
 
   if (!isDatabaseEnabled()) {
     return updateDevStore(async (store) => {
@@ -93,7 +95,7 @@ export async function registerAccount(input: RegisterAccountInput) {
         id: userId,
         email,
         passwordHash,
-        name: input.ownerName.trim(),
+        name: ownerName,
         currentSessionId: sessionId,
         status: 'active',
       })
@@ -138,7 +140,7 @@ export async function registerAccount(input: RegisterAccountInput) {
         user: {
           id: userId,
           email,
-          name: input.ownerName.trim(),
+          name: ownerName,
         },
         organization: {
           id: organizationId,
@@ -171,7 +173,7 @@ export async function registerAccount(input: RegisterAccountInput) {
       VALUES ($1, $2, $3, 'active')
       RETURNING id, email, name
     `,
-    [email, passwordHash, input.ownerName.trim()],
+    [email, passwordHash, ownerName],
   )
   const user = userResult.rows[0]
 

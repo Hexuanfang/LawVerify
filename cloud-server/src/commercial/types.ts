@@ -20,7 +20,8 @@ export interface AuthenticatedActor {
 
 export interface RegisterAccountInput {
   organizationName: string
-  ownerName: string
+  /** 负责人姓名已从注册表单移除；旧客户端仍会传入，非空时照旧保存，否则存空串。 */
+  ownerName?: string
   email: string
   password: string
   inviteCode?: string

@@ -28,7 +28,8 @@ export async function listInvoiceProfiles(actor: AuthenticatedActor) {
     },
   ]
 
-  if (organization.name !== user.name) {
+  // 负责人姓名已从注册表单移除，users.name 可能为空串；没有姓名就不生成个人抬头。
+  if (user.name && organization.name !== user.name) {
     items.push({
       id: `invoice-profile-${user.id}`,
       title: user.name,

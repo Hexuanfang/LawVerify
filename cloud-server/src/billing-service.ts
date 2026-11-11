@@ -162,7 +162,7 @@ async function resolveBillingIdentity(actor?: AuthenticatedActor | null): Promis
       commercialUserId: actor.userId,
       organizationId: actor.organizationId,
       email: user.email,
-      name: user.name,
+      name: user.name || user.email,
     }
   }
 
@@ -180,7 +180,7 @@ async function resolveBillingIdentity(actor?: AuthenticatedActor | null): Promis
     commercialUserId: actor.userId,
     organizationId: actor.organizationId,
     email: result.rows[0].email,
-    name: result.rows[0].name,
+    name: result.rows[0].name || result.rows[0].email,
   }
 }
 
@@ -313,7 +313,7 @@ async function findStoredOrderByTradeNo(outTradeNo: string) {
       commercialUserId: row.commercial_user_id ?? null,
       organizationId: row.organization_id ?? null,
       email: row.workspace_user_email ?? accountSummary.email,
-      name: row.workspace_user_name ?? accountSummary.displayName,
+      name: row.workspace_user_name || accountSummary.displayName,
     },
     order: mapPaymentOrderRow(row),
   }
@@ -665,7 +665,7 @@ async function getStoredAccountSummary(actor: AuthenticatedActor) {
 
     return {
       id: user.id,
-      displayName: user.name,
+      displayName: user.name || user.email,
       email: user.email,
       tierName: latestPaidOrder?.packageName ?? '未开通套餐',
       pointsBalance: pointAccount?.balancePoints ?? 0,
@@ -713,7 +713,7 @@ async function getStoredAccountSummary(actor: AuthenticatedActor) {
   const row = result.rows[0]
   return {
     id: row.user_id,
-    displayName: row.display_name,
+    displayName: row.display_name || row.email,
     email: row.email,
     tierName: row.tier_name ?? '未开通套餐',
     pointsBalance: row.balance_points ?? 0,

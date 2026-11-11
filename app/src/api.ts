@@ -794,7 +794,7 @@ export const api = {
   },
   registerCloudAccount(payload: {
     organizationName: string
-    ownerName: string
+    ownerName?: string
     email: string
     password: string
     inviteCode?: string

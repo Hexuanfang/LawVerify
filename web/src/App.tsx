@@ -1506,10 +1506,6 @@ function AuthPage({
               <input name="organizationName" placeholder="例如：北京市某某律师事务所" required minLength={2} autoComplete="organization" />
             </label>
             <label>
-              负责人姓名
-              <input name="ownerName" placeholder="请输入姓名" required autoComplete="name" />
-            </label>
-            <label>
               邀请码（选填）
               <input name="inviteCode" maxLength={16} defaultValue={new URLSearchParams(window.location.search).get('invite') ?? ''} />
             </label>
@@ -3736,7 +3732,6 @@ export default function App() {
     try {
       const result = await api.register({
         organizationName: String(formData.get('organizationName') ?? ''),
-        ownerName: String(formData.get('ownerName') ?? ''),
         email: String(formData.get('email') ?? ''),
         password: String(formData.get('password') ?? ''),
         inviteCode: String(formData.get('inviteCode') ?? '').trim() || undefined,

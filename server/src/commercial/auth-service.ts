@@ -25,6 +25,8 @@ export function verifyToken(token: string) {
 
 export async function registerAccount(input: RegisterAccountInput) {
   const email = normalizeEmail(input.email)
+  // 负责人姓名已从注册表单移除，旧客户端仍可能带上；没带就存空串。
+  const ownerName = input.ownerName?.trim() ?? ''
   const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1 LIMIT 1', [email])
 
   if (existing.rowCount) {
@@ -45,7 +47,7 @@ export async function registerAccount(input: RegisterAccountInput) {
       VALUES ($1, $2, $3, 'active')
       RETURNING id, email, name
     `,
-    [email, passwordHash, input.ownerName.trim()],
+    [email, passwordHash, ownerName],
   )
   const user = userResult.rows[0]
 

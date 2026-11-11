@@ -273,7 +273,7 @@ macOS 的双架构构建、签名、公证与验证流程见 [Mac 构建与发�
 - 备份前关闭客户端，备份完整数据和存储目录。不要单独删除 WAL/SHM，也不要用旧 JSON 覆盖新 SQLite。详见[工作区存储](docs/workspace-storage.md)。
 - `.env*`（除模板）、日志、依赖、缓存、构建产物和案件运行资料不应提交。已经进入 Git 历史的敏感数据须另行清理，泄露密钥须轮换。
 - **发行前检查密钥打包**：`prepare-desktop.cjs` 当前生成不含开发密钥的桌面配置，默认使用云端 AI 网关，不复制开发环境中的模型与 MCP 凭据。发行时仍需检查最终产物，禁止将平台共享密钥写入前端、安装包或 Git。
-- **云端上线前必须处理默认管理员初始化**：当前 `seedAdminAccount()` 带有固定开发凭据且启动时可能重设密码。须调整该逻辑，并审查 `ADMIN_EMAILS`、权限、HTTPS、来源白名单、支付回调验签和日志脱敏，不能仅更换环境变量便认定可安全上线。
+- **系统管理员账号**：启动时仅在 `ADMIN_INITIAL_EMAIL` 不存在且设置了 `ADMIN_INITIAL_PASSWORD` 时创建，不会重置已有密码；之后用 `npm --prefix cloud-server run admin -- set-password <账号>` 等命令在服务器上管理（Docker 部署用 `deploy/admin.sh`）。上线前仍须审查 `ADMIN_EMAILS`、权限、HTTPS、来源白名单、支付回调验签和日志脱敏。
 - 支付商户密钥只留在云端。`DEV_PAYMENT_SIMULATION` 仅用于隔离的开发环境。
 - 反馈问题请提供版本、复现步骤、期望与实际结果；截图和材料应先脱敏。
 
@@ -282,6 +282,7 @@ macOS 的双架构构建、签名、公证与验证流程见 [Mac 构建与发�
 - [工作区存储与迁移](docs/workspace-storage.md)
 - [桌面开发命令](docs/desktop-dev-commands.md)
 - [平台运行命令](docs/platform-dev-commands.md)
+- [官网与云端平台 Docker 部署](docs/deployment-docker.md)
 - [Windows 签名](docs/windows-code-signing.md)
 - [Mac 构建与发行](docs/mac-desktop-build.md)
 - [发行下载验证](docs/download-release-verification.md)

@@ -176,7 +176,7 @@ Artifacts are written to `app/release/`, with installers named `LawVerify-Setup-
 - Close the client and back up complete data and storage directories. Do not delete WAL/SHM files independently or replace current SQLite data with old JSON. See [workspace storage](docs/workspace-storage.md).
 - Do not commit `.env*` except templates, logs, dependencies, caches, build outputs, or case runtime data. Sensitive information already in Git history requires separate history cleanup and credential rotation.
 - **Review packaged credentials:** `prepare-desktop.cjs` copies allowlisted settings, including model and MCP keys, from `server/.env.local` into the installer. Never distribute shared platform secrets; use controlled services or user-owned credentials.
-- **Address administrator initialization before deployment:** `seedAdminAccount()` currently contains fixed development credentials and can reset the password on startup. Change this behavior and review `ADMIN_EMAILS`, authorization, HTTPS, allowed origins, payment callback verification, and log redaction. Environment-variable changes alone do not make deployment safe.
+- **Administrator accounts:** on startup the `ADMIN_INITIAL_EMAIL` account is created only if it does not exist and `ADMIN_INITIAL_PASSWORD` is set; existing passwords are never reset. Manage accounts on the server with `npm --prefix cloud-server run admin -- set-password <account>` and related commands (`deploy/admin.sh` for Docker deployments). Still review `ADMIN_EMAILS`, authorization, HTTPS, allowed origins, payment callback verification, and log redaction before going live.
 - Keep merchant secrets in the cloud service. Enable `DEV_PAYMENT_SIMULATION` only in isolated development.
 - Feedback should include the version, reproduction steps, expected behavior, and actual behavior. Redact screenshots and case materials first.
 
@@ -185,6 +185,7 @@ Artifacts are written to `app/release/`, with installers named `LawVerify-Setup-
 - [Workspace storage and migration](docs/workspace-storage.md)
 - [Desktop development commands](docs/desktop-dev-commands.md)
 - [Platform commands](docs/platform-dev-commands.md)
+- [Docker deployment for website and cloud platform](docs/deployment-docker.md)
 - [Windows signing](docs/windows-code-signing.md)
 - [Case provider integrations](docs/legal-case-mcp.md)
 - [Official legal sources](docs/legal-official-sources.md)

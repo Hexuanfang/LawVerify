@@ -1,0 +1,56 @@
+# 宿主机已有 nginx 占用 80/443 时，把下面两个 server 块加到它的配置里，转发到 LawVerify 的 WEB_PORT。
+# - UPSTREAM：外层 nginx 能访问到 LawVerify 的地址。外层 nginx 在容器里时，用它所在 docker 网络的网关 IP，
+#   例如 docker network inspect <网络名> -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+# - 先只加 80 端口的块并重载，用 deploy/issue-cert.sh 签发证书后，再加 443 的块、把 80 的 location / 换成跳转。
+# - 外层配置如果是单文件挂载进容器的，修改时要原地写入（cat >> / cat > 文件），不能 sed -i 或用编辑器换文件，
+#   否则容器里看到的仍是旧文件。
+
+server {
+  listen 80;
+  server_name lawagent.example.com;
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  # 证书就绪后改为：location / { return 301 https://$host$request_uri; }
+  location / {
+    proxy_pass http://UPSTREAM:8090;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 30m;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+  }
+}
+
+server {
+  listen 443 ssl;
+  http2 on;
+  server_name lawagent.example.com;
+
+  ssl_certificate /etc/nginx/certs/lawagent.example.com.pem;
+  ssl_certificate_key /etc/nginx/certs/lawagent.example.com.key;
+  ssl_protocols TLSv1.2 TLSv1.3;
+
+  location / {
+    proxy_pass http://UPSTREAM:8090;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 30m;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+  }
+}

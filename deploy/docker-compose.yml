@@ -1,0 +1,61 @@
+# LawVerify 官网 + 云端平台（web + cloud-server + PostgreSQL）
+# 用法见 docs/deployment-docker.md。所有配置来自同目录下的 .env（参考 .env.example）。
+name: lawverify
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lawverify_cloud
+      POSTGRES_USER: lawverify
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lawverify -d lawverify_cloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  cloud-server:
+    build:
+      context: ../cloud-server
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    image: lawverify-cloud-server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CLOUD_HOST: 0.0.0.0
+      CLOUD_PORT: 8788
+      DATABASE_URL: postgres://lawverify:${POSTGRES_PASSWORD}@postgres:5432/lawverify_cloud
+      AUTO_RUN_MIGRATIONS: "true"
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
+    volumes:
+      - ${RELEASE_DIR:-./releases}:/opt/lawverify/app/release:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../web
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        VITE_SITE_URL: ${VITE_SITE_URL:-}
+        VITE_COMPANY_NAME: ${VITE_COMPANY_NAME:-}
+        VITE_BAIDU_TONGJI_ID: ${VITE_BAIDU_TONGJI_ID:-}
+        VITE_ICP_NUMBER: ${VITE_ICP_NUMBER:-}
+        VITE_TERMS_URL: ${VITE_TERMS_URL:-}
+        VITE_PRIVACY_URL: ${VITE_PRIVACY_URL:-}
+    image: lawverify-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8090}:80"
+    depends_on:
+      cloud-server:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

@@ -6,7 +6,7 @@ import { getCurrentActorProfile, loginAccount, logoutAccount, registerAccount, v
 import { createUserFeedback } from '../feedback-service.js'
 import { getBillingAccountSummary, getUsageSummary, listRechargePointLedger } from '../billing-service.js'
 import { sendSuccess } from '../http.js'
-import { authenticate, requirePermission } from '../middleware/authenticate.js'
+import { authenticate, isPlatformAdminEmail, requirePermission } from '../middleware/authenticate.js'
 import { consumePointAction, listPointPolicies, quotePointAction, refundPointAction } from '../point-service.js'
 import { getReferralSummary } from '../referral-service.js'
 import { eventBatchSchema, getAnalyticsPreference, ingestProductEvents, setAnalyticsPreference } from '../analytics-service.js'
@@ -99,7 +99,7 @@ accountRouter.post('/login', async (request, response) => {
     id: randomUUID(), name: 'auth.login', surface: request.header('x-product-surface') === 'desktop' ? 'desktop' : 'web',
     outcome: 'success', durationMs: Math.min(3600000, Date.now() - started),
   }]).catch(() => {})
-  sendSuccess(response, result)
+  sendSuccess(response, { ...result, isPlatformAdmin: isPlatformAdminEmail(claims.email) })
 })
 
 accountRouter.post('/logout', authenticate, async (request, response) => {

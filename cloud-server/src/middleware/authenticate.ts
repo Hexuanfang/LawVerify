@@ -12,13 +12,7 @@ declare module 'express-serve-static-core' {
   }
 }
 
-export function getPlatformAdminEmails() {
-  return config.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
-}
-
-export function isPlatformAdminEmail(email: string) {
-  return getPlatformAdminEmails().includes(email.trim().toLowerCase())
-}
+export { getPlatformAdminEmails, isPlatformAdminEmail } from '../commercial/admin-identifiers.js'
 
 export function authenticate(request: Request, _response: Response, next: NextFunction) {
   const authorization = request.header('authorization')

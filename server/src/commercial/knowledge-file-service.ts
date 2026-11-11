@@ -229,18 +229,37 @@ function buildVectorConfigurationError() {
 }
 
 async function ensureWorkspaceOrganization() {
-  const result = await query<{ id: string }>(
+  // slug 不再唯一，这里改为按 slug 查找、缺失则创建。
+  const existing = await query<{ id: string }>(
+    'SELECT id FROM organizations WHERE slug = $1 ORDER BY created_at ASC LIMIT 1',
+    [WORKSPACE_ORGANIZATION_SLUG],
+  )
+
+  if (existing.rowCount) {
+    await query('UPDATE organizations SET updated_at = NOW() WHERE id = $1', [existing.rows[0].id])
+    return existing.rows[0].id
+  }
+
+  const created = await query<{ id: string }>(
     `
       INSERT INTO organizations (name, slug)
       VALUES ($1, $2)
-      ON CONFLICT (slug)
-      DO UPDATE SET updated_at = NOW()
+      ON CONFLICT DO NOTHING
       RETURNING id
     `,
     ['LawVerify 本地工作区', WORKSPACE_ORGANIZATION_SLUG],
   )
 
-  return result.rows[0].id
+  if (created.rowCount) {
+    return created.rows[0].id
+  }
+
+  const fallback = await query<{ id: string }>(
+    'SELECT id FROM organizations WHERE slug = $1 ORDER BY created_at ASC LIMIT 1',
+    [WORKSPACE_ORGANIZATION_SLUG],
+  )
+
+  return fallback.rows[0].id
 }
 
 async function extractKnowledgeText(file: Express.Multer.File, relativePath: string): Promise<ExtractionResult> {

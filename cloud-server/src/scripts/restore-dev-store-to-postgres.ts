@@ -122,7 +122,8 @@ async function queryExistingOrganizations(client: PoolClient) {
   const result = await client.query<{ id: string; slug: string; created_at: string }>(
     'SELECT id, slug, created_at::text FROM organizations',
   )
-  return new Map(result.rows.map((row) => [row.slug, row]))
+  // slug 不再唯一，只能用 id 做匹配键。
+  return new Map(result.rows.map((row) => [row.id, row]))
 }
 
 async function queryExistingMemberships(client: PoolClient) {
@@ -249,7 +250,7 @@ async function main() {
     }
 
     for (const organization of store.organizations) {
-      const existingOrganization = existingOrganizations.get(organization.slug)
+      const existingOrganization = existingOrganizations.get(organization.id)
       if (existingOrganization) {
         const historicalCreatedAt = earliestMembershipByOrg.get(organization.id)
         if (historicalCreatedAt && historicalCreatedAt < existingOrganization.created_at) {
@@ -272,7 +273,7 @@ async function main() {
         [organization.id, organization.name, organization.slug, organization.status, createdAt],
       )
 
-      existingOrganizations.set(organization.slug, { id: organization.id, slug: organization.slug, created_at: createdAt })
+      existingOrganizations.set(organization.id, { id: organization.id, slug: organization.slug, created_at: createdAt })
       organizationIdMap.set(organization.id, organization.id)
       summary.insertedOrganizations += 1
     }

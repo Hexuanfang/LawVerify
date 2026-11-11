@@ -535,3 +535,25 @@ lawVerify/
 - 支付正式走公网
 - 官网与账户中心统一品牌与体验
 - 后续发票、订单、使用量自然接上
+
+## 12. admin 账号放行
+
+### 12.1 定位
+系统内置的超级管理员账号 `admin`（以及 `config.ADMIN_EMAILS` 中配置的其他标识）允许直接作为注册邮箱，不再强制邮箱格式；其余注册仍要求合法邮箱。登录与登录后的跳转逻辑保持不变。
+
+### 12.2 管理员口径
+`cloud-server/src/commercial/admin-identifiers.ts` 统一管理员标识的解析：
+
+| 函数 | 用途 |
+| --- | --- |
+| `getPlatformAdminEmails()` | 解析 `config.ADMIN_EMAILS`（去空格、转小写、去空） |
+| `isPlatformAdminEmail(email)` | 判断是否属于平台管理员 |
+| `isAllowedRegistrationEmail(value)` | 注册邮箱校验：合法邮箱，或管理员标识 |
+
+后台鉴权（`middleware/authenticate.ts` 的 `requirePlatformAdmin`）与后台统计里排除管理员账号（`admin-service.ts`）都复用同一份解析逻辑，避免各处重复解析导致口径不一致。
+
+### 12.3 注册接口
+`POST /api/account/register` 的 `email` 字段由 `z.string().email()` 改为 `min(1).refine(isAllowedRegistrationEmail)`，不合法时返回「请输入正确的邮箱地址，或使用管理员账号标识。」。
+
+### 12.4 推荐邀请码
+注册时填写的邀请码仍走原有的推荐邀请码逻辑：每个用户在账户资料页拥有自己的邀请码，可被多人使用；注册成功即建立绑定关系，付费达门槛后双方发放积分奖励。邀请链接由 `cloud-server/src/invite-url.ts` 的 `buildInviteUrl(code)` 统一生成。

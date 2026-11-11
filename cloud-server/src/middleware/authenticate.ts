@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
 
 import { AppError } from '../core/app-error.js'
-import { config } from '../config.js'
+import { isPlatformAdminEmail } from '../commercial/admin-identifiers.js'
 import { assertSessionIsActive, verifyToken } from '../commercial/auth-service.js'
 import { hasPermission, type Permission } from '../commercial/rbac.js'
 import type { AuthenticatedActor } from '../commercial/types.js'
@@ -67,8 +67,7 @@ export function requirePlatformAdmin(request: Request, _response: Response, next
     return
   }
 
-  const adminEmails = config.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
-  if (!adminEmails.includes(request.actor.email.toLowerCase())) {
+  if (!isPlatformAdminEmail(request.actor.email)) {
     next(new AppError('当前账号没有系统管理员权限。', 403, 'FORBIDDEN'))
     return
   }

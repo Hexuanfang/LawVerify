@@ -1,4 +1,4 @@
-import { config } from './config.js'
+import { getPlatformAdminEmails } from './commercial/admin-identifiers.js'
 import { isDatabaseEnabled, query } from './infrastructure/postgres.js'
 import { readDevStore } from './infrastructure/dev-store.js'
 
@@ -11,10 +11,7 @@ type TrendPoint = {
 const TREND_DAYS = 30
 
 function getExcludedAdminEmails() {
-  return config.ADMIN_EMAILS
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean)
+  return getPlatformAdminEmails()
 }
 
 function isExcludedAdminEmail(email: string | undefined | null, excludedEmails = getExcludedAdminEmails()) {

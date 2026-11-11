@@ -10,11 +10,13 @@ import { authenticate, requirePermission } from '../middleware/authenticate.js'
 import { consumePointAction, listPointPolicies, quotePointAction, refundPointAction } from '../point-service.js'
 import { getReferralSummary } from '../referral-service.js'
 import { eventBatchSchema, getAnalyticsPreference, ingestProductEvents, setAnalyticsPreference } from '../analytics-service.js'
+import { isAllowedRegistrationEmail } from '../commercial/admin-identifiers.js'
 
 const registerSchema = z.object({
   organizationName: z.string().min(2, '机构名称至少 2 个字。'),
   ownerName: z.string().min(2, '负责人姓名至少 2 个字。'),
-  email: z.string().email('请输入正确的邮箱地址。'),
+  email: z.string().trim().min(1, '请输入邮箱或管理员账号标识。')
+    .refine(isAllowedRegistrationEmail, '请输入正确的邮箱地址，或使用管理员账号标识。'),
   password: z.string().min(6, '密码至少 6 位。'),
   inviteCode: z.string().trim().regex(/^[A-Fa-f0-9]{16}$/).optional(),
 })

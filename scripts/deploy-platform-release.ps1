@@ -17,7 +17,7 @@ param(
   [string]$IdentityFile,
   [string]$CloudInstallCommand,
   [string]$RestartCommand,
-  [string]$ValidationUrl = 'https://lawagent.zhijing.fun/api/web/site/config',
+  [string]$ValidationUrl = 'https://lawverify.zhijing.fun/api/web/site/config',
   [int]$ValidationRetries = 5,
   [switch]$SkipCloudDeploy,
   [switch]$SkipValidation,
@@ -348,5 +348,5 @@ if ($deployCloud) {
 }
 Write-Host ''
 Write-Host 'Example validation URLs:'
-Write-Host '- https://lawagent.zhijing.fun/download'
-Write-Host '- https://lawagent.zhijing.fun/api/web/releases'
+Write-Host '- https://lawverify.zhijing.fun/download'
+Write-Host '- https://lawverify.zhijing.fun/api/web/releases'

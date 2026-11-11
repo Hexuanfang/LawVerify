@@ -33,8 +33,10 @@ const schema = z.object({
   CLOUD_PORT: z.coerce.number().int().positive().default(8788),
   CLOUD_HOST: z.string().default('0.0.0.0'),
   CLOUD_APP_NAME: z.string().default('LawVerify Cloud'),
-  CLOUD_WEB_ORIGIN: z.string().default('http://127.0.0.1:4273,http://localhost:4273,https://lawagent.zhijing.fun'),
-  CLOUD_PUBLIC_BASE_URL: z.string().default('https://lawagent.zhijing.fun'),
+  // 两个官网域名指向同一套服务，都要允许跨域调用云端接口。
+  CLOUD_WEB_ORIGIN: z.string().default('http://127.0.0.1:4273,http://localhost:4273,https://lawverify.zhijing.fun,https://lawagent.zhijing.fun'),
+  // 官网对外链接（下载、注册邀请、支付回跳）的统一域名。
+  CLOUD_PUBLIC_BASE_URL: z.string().default('https://lawverify.zhijing.fun'),
   RELEASE_DOWNLOAD_BASE_URL: z.string().url().startsWith('https://').optional(),
   ADMIN_EMAILS: z.string().default('admin,972167580@qq.com'),
   JSON_LIMIT: z.string().default('2mb'),

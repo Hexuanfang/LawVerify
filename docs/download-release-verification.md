@@ -22,7 +22,7 @@
 npm.cmd --prefix web run test:proxy
 npm.cmd --prefix cloud-server run test:download
 npm.cmd --prefix cloud-server run test:download -- --base http://127.0.0.1:4273
-npm.cmd --prefix cloud-server run test:download -- --base https://lawagent.zhijing.fun --resume-only
+npm.cmd --prefix cloud-server run test:download -- --base https://lawverify.zhijing.fun --resume-only
 ```
 
 测试检查元数据、HEAD 文件长度、完整下载、分段续传后的 SHA256、

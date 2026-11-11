@@ -100,7 +100,7 @@ const AGENT_DOCK_MARGIN = 20
 const AGENT_DOCK_COLLAPSED_SIZE = 68
 const AGENT_DOCK_EXPANDED_WIDTH = 640
 const AGENT_DOCK_EXPANDED_HEIGHT = 310
-const OFFICIAL_PLATFORM_BASE_URL = 'https://lawagent.zhijing.fun'
+const OFFICIAL_PLATFORM_BASE_URL = 'https://lawverify.zhijing.fun'
 const DEV_SERVICE_HOST = typeof window !== 'undefined'
   && window.location.hostname
   && window.location.hostname !== 'localhost'

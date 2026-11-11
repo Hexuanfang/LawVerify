@@ -57,7 +57,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-platform-r
 ```powershell
 .\platform-dev.cmd ensure
 Get-ScheduledTaskInfo -TaskName LawVerify-Platform-Recovery
-Invoke-WebRequest -UseBasicParsing https://lawagent.zhijing.fun/api/web/site/config
+Invoke-WebRequest -UseBasicParsing https://lawverify.zhijing.fun/api/web/site/config
 ```
 
 恢复检查不接管其他程序占用的端口，也不重启 Cloudflared、数据库或 AI 提供方。
@@ -65,7 +65,7 @@ Invoke-WebRequest -UseBasicParsing https://lawagent.zhijing.fun/api/web/site/con
 
 ## 6. Collabora 对接平台官网域名
 
-`docker-compose.collabora.yml` 已不再写死 `lawagent.zhijing.fun`，改为读取平台官网映射：
+`docker-compose.collabora.yml` 已不再写死官网域名，改为读取平台官网映射：
 
 ```powershell
 $env:PLATFORM_WEB_DOMAIN="你的平台官网域名"

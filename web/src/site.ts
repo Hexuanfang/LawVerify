@@ -8,7 +8,7 @@ function readEnv(key: string) {
 }
 
 export const siteConfig = {
-  siteUrl: (readEnv('VITE_SITE_URL') || 'https://lawagent.zhijing.fun').replace(/\/$/, ''),
+  siteUrl: (readEnv('VITE_SITE_URL') || 'https://lawverify.zhijing.fun').replace(/\/$/, ''),
   // 公司正式全称拿到后，在 .env 里配置 VITE_COMPANY_NAME 替换。
   companyName: readEnv('VITE_COMPANY_NAME') || '北京智镜科技',
   // 百度统计 ID：没有配置时不加载统计脚本。

@@ -26,11 +26,11 @@ AI 输出用于辅助审阅，不替代律师判断；法条和证据摘录仍�
 
 ## 页面
 
-- [首页](https://lawagent.zhijing.fun/)
-- [产品能力](https://lawagent.zhijing.fun/product)
-- [什么是逐句证据核验](https://lawagent.zhijing.fun/verification)
-- [价格](https://lawagent.zhijing.fun/pricing)
-- [下载客户端](https://lawagent.zhijing.fun/download)
-- [快速上手](https://lawagent.zhijing.fun/docs)
-- [常见问题](https://lawagent.zhijing.fun/faq)
-- [AI 使用说明](https://lawagent.zhijing.fun/ai-notice)
+- [首页](https://lawverify.zhijing.fun/)
+- [产品能力](https://lawverify.zhijing.fun/product)
+- [什么是逐句证据核验](https://lawverify.zhijing.fun/verification)
+- [价格](https://lawverify.zhijing.fun/pricing)
+- [下载客户端](https://lawverify.zhijing.fun/download)
+- [快速上手](https://lawverify.zhijing.fun/docs)
+- [常见问题](https://lawverify.zhijing.fun/faq)
+- [AI 使用说明](https://lawverify.zhijing.fun/ai-notice)

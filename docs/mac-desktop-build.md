@@ -119,7 +119,7 @@ Mac 更新下载后校验 SHA256、打开 DMG 并退出应用，由用户拖入�
 并部署官网与云端分发服务。页面按普通 Mac 下载入口展示，不额外添加签名或公证提示；
 云端保留 `channel: test`，`/api/web/releases/latest` 始终排除测试包。
 
-官网入口：`https://lawagent.zhijing.fun/download`。
+官网入口：`https://lawverify.zhijing.fun/download`。
 原始测试产物仍保留在 `app/release-mac-unsigned/`。
 
 在 `cloud-server` 目录验证本地完整下载：
@@ -131,13 +131,13 @@ node --import tsx src/scripts/test-mac-download.ts --full
 在 `cloud-server` 目录验证公网完整下载：
 
 ```powershell
-node --import tsx src/scripts/test-mac-download.ts --base https://lawagent.zhijing.fun --full
+node --import tsx src/scripts/test-mac-download.ts --base https://lawverify.zhijing.fun --full
 ```
 
 遇到传输连接中断时，可验证分段安全续传后的完整文件：
 
 ```powershell
-node --import tsx src/scripts/test-mac-download.ts --base https://lawagent.zhijing.fun --full --resume --arch x64
+node --import tsx src/scripts/test-mac-download.ts --base https://lawverify.zhijing.fun --full --resume --arch x64
 ```
 
 `--arch` 可选 `arm64` 或 `x64`。需要本机代理时，配置 `HTTPS_PROXY`，

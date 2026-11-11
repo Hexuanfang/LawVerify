@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { config } from './config.js'
 import { AppError } from './core/app-error.js'
+import { buildInviteUrl } from './invite-url.js'
 import type { AuthenticatedActor } from './commercial/types.js'
 import { readDevStore, updateDevStore, type DevStoreShape } from './infrastructure/dev-store.js'
 import { getPool, isDatabaseEnabled } from './infrastructure/postgres.js'
@@ -112,7 +113,7 @@ export async function getReferralSummary(actor: AuthenticatedActor) {
       invited = Number(counts.invited); rewarded = Number(counts.rewarded); earnedPoints = Number(counts.earned)
     } finally { client.release() }
   }
-  return { code, inviteUrl: `${config.CLOUD_PUBLIC_BASE_URL.replace(/\/$/, '')}/register?invite=${code}`,
+  return { code, inviteUrl: buildInviteUrl(code),
     invited, rewarded, earnedPoints, enabled: config.REFERRAL_REWARDS_ENABLED,
     inviterPoints: config.REFERRAL_INVITER_POINTS, inviteePoints: config.REFERRAL_INVITEE_POINTS,
     minPaymentFen: config.REFERRAL_MIN_PAYMENT_FEN }

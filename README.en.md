@@ -6,7 +6,7 @@ English | [简体中文](README.md)
 
 LawVerify brings case materials, legal documents, statutory references, and comparable cases into one workflow. It combines a Windows desktop client, a local application service, and a separate website and account platform.
 
-Website: [lawagent.zhijing.fun](https://lawagent.zhijing.fun/)
+Website: [lawverify.zhijing.fun](https://lawverify.zhijing.fun/)
 
 > AI assists review; it does not replace professional legal judgment. Relevance does not establish proof. Evidence excerpts, statutory provisions, case references, and applicability require human verification. The current desktop version is `0.1.33`, defined in [`app/package.json`](app/package.json).
 

@@ -10,7 +10,7 @@ LawVerify 将分散的案件材料转化为可持续使用的案件记忆，把�
 
 产品的核心不止于生成一份文书，更在于帮助律师回答：**这句话由什么材料支持？证明到什么程度？还有哪些矛盾和缺口？**
 
-[访问官网](https://lawagent.zhijing.fun/) · [下载客户端](https://lawagent.zhijing.fun/download) · [查看开发指南](#开发环境)
+[访问官网](https://lawverify.zhijing.fun/) · [下载客户端](https://lawverify.zhijing.fun/download) · [查看开发指南](#开发环境)
 
 ## 产品特色
 

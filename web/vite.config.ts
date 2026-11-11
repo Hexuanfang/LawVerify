@@ -5,13 +5,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    allowedHosts: ['lawagent.zhijing.fun'],
+    allowedHosts: ['lawverify.zhijing.fun', 'lawagent.zhijing.fun'],
     port: 4273,
     strictPort: true,
   },
   preview: {
     host: '0.0.0.0',
-    allowedHosts: ['lawagent.zhijing.fun'],
+    allowedHosts: ['lawverify.zhijing.fun', 'lawagent.zhijing.fun'],
     port: 4273,
     strictPort: true,
   },

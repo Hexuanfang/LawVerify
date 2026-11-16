@@ -9,6 +9,7 @@ const allowed = new Set([
   'test-account-proxy.cjs',
   'test-update-ui.cjs',
   'test-case-mutations.cjs',
+  'test-redesign.cjs',
 ])
 const target = process.argv[2]
 if (!allowed.has(target)) throw new Error('Unknown Electron test')
@@ -26,3 +27,4 @@ process.stdout.write(result.stdout ?? '')
 process.stderr.write(result.stderr ?? '')
 if (result.error) process.stderr.write(`${result.error.message}\n`)
 process.exit(result.status ?? 1)
+

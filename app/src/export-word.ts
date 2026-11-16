@@ -153,7 +153,7 @@ function createDocument(context: CertificateExportContext, useWordComments: bool
       ? parseHtmlToTextRuns(paragraph.richText)
       : [new TextRun({ text: paragraph.text })]
 
-    const commentText = buildParagraphComment(context, index)
+    const commentText = context.options.bodyAnnotations === false ? '' : buildParagraphComment(context, index)
 
     if (useWordComments && commentText) {
       // Word 真批注：批注范围覆盖整段，右侧批注栏可见。

@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { readFileSync, cpSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,7 +14,8 @@ const appVersion = appPackage.version ?? '0.0.0'
 // https://vite.dev/config/
 // env: .env.local → VITE_ACCOUNT_CENTER_URL / VITE_CLOUD_API_BASE_URL
 export default defineConfig({
-  plugins: [react(), {
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  plugins: [tailwindcss(), react(), {
     name: 'pdf-preview-assets',
     closeBundle() {
       const root = fileURLToPath(new URL('.', import.meta.url))
@@ -43,3 +45,4 @@ export default defineConfig({
     strictPort: true,
   },
 })
+

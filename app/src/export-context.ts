@@ -10,6 +10,8 @@ export interface CertificateExportOptions {
   declaration: boolean
   /** 使用 Word 真批注；关闭时退化为灰色小字批注行 */
   useWordComments: boolean
+  /** 清洁版关闭正文批注，附录仍保留完整核验记录。 */
+  bodyAnnotations?: boolean
 }
 
 export const DEFAULT_EXPORT_OPTIONS: CertificateExportOptions = {

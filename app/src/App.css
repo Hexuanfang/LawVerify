@@ -7615,3 +7615,144 @@
   cursor: not-allowed;
   transform: none;
 }
+
+/* 认证页面延续新版首页的米白纸感；样式仅作用于登录与注册。 */
+.login-shell {
+  --text:#57534e; --text-h:#1c1917; --text-muted:#78716c; --text-subtle:#8a8378;
+  --accent:#57534e; --text-brand:#3d5bd9; --border:#e8e3d9; --danger:#b42318;
+  color:#1c1917; background:#f6f4ef; min-height:100dvh; padding:40px;
+  overflow:auto; font-family:'Instrument Sans','Noto Sans SC','Microsoft YaHei',sans-serif;
+}
+.login-shell .login-stage { width:min(1120px,100%); margin:0 auto; min-height:calc(100dvh - 80px); grid-template-columns:minmax(0,1fr) minmax(0,410px); gap:70px; align-items:center; }
+.login-shell .brand-block { align-self:stretch; padding:22px 0; background:transparent; border:0; border-radius:0; box-shadow:none; backdrop-filter:none; min-width:0; }
+.login-shell .auth-brand { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.login-shell .auth-brand img { width:34px; height:34px; border-radius:8px; }
+.login-shell .auth-brand strong { font-size:21px; font-weight:650; letter-spacing:-.5px; }
+.login-shell .auth-brand > span { border-left:1px solid #d8d1c4; padding-left:14px; margin-left:4px; color:#8a8378; font-size:11px; }
+.login-shell .hero-simple { min-height:0; padding:64px 0; }
+.login-shell .eyebrow { color:#8a8378; font-size:11px; letter-spacing:.13em; font-weight:500; }
+.login-shell .brand-block h1 { font-size:clamp(36px,4vw,50px); font-weight:600; letter-spacing:-1.5px; line-height:1.4; margin:16px 0 20px; }
+.login-shell .brand-block h1 em { color:#3d5bd9; font-style:normal; }
+.login-shell .hero-copy { font-size:14px; line-height:2; color:#78716c; }
+.login-shell .hero-summary { grid-template-columns:1fr; gap:18px; margin-top:34px; }
+.login-shell .hero-summary > div { display:grid; grid-template-columns:32px 1fr; column-gap:12px; border:0; padding:0; }
+.login-shell .hero-summary .auth-step { grid-row:span 2; align-self:center; display:grid; place-items:center; height:30px; border:1px solid #e4ddcf; border-radius:8px; font-size:11px; color:#8a806e; background:#f0ece3; font-variant-numeric:tabular-nums; }
+.login-shell .hero-summary strong { font-size:13px; font-weight:600; margin:0 0 3px; color:#57534e; }
+.login-shell .hero-summary span { font-size:11px; line-height:1.7; color:#8a8378; }
+.login-shell .auth-brand-footer { border-top:1px solid #e8e3d9; padding-top:20px; font-size:11px; color:#8a8378; }
+.login-shell .login-card { width:100%; min-width:0; padding:34px; gap:20px; background:#fffdf9; border:1px solid #e8e3d9; border-radius:18px; box-shadow:0 12px 44px #1c191708; backdrop-filter:none; }
+.login-shell .login-title h2 { font-size:25px; font-weight:600; color:#1c1917; margin:8px 0; letter-spacing:-.6px; }
+.login-shell .login-title p { font-size:12px; line-height:1.8; color:#8a8378; margin:0; }
+.login-shell .login-mode-switch { display:flex; padding:4px; gap:4px; background:#f0ece3; border-radius:9px; margin:0 0 2px; }
+.login-shell .login-mode-switch button { flex:1; height:34px; min-height:0; border:0; border-radius:6px; padding:0 12px; background:transparent; box-shadow:none; font-size:12px; font-weight:500; color:#78716c; }
+.login-shell .login-mode-switch button.active { background:#fffdf9; color:#1c1917; box-shadow:0 1px 3px #1c191710; }
+.login-shell .login-card label { gap:8px; font-size:12px; font-weight:500; color:#57534e; }
+.login-shell .login-card input { box-sizing:border-box; width:100%; min-width:0; height:44px; padding:0 13px; border:1px solid #ded7cb; border-radius:8px; background:#faf8f4; color:#1c1917; caret-color:#1c1917; font-size:13px; box-shadow:none; }
+.login-shell .login-card input::placeholder { color:#a39b8e; }
+.login-shell .login-card input:focus { outline:0; border-color:#a89c86; box-shadow:0 0 0 3px #d8d1c440; }
+.login-shell .password-input-shell input { padding-right:46px; }
+.login-shell .password-visibility-button { height:28px; width:28px; min-height:0; right:10px; color:#8a8378; padding:0; border:0; background:transparent; box-shadow:none; }
+.login-shell .password-visibility-button:hover { color:#57534e; background:#eee9df; }
+.login-shell .login-card .primary-button { display:flex; align-items:center; justify-content:center; height:44px; min-height:0; padding:0 16px; border:1px solid #1c1917; border-radius:8px; background:#1c1917; color:#faf8f4; font-size:13px; font-weight:500; box-shadow:0 3px 7px #1c191710; }
+.login-shell .login-card .primary-button:hover { background:#292524; border-color:#292524; }
+.login-shell .login-card .primary-button:disabled { opacity:.5; cursor:wait; }
+.login-shell .login-card-actions { margin-top:-8px; }
+.login-shell .login-card-actions .ghost-button { border:0; background:transparent; color:#78716c; font-size:11px; box-shadow:none; min-height:30px; }
+.login-shell .login-card-actions .ghost-button:hover { color:#1c1917; background:#f3efe6; }
+.login-shell .login-card-version { margin-top:0; padding-top:16px; border-color:#e8e3d9; font-size:10px; color:#a39b8e; }
+.login-shell .inline-error { overflow-wrap:anywhere; font-size:12px; border:1px solid #edcec6; background:#fcf1ed; color:#b42318; }
+.login-shell button:focus-visible { outline:2px solid #a89c86; outline-offset:3px; }
+@media(max-width:1000px) {
+  .login-shell { padding:28px; }
+  .login-shell .login-stage { gap:36px; grid-template-columns:minmax(0,1fr) minmax(0,370px); min-height:calc(100dvh - 56px); }
+  .login-shell .auth-brand > span { display:none; }
+  .login-shell .login-card { padding:28px; }
+}
+@media(max-width:760px) {
+  .login-shell { padding:24px 18px; }
+  .login-shell .login-stage { display:flex; flex-direction:column; gap:24px; min-height:0; }
+  .login-shell .brand-block { width:min(440px,100%); align-self:center; padding:0; }
+  .login-shell .hero-simple { padding:26px 0 0; }
+  .login-shell .brand-block h1 { font-size:30px; margin:10px 0; }
+  .login-shell .brand-block h1 br { display:none; }
+  .login-shell .hero-copy { font-size:12px; }
+  .login-shell .hero-copy br { display:none; }
+  .login-shell .hero-summary, .login-shell .auth-brand-footer, .login-shell .hero-copy-block > .eyebrow { display:none; }
+  .login-shell .login-card { max-width:440px; padding:26px; gap:18px; }
+}
+
+/* 为两种认证表单预留相同空间，切换时保持卡片和更新区域的位置。 */
+.login-shell {
+  height: 100dvh;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  line-height: 1.5;
+}
+
+.login-shell .login-card { justify-content: flex-start; gap: 18px; }
+.login-shell .login-title h2 { line-height: 1.4; }
+.login-shell .login-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 372px;
+}
+.login-shell .login-form-fields > label { flex-shrink: 0; line-height: 18px; }
+.login-shell .login-form-fields > .primary-button { margin-top: auto; flex-shrink: 0; }
+
+.login-shell .app-update-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e8e3d9;
+  border-radius: 10px;
+  background: #f7f4ee;
+  font-family: inherit;
+}
+.login-shell .app-update-copy { gap: 4px; min-width: 0; }
+.login-shell .app-update-copy span { color: #78716c; font-size: 11px; line-height: 16px; letter-spacing: 0; }
+.login-shell .app-update-copy strong { color: #44403c; font-size: 12px; line-height: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.login-shell .app-update-actions { grid-column: 2; grid-row: 1; align-self: center; justify-content: flex-end; gap: 6px; }
+.login-shell .app-update-actions button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #ded7cb;
+  border-radius: 6px;
+  background: #fffdf9;
+  color: #57534e;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.login-shell .app-update-actions button:hover { background: #eee9df; border-color: #c7bcaa; }
+.login-shell .app-update-actions button:disabled { opacity: .5; cursor: wait; }
+.login-shell .app-update-actions .primary-button { color: #fffdf9; background: #292524; border-color: #292524; }
+.login-shell .app-update-actions .primary-button:hover { background: #44403c; border-color: #44403c; }
+.login-shell .app-update-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #78716c;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.login-shell .app-update-card.available { border-color: #cfc4af; background: #f4f0e6; }
+.login-shell .app-update-card[data-status='error'] .app-update-detail { color: #a34b36; }
+.login-shell .app-update-progress { grid-column: 1 / -1; grid-row: 3; gap: 8px; }
+.login-shell .app-update-progress strong { color: #57534e; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.login-shell .app-update-progress-bar { height: 5px; background: #e4ddcf; }
+.login-shell .app-update-progress-bar span { background: #8a806e; }
+
+@media (max-width: 480px) {
+  .login-shell .app-update-card { padding: 12px; }
+  .login-shell .app-update-card.available .app-update-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
+  .login-shell .app-update-card.available .app-update-progress { grid-row: auto; }
+}
+
+.login-shell .login-feedback { min-height: 34px; margin-top: -8px; }
+.login-shell .login-feedback .inline-error { padding: 7px 10px; border-radius: 7px; font-size: 11px; line-height: 18px; }

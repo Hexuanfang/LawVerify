@@ -1,3 +1,7 @@
+import { handoffLoginWorkspace, notifyAuthChanged, usesRedesign } from './auth-transition'
+import { loadRedesign, preloadRedesign } from './redesign-loader'
+import { Button as AuthButton } from './redesign/components/ui/button'
+import { Input as AuthInput } from './redesign/components/ui/input'
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 import { createPortal } from 'react-dom'
@@ -2388,7 +2392,8 @@ function App() {
   const [pendingActions, setPendingActions] = useState<string[]>([])
   const [autoLinkingCertificateId, setAutoLinkingCertificateId] = useState<string | null>(null)
   const [autoLinkFeedback, setAutoLinkFeedback] = useState<{ tone: 'info' | 'success' | 'loading'; text: string } | null>(null)
-  const [errorMessage, setErrorMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState(() => sessionStorage.getItem('lawverify-session-notice') || '')
+  useEffect(() => { sessionStorage.removeItem('lawverify-session-notice') }, [])
   const [entryOnboardingStep, setEntryOnboardingStep] = useState<EntryOnboardingStep>('idle')
   const [agentMode, setAgentMode] = useState<'case' | 'document'>('case')
   const [documentModel, setDocumentModel] = useState<string>()
@@ -3101,14 +3106,17 @@ function App() {
       role: profile.role,
     })
 
+    if (usesRedesign()) await loadRedesign()
     sessionStorage.setItem(AUTH_STORAGE_KEY, token)
     sessionStorage.setItem(LOGIN_ACCOUNT_STORAGE_KEY, normalizedAccount)
     localStorage.removeItem(AUTH_STORAGE_KEY)
     localStorage.removeItem('lawverify-auth-token')
+    if (handoffLoginWorkspace(normalizedAccount, token, workspace)) return
     setAuthToken(token)
     setLoginAccount(normalizedAccount)
     setErrorMessage('')
     applyWorkspace(workspace)
+    notifyAuthChanged()
   }, [])
 
   useEffect(() => {
@@ -3132,6 +3140,7 @@ function App() {
       return
     }
 
+    if (!authToken && usesRedesign()) return
     let active = true
 
     void api.getCloudProfile()
@@ -4951,6 +4960,7 @@ function App() {
       return
     }
 
+    preloadRedesign()
     const succeeded = await runMutation(async () => {
       const cloudLogin = await api.loginCloudAccount({
         email: trimmedAccount,
@@ -4994,6 +5004,7 @@ function App() {
       return
     }
 
+    preloadRedesign()
     await runMutation(async () => {
       let cloudRegister: Awaited<ReturnType<typeof api.registerCloudAccount>>
       try {
@@ -5065,6 +5076,7 @@ function App() {
     applyCloudPointSyncState(null)
     persistCloudAuthToken(null)
     setAuthToken(null)
+    notifyAuthChanged()
     setLoginAccount('')
     // 退出后必须清空登录/注册表单里的密码，避免密码残留在输入框或内存里。
     setLoginForm((current) => ({ ...current, password: '' }))
@@ -9906,15 +9918,14 @@ function App() {
         : '可手动检查更新，确保客户端保持最新。')
 
     return (
-      <div className={`app-update-card ${compact ? 'compact' : ''} ${hasAvailableUpdate ? 'available' : ''}`}>
+      <div data-status={appUpdateState.status} className={`app-update-card ${compact ? 'compact' : ''} ${hasAvailableUpdate ? 'available' : ''}`}>
         <div className="app-update-copy">
           <span>桌面端更新</span>
           <strong>{title}</strong>
-          <p role="status" aria-live="polite">{detail}</p>
         </div>
 
         {appUpdateState.status === 'downloading' ? (
-          <div className="app-update-progress">
+          <div className="app-update-progress" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={appUpdateState.progress ?? undefined}>
             <div className="app-update-progress-bar" aria-hidden="true">
               <span style={{ width: `${appUpdateState.progress ?? 8}%` }} />
             </div>
@@ -9923,25 +9934,26 @@ function App() {
         ) : null}
 
         <div className="app-update-actions">
-          <button
-            className="ghost-button"
+          <AuthButton
+            variant="outline" className="ghost-button"
             type="button"
             onClick={() => void checkForAppUpdate()}
             disabled={updateBusy}
           >
             {appUpdateState.status === 'checking' ? '检查中...' : '检查更新'}
-          </button>
+          </AuthButton>
           {hasAvailableUpdate ? (
-            <button
+            <AuthButton
               className="primary-button"
               type="button"
               onClick={() => void handleStartAppUpdate()}
               disabled={updateBusy}
             >
               {appUpdateState.status === 'installing' ? '正在安装...' : appUpdateState.status === 'downloading' ? '正在更新...' : window.lawVerifyDesktop?.platform === 'darwin' ? '更新并重启' : '一键更新'}
-            </button>
+            </AuthButton>
           ) : null}
         </div>
+        <p className="app-update-detail" role="status" aria-live="polite">{detail}</p>
       </div>
     )
   }
@@ -10886,41 +10898,29 @@ function App() {
       <div className="login-shell">
         <section className="login-stage">
           <div className="brand-block">
-            <div className="hero-topline">
-              <span className="eyebrow">LawVerify</span>
-              <span className="hero-label">For Litigation Professionals</span>
-            </div>
-
+            <div className="auth-brand"><img src="/lawverify-icon.svg" alt="" /><strong>LawVerify</strong><span>文书证据核验工作台</span></div>
             <div className="hero-simple">
               <div className="hero-copy-block">
-                <h1>律师证据质证助手</h1>
-                <p className="hero-slogan">再也不用为核对证据、案例、法条而耗时烦恼了</p>
-                <p className="hero-copy">
-                  为诉讼律师提供更安静、更专注的工作界面，把质证成稿、证据源定位和逐句核验整理在同一处完成。
-                </p>
-
+                <span className="eyebrow">为每一处主张，找到依据</span>
+                <h1>每一句主张，<br /><em>有据可查。</em></h1>
+                <p className="hero-copy">让文书、原始材料、法条与案例联动呈现，<br />在清晰的依据中，完成审阅与判断。</p>
                 <div className="hero-summary">
-                  <div>
-                    <strong>成品质证书</strong>
-                    <span>接近 Word 的阅读与修订体验</span>
-                  </div>
-                  <div>
-                    <strong>证据源联动</strong>
-                    <span>点击句子，右侧即时显示原始证据</span>
-                  </div>
+                  <div><span className="auth-step">01</span><strong>归集案件材料</strong><span>文书与原材料，按案件统一管理</span></div>
+                  <div><span className="auth-step">02</span><strong>核对每处依据</strong><span>逐句查看事实、法条与案例出处</span></div>
+                  <div><span className="auth-step">03</span><strong>审阅并导出</strong><span>人工确认，导出审阅文书与报告</span></div>
                 </div>
               </div>
             </div>
+            <div className="auth-brand-footer">AI 辅助核验 · 专业判断由律师完成</div>
           </div>
-
           <div className="login-card pro-card">
             <div className="login-title">
-              <span className="eyebrow">统一账户</span>
-              <h2>{authMode === 'login' ? '登录平台' : '注册平台账号'}</h2>
+              <span className="eyebrow">LAWVERIFY ACCOUNT</span>
+              <h2>{authMode === 'login' ? '欢迎回来' : '创建你的账号'}</h2>
             </div>
 
             <div className="tab-row login-mode-switch">
-              <button
+              <AuthButton
                 className={authMode === 'login' ? 'active' : ''}
                 type="button"
                 onClick={() => {
@@ -10930,8 +10930,8 @@ function App() {
                 }}
               >
                 登录
-              </button>
-              <button
+              </AuthButton>
+              <AuthButton
                 className={authMode === 'register' ? 'active' : ''}
                 type="button"
                 onClick={() => {
@@ -10941,14 +10941,15 @@ function App() {
                 }}
               >
                 注册
-              </button>
+              </AuthButton>
             </div>
 
+            <div className="login-form-fields">
             {authMode === 'login' ? (
               <>
                 <label>
                   注册邮箱
-                  <input
+                  <AuthInput
                     autoFocus
                     ref={loginEmailInputRef}
                     value={loginForm.account}
@@ -10962,7 +10963,7 @@ function App() {
                 <label>
                   登录密码
                   <div className="password-input-shell">
-                    <input
+                    <AuthInput
                       type={isLoginPasswordVisible ? 'text' : 'password'}
                       value={loginForm.password}
                       onChange={(event) =>
@@ -10970,26 +10971,26 @@ function App() {
                       }
                       placeholder="请输入账号中心密码"
                     />
-                    <button
+                    <AuthButton
                       className="password-visibility-button"
                       type="button"
                       onClick={() => setIsLoginPasswordVisible((current) => !current)}
                       aria-label={isLoginPasswordVisible ? '隐藏密码' : '显示密码'}
                     >
                       <PasswordVisibilityIcon visible={isLoginPasswordVisible} />
-                    </button>
+                    </AuthButton>
                   </div>
                 </label>
 
-                <button className="primary-button wide-button" type="button" onClick={handleLogin} disabled={isSubmitting}>
+                <AuthButton className="primary-button wide-button" type="button" onClick={handleLogin} disabled={isSubmitting}>
                   {isActionPending('login') ? '登录中...' : '进入系统'}
-                </button>
+                </AuthButton>
               </>
             ) : (
               <>
                 <label>
                   机构名称
-                  <input
+                  <AuthInput
                     autoFocus
                     ref={registerOrganizationInputRef}
                     value={registerForm.organizationName}
@@ -11002,7 +11003,7 @@ function App() {
 
                 <label>
                   注册邮箱
-                  <input
+                  <AuthInput
                     value={registerForm.email}
                     onChange={(event) =>
                       setRegisterForm((current) => ({ ...current, email: event.target.value }))
@@ -11014,7 +11015,7 @@ function App() {
                 <label>
                   登录密码
                   <div className="password-input-shell">
-                    <input
+                    <AuthInput
                       type={isRegisterPasswordVisible ? 'text' : 'password'}
                       value={registerForm.password}
                       onChange={(event) =>
@@ -11022,41 +11023,45 @@ function App() {
                       }
                       placeholder="请设置账号中心密码"
                     />
-                    <button
+                    <AuthButton
                       className="password-visibility-button"
                       type="button"
                       onClick={() => setIsRegisterPasswordVisible((current) => !current)}
                       aria-label={isRegisterPasswordVisible ? '隐藏密码' : '显示密码'}
                     >
                       <PasswordVisibilityIcon visible={isRegisterPasswordVisible} />
-                    </button>
+                    </AuthButton>
                   </div>
                 </label>
 
                 <label>
                   邀请码（选填）
-                  <input value={registerForm.inviteCode ?? ''} maxLength={16}
+                  <AuthInput value={registerForm.inviteCode ?? ''} maxLength={16}
                     onChange={event => setRegisterForm(current => ({ ...current, inviteCode: event.target.value }))} />
                 </label>
-                <button className="primary-button wide-button" type="button" onClick={handleRegister} disabled={isSubmitting}>
+                <AuthButton className="primary-button wide-button" type="button" onClick={handleRegister} disabled={isSubmitting}>
                   {isActionPending('register') ? '注册中...' : '注册并进入系统'}
-                </button>
+                </AuthButton>
               </>
             )}
 
+            </div>
+
             <div className="inline-actions login-card-actions">
               <div>
-                <button
+                <AuthButton
                   className="ghost-button"
                   type="button"
                   onClick={() => void openExternalUrl(getAccountCenterRegisterUrl())}
                 >
                   前往官网注册
-                </button>
+                </AuthButton>
               </div>
             </div>
 
-            {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
+            <div className="login-feedback">
+              {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
+            </div>
 
             {renderAppUpdateCard()}
 

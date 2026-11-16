@@ -909,7 +909,7 @@ export const api = {
     resourceType?: string
     resourceId?: string
     note?: string
-  }) {
+  }, cloudToken?: string) {
     return requestCloudEnvelope<{
       entry: {
         id: string
@@ -934,6 +934,7 @@ export const api = {
       duplicated: boolean
     }>('/api/account/points/consume', {
       method: 'POST',
+      headers: cloudToken ? { Authorization: 'Bearer ' + cloudToken } : undefined,
       body: JSON.stringify(payload),
     })
   },
@@ -942,7 +943,7 @@ export const api = {
     sourceOperationKey?: string
     sourceEntryId?: string
     note?: string
-  }) {
+  }, cloudToken?: string) {
     return requestCloudEnvelope<{
       entry: {
         id: string
@@ -958,6 +959,7 @@ export const api = {
       duplicated: boolean
     }>('/api/account/points/refund', {
       method: 'POST',
+      headers: cloudToken ? { Authorization: 'Bearer ' + cloudToken } : undefined,
       body: JSON.stringify(payload),
     })
   },

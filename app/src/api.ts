@@ -1257,6 +1257,13 @@ export const api = {
       },
     )
   },
+  saveDocumentContent(certificateId: string,
+    paragraphs: Array<Pick<CertificateParagraph, 'id' | 'text' | 'richText'>>,
+    expectedContent: Array<Pick<CertificateParagraph, 'id' | 'text' | 'richText'>>) {
+    return request<WorkspaceResponse>(`/api/certificates/${certificateId}/content`, {
+      method: 'PUT', body: JSON.stringify({ paragraphs, expectedContent }),
+    })
+  },
   updateParagraph(
     certificateId: string,
     paragraphId: string,

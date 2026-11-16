@@ -1,3 +1,4 @@
+import { saveDocumentContent } from '../document-editing.js'
 import { Router, type Request, type Response } from 'express'
 import { getEvidenceParsing } from '../evidence-parsing.js'
 import { documentText, parseDocument } from '../infrastructure/document-jobs.js'
@@ -587,6 +588,11 @@ export function createLegacyRouter() {
       const message = error instanceof Error ? error.message : '导入失败'
       sendLegacyError(response, 400, message)
     }
+  })
+
+  router.put('/certificates/:certificateId/content', async (request, response) => {
+    const result = await saveDocumentContent(request.params.certificateId, request.body)
+    sendWorkspacePayload(response, result)
   })
 
   router.patch('/certificates/:certificateId/paragraphs/:paragraphId', async (request, response) => {

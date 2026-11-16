@@ -1,3 +1,4 @@
+import { saveDocumentContent } from '../document-editing.js'
 import { Router, type Request } from 'express'
 import multer from 'multer'
 import { boundedFileStorage, boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
@@ -562,6 +563,11 @@ export function createV1Router() {
 
   router.post('/certificates/import', async (request, response) => {
     const result = await importCertificate(request.body)
+    sendSuccess(response, result)
+  })
+
+  router.put('/certificates/:certificateId/content', async (request, response) => {
+    const result = await saveDocumentContent(request.params.certificateId, request.body)
     sendSuccess(response, result)
   })
 

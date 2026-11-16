@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from 'express'
+import { getEvidenceParsing } from '../evidence-parsing.js'
+import { documentText, parseDocument } from '../infrastructure/document-jobs.js'
 import multer from 'multer'
 import { createHash } from 'node:crypto'
+import { unlink } from 'node:fs/promises'
+import path from 'node:path'
 import { z } from 'zod'
 import { env } from '../config/env.js'
 import { sendLegacyError } from '../core/api-response.js'
@@ -45,6 +49,8 @@ import {
   updateCase,
   updateCaseRecord,
   updateEvidence,
+  reviewEvidenceParsing,
+  retryEvidenceParsing,
   updateParagraph,
 } from '../service.js'
 import type { WorkspaceState } from '../domain.js'
@@ -81,6 +87,7 @@ export function createLegacyRouter() {
       fieldSize: 2 * 1024 * 1024,
     },
   })
+  const documentUpload = multer({ storage: boundedFileStorage(), limits: { fileSize: 20 * 1024 ** 2, files: 1, fields: 0 } })
   const resolveWorkspaceAccount = (request: Request) =>
     request.header('x-workspace-account')?.trim().toLowerCase()
     ?? (typeof request.query.workspaceAccount === 'string'
@@ -366,6 +373,16 @@ export function createLegacyRouter() {
     sendWorkspacePayload(response, result)
   })
 
+  router.post('/documents/parse', reserveUpload, documentUpload.single('file'), async (request, response) => {
+    const file = request.file as UploadedFile | undefined
+    if (!file) throw new AppError('请选择要解析的文件。', 400, 'DOCUMENT_REQUIRED')
+    const result = await parseDocument(file.path, path.basename(file.originalname), file.mimetype)
+      .finally(() => unlink(file.path).catch(() => undefined))
+    const text = documentText(result)
+    if (!text || result.reviewRequired) throw new AppError(result.warnings[0] ?? '文稿没有可读取的正文。', 422, 'DOCUMENT_REVIEW_REQUIRED')
+    response.json({ text, html: result.html ?? '', warnings: result.warnings })
+  })
+
   router.post('/evidences/assets/upload', reserveUpload, upload.array('files', 200), async (request, response) => {
     const files = Array.isArray(request.files) ? request.files : []
     const manifest = typeof request.body?.manifest === 'string'
@@ -407,6 +424,20 @@ export function createLegacyRouter() {
   router.patch('/evidences/:evidenceId', async (request, response) => {
     const result = await updateEvidence(request.params.evidenceId, request.body ?? {})
     sendWorkspacePayload(response, result)
+  })
+
+  router.get('/evidences/:evidenceId/parsing', async (request, response) => {
+    response.json(await getEvidenceParsing(request.params.evidenceId))
+  })
+
+  router.post('/evidences/:evidenceId/parsing/retry', async (request, response) => {
+    const payload = z.object({ mode: z.enum(['auto', 'document', 'chat']).default('auto') }).parse(request.body ?? {})
+    sendWorkspacePayload(response, await retryEvidenceParsing(request.params.evidenceId, payload.mode))
+  })
+
+  router.post('/evidences/:evidenceId/parsing/review', async (request, response) => {
+    const payload = z.object({ revision: z.string().min(1), text: z.string().trim().min(1).max(8_000_000) }).parse(request.body)
+    sendWorkspacePayload(response, await reviewEvidenceParsing(request.params.evidenceId, payload.revision, payload.text))
   })
 
   router.post('/evidences/:evidenceId/summarize', async (request, response) => {

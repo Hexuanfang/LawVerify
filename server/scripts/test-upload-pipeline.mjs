@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from '
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { env } from '../src/config/env.ts'
 
 const directory = mkdtempSync(path.join(os.tmpdir(), 'lawverify-upload-'))
@@ -13,7 +13,9 @@ env.KNOWLEDGE_RAG_MODE = 'local'
 
 const { boundedFileStorage } = await import('../src/middleware/bounded-upload.ts')
 const { storeObjectFromPath, readObject, readObjectPath } = await import('../src/infrastructure/object-storage.ts')
-const { withDocumentSession } = await import('../src/infrastructure/document-jobs.ts')
+const { parseDocument } = await import('../src/infrastructure/document-jobs.ts')
+const { closePythonWorkers } = await import('../src/infrastructure/python-workers.ts')
+after(closePythonWorkers)
 
 function pdfFixture(pages = 1) {
   const objects = [
@@ -103,10 +105,9 @@ test('原件解析按路径读取，几百页文件不必在主进程留一份 b
   }, { bucket: 'evidence', fileName: '卷宗.pdf' })
 
   const filePath = readObjectPath(stored.key)
-  const text = await withDocumentSession(filePath, async session => {
-    assert.equal(await session.request('info'), 3)
-    return session.request('text')
-  })
+  const result = await parseDocument(filePath, '卷宗.pdf', 'application/pdf')
+  assert.equal(result.pages, 3)
+  const text = result.text
   assert.match(text, /Page 1/)
   assert.match(text, /Page 3/)
 })

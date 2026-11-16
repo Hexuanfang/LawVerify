@@ -36,11 +36,17 @@ function run(commandArgs) {
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
 
-for (const task of ['build', 'build:server', 'prepare:desktop', 'verify:workspace']) {
+for (const task of ['build', 'build:server']) {
   run([process.env.npm_execpath, 'run', task])
 }
-const builderArgs = ['node_modules/electron-builder/cli.js', '--config', 'electron/mac-builder.cjs',
-  '--mac', 'dmg', 'zip', '--publish', 'never']
-builderArgs.push(...(arch === 'all' ? ['--arm64', '--x64'] : [`--${arch}`]))
-run(builderArgs)
-run(['electron/verify-mac.cjs', '--arch', arch, ...(signed ? ['--signed'] : [])])
+// 每个架构单独准备 Python，再打包，避免把主机架构的运行环境带入另一种安装包。
+for (const target of arch === 'all' ? ['arm64', 'x64'] : [arch]) {
+  env.LAWVERIFY_PARSER_TARGET_ARCH = target
+  const source = process.env[`LAWVERIFY_PARSER_RUNTIME_SOURCE_${target.toUpperCase()}`] || process.env.LAWVERIFY_PARSER_RUNTIME_SOURCE
+  if (source) env.LAWVERIFY_PARSER_RUNTIME_SOURCE = source
+  else delete env.LAWVERIFY_PARSER_RUNTIME_SOURCE
+  for (const task of ['prepare:desktop', 'verify:workspace']) run([process.env.npm_execpath, 'run', task])
+  run(['node_modules/electron-builder/cli.js', '--config', 'electron/mac-builder.cjs',
+    '--mac', 'dmg', 'zip', '--publish', 'never', `--${target}`])
+  run(['electron/verify-mac.cjs', '--arch', target, ...(signed ? ['--signed'] : [])])
+}

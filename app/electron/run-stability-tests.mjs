@@ -75,7 +75,7 @@ const server = await createServer({
   server: { host: '127.0.0.1', port: 8787, strictPort: true, hmr: false, watch: null },
   optimizeDeps: {
     noDiscovery: true,
-    include: ['react', 'react-dom/client', 'mammoth/mammoth.browser', 'qrcode', 'docx',
+    include: ['react', 'react-dom/client', 'qrcode', 'docx',
       '@tiptap/react', '@tiptap/starter-kit', '@tiptap/core', '@tiptap/extension-text-align',
       '@tiptap/extension-underline', '@tiptap/pm/model', '@tiptap/pm/state', '@tiptap/pm/view',
       'pdfjs-dist', 'docx-preview', 'use-sync-external-store/shim', 'use-sync-external-store/shim/with-selector'],
@@ -88,6 +88,16 @@ const server = await createServer({
     response.setHeader('Content-Type', 'text/html;charset=utf-8')
     response.end(await vite.transformIndexHtml('/__stability', html))
   } else if (request.url === '/__fixture.docx') response.end(docx)
+  else if (request.url === '/api/documents/parse' && request.method === 'POST') {
+    const parts = []
+    for await (const part of request) parts.push(part)
+    if (!Buffer.concat(parts).includes(docx)) {
+      response.statusCode = 400
+      return response.end(JSON.stringify({ message: 'Word 导入未提交原件' }))
+    }
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({ text: 'Word worker verification', html: '<p>Word worker verification</p>', warnings: [] }))
+  }
   else if (request.url === '/__fixture.pdf') {
     response.setHeader('Content-Type', 'application/pdf')
     response.end(pdf())

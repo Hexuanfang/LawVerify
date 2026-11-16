@@ -1,8 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const assert = require('node:assert/strict')
-const mammoth = require('mammoth')
-const { getSourceFingerprint, normalizeText, chunkKnowledgeText, defaultLawSourceDir,
+const { getSourceFingerprint, extractLawDocumentText, chunkKnowledgeText, defaultLawSourceDir,
   cacheFilePath, outputFilePath } = require('./prepare-default-law-library.cjs')
 
 async function main() {
@@ -14,8 +13,8 @@ async function main() {
   for (const name of names) {
     const item = seed.knowledgeFiles.find((file) => file.fileName === `法律文件/${name}`)
     assert.ok(item, `Missing cached source: ${name}`)
-    const raw = await mammoth.extractRawText({ path: path.join(defaultLawSourceDir, name) })
-    assert.equal(item.extractedText, normalizeText(raw.value), `Changed source: ${name}. Rebuild the seed first.`)
+    const extractedText = await extractLawDocumentText(path.join(defaultLawSourceDir, name))
+    assert.equal(item.extractedText, extractedText, `Changed source: ${name}. Rebuild the seed first.`)
     const chunks = chunkKnowledgeText(item.extractedText)
     const cachedChunks = seed.localRagIndex.files[item.id]?.chunks
     assert.equal(cachedChunks?.length, chunks.length, `Missing embeddings: ${name}`)

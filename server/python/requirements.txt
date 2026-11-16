@@ -1,0 +1,2 @@
+# Windows 与 Apple Silicon 的已验证候选。Intel Mac 运行版本需单独验收。
+mineru==4.2.2

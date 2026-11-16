@@ -43,6 +43,13 @@ const envSchema = z.object({
   MAX_EVIDENCE_FILE_MB: z.coerce.number().int().positive().default(512),
   // 单批上传的请求体上限（MB）：同样按落盘处理，只限制总量不限制单文件。
   MAX_UPLOAD_BATCH_MB: z.coerce.number().int().positive().default(512),
+  // 留空时查找桌面随附环境或 server/python/.venv，不在业务运行时安装依赖。
+  LAWVERIFY_PYTHON: z.string().optional(),
+  LAWVERIFY_MINERU_HOME: z.string().optional(),
+  PARSER_DEVICE: z.enum(['auto', 'cpu']).default('auto'),
+  // 0 按设备与内存决定，CPU 最多两个，GPU 一个。
+  PARSER_WORKERS: z.coerce.number().int().min(0).max(4).default(0),
+  PARSER_TIMEOUT_MS: z.coerce.number().int().positive().default(900000),
   APP_NAME: z.string().default('lawverify-server'),
   API_PREFIX: z.string().default('/api'),
   API_V1_PREFIX: z.string().default('/api/v1'),

@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { Document, Packer, Paragraph } from 'docx'
-import { extractWordText, withDocumentSession } from '../src/infrastructure/document-jobs.ts'
+import { parseDocument } from '../src/infrastructure/document-jobs.ts'
+import { closePythonWorkers } from '../src/infrastructure/python-workers.ts'
+import { env } from '../src/config/env.ts'
+import { mkdtempSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { notifyWorkspaceChanged, subscribeWorkspaceChanges } from '../src/infrastructure/workspace-events.ts'
 import { boundedMemoryStorage, maxUploadBatchBytes, reserveUpload } from '../src/middleware/bounded-upload.ts'
 import { Readable } from 'node:stream'
 import { EventEmitter } from 'node:events'
+
+env.WORKSPACE_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), 'document-stability-'))
+after(closePythonWorkers)
 
 function pdfFixture(pages = 2) {
   const objects = [
@@ -31,43 +39,26 @@ function pdfFixture(pages = 2) {
   return Buffer.from(output)
 }
 
-test('Word parsing runs outside the event loop and releases its worker', async () => {
+test('Word parsing runs outside the event loop', async () => {
   const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('Stability document text')] }] }))
   let ticked = false
   setImmediate(() => { ticked = true })
-  const text = await extractWordText(buffer)
+  const { text } = await parseDocument(buffer, 'stability.docx')
   assert.match(text, /Stability document text/)
   assert.equal(ticked, true)
 })
 
-test('PDF text and page screenshots preserve every page', async () => {
-  await withDocumentSession(pdfFixture(), async session => {
-    assert.equal(await session.request('info'), 2)
-    const text = await session.request('text')
-    assert.match(text, /Page 1/)
-    assert.match(text, /Page 2/)
-    assert.match(await session.request('page', 2), /^data:image\/png;base64,/)
-  })
+test('PDF parsing preserves text and block page numbers', async () => {
+  const result = await parseDocument(pdfFixture(), 'pages.pdf')
+  assert.equal(result.pages, 2)
+  assert.match(result.text, /Page 1/)
+  assert.match(result.text, /Page 2/)
+  assert.ok(result.blocks.some(block => block.page === 2 && /Page 2/.test(block.text)))
 })
 
 test('corrupted files fail locally and a subsequent valid job still succeeds', async () => {
-  await assert.rejects(extractWordText(Buffer.from('invalid archive')), error => error.code === 'DOCUMENT_PARSE_FAILED')
-  await withDocumentSession(pdfFixture(1), async session => assert.equal(await session.request('info'), 1))
-})
-
-test('queue bounds reject excess work without leaking slots', async () => {
-  const releases = []
-  const running = Array.from({ length: 18 }, () => withDocumentSession(Buffer.alloc(0), () =>
-    new Promise(resolve => { releases.push(resolve) })))
-  const busy = running.map(job => job.catch(error => error))
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(releases.length, 2)
-  await assert.rejects(withDocumentSession(Buffer.alloc(0), async () => {}), error => error.code === 'DOCUMENT_QUEUE_FULL')
-  for (let i = 0; i < 18; i++) {
-    releases[i]()
-    await busy[i]
-  }
-  await withDocumentSession(pdfFixture(1), async session => assert.equal(await session.request('info'), 1))
+  await assert.rejects(parseDocument(Buffer.from('invalid archive'), 'bad.docx'), error => error.code === 'PARSE_FAILED')
+  assert.equal((await parseDocument(pdfFixture(1), 'valid.pdf')).pages, 1)
 })
 
 test('workspace events remain account-isolated and unsubscribe cleanly', () => {

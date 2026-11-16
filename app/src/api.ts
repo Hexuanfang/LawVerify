@@ -3,6 +3,7 @@ import { boundedFetch, createStreamFetch } from './bounded-fetch'
 import { resolveEvidenceMimeType } from './evidence-mime'
 import type {
   AppState,
+  Evidence,
   CasePositionDraft,
   CertificateParagraph,
   CollaboraSession,
@@ -251,7 +252,7 @@ async function baseRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await boundedFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-  }).catch((error) => {
+  }, path === '/api/documents/parse' ? 16 * 60 * 1000 : undefined).catch((error) => {
     if (init?.signal?.aborted) throw error
     throw new Error('本地材料服务暂不可用或请求超时。材料会保留，请确认操作结果后再重试。')
   })
@@ -269,6 +270,7 @@ async function baseRequest<T>(path: string, init?: RequestInit): Promise<T> {
     }
 
     if (response.status === 413) {
+      if (path === '/api/documents/parse') throw new Error('文稿超过20MB，请拆分后导入。')
       throw new Error('所选文件夹内容过大，请拆分后再导入。')
     }
 
@@ -277,7 +279,7 @@ async function baseRequest<T>(path: string, init?: RequestInit): Promise<T> {
       throw new Error('当前本地服务版本过旧或尚未重启，桌面端登录链路未同步完成。请重启本地服务或重新打开桌面端后再试。')
     }
 
-    throw new Error(upstreamMessage || '请求失败')
+    throw Object.assign(new Error(upstreamMessage || '请求失败'), { status: response.status, code: errorBody?.code ?? errorBody?.error?.code })
   }
 
   return response.json() as Promise<T>
@@ -980,6 +982,13 @@ export const api = {
   assistantCapabilities() {
     return request<{ models: Array<{ id: string; label: string }>; voice: boolean }>('/api/assistant/capabilities')
   },
+  parseDocument(file: File, signal?: AbortSignal) {
+    const form = new FormData()
+    form.set('file', file)
+    return request<{ text: string; html: string; warnings: string[] }>('/api/documents/parse', {
+      method: 'POST', body: form, signal,
+    })
+  },
   transcribeAssistantAudio(audio: Blob, signal?: AbortSignal) {
     const form = new FormData()
     form.set('file', audio, audio.type === 'audio/mp4' ? 'speech.m4a' : 'speech.webm')
@@ -1125,6 +1134,27 @@ export const api = {
       body: JSON.stringify(patch),
     })
   },
+  getEvidenceParsing(evidenceId: string) {
+    return request<{
+      parsing?: Evidence['parsing']
+      text: string
+      continuityCandidates: Array<{ evidenceId: string; name: string; position: 'before' | 'after'; overlapMessages: number }>
+      result: null | { engineVersion: string; pages: number; warnings: string[];
+        blocks: Array<{ page: number; bbox: number[]; coordinateSpace: string; text: string; locator?: string }>;
+        layout?: { pages: number; blocks: Array<{ page: number; bbox: number[]; text: string; locator?: string }> };
+        chat?: { title: string; messages: unknown[] } }
+    }>(`/api/evidences/${encodeURIComponent(evidenceId)}/parsing`)
+  },
+  reviewEvidenceParsing(evidenceId: string, revision: string, text: string) {
+    return request<WorkspaceResponse>(`/api/evidences/${encodeURIComponent(evidenceId)}/parsing/review`, {
+      method: 'POST', body: JSON.stringify({ revision, text }),
+    })
+  },
+  retryEvidenceParsing(evidenceId: string, mode: 'auto' | 'document' | 'chat' = 'auto') {
+    return request<WorkspaceResponse>(`/api/evidences/${encodeURIComponent(evidenceId)}/parsing/retry`, {
+      method: 'POST', body: JSON.stringify({ mode }),
+    })
+  },
   summarizeEvidence(evidenceId: string, options?: { force?: boolean; cacheOnly?: boolean }) {
     return request<WorkspaceResponse & {
       reusedCachedSummary?: boolean
@@ -1237,7 +1267,7 @@ export const api = {
       `/api/certificates/${certificateId}/paragraphs/${paragraphId}`,
       {
         method: 'PATCH',
-          body: JSON.stringify({ ...patch, ...(expected ? { expectedContent: expected } : {}) }),
+          body: JSON.stringify({ ...patch, ...(Array.isArray(patch.links) ? { link: patch.links[0] ?? null } : {}), ...(expected ? { expectedContent: expected } : {}) }),
       },
     )
   },

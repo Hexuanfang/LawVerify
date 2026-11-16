@@ -2,7 +2,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
-const mammoth = require('mammoth')
+const { execFile } = require('node:child_process')
+const { promisify } = require('node:util')
+const run = promisify(execFile)
 
 const appRoot = path.resolve(__dirname, '..')
 const projectRoot = path.resolve(appRoot, '..')
@@ -13,6 +15,22 @@ const defaultLawSourceDir = path.join(projectRoot, 'files', '法律文件')
 const outputFilePath = path.join(desktopSeedRoot, 'default-law-library.json')
 const cacheFilePath = path.join(appRoot, 'build', 'default-law-library.json')
 const articleNumberPattern = /^((第[一二三四五六七八九十百千万零〇两0-9]+条))\s*(.*)$/u
+
+async function extractLawDocumentText(file) {
+  const relative = process.platform === 'win32' ? 'python.exe' : 'bin/python3'
+  const interpreters = [
+    process.env.LAWVERIFY_PYTHON,
+    path.join(desktopRoot, 'server', 'python-runtime', relative),
+    path.join(serverRoot, 'python', '.runtime', relative),
+  ]
+  const interpreter = interpreters.find(candidate => candidate && fs.existsSync(candidate))
+    || process.env.LAWVERIFY_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
+  const { stdout } = await run(interpreter, [path.join(serverRoot, 'python', 'worker.py'), '--word-text', file], {
+    encoding: 'utf8', env: { ...process.env, PYTHONUTF8: '1' }, windowsHide: true,
+    timeout: 60_000, maxBuffer: 64 * 1024 ** 2,
+  })
+  return normalizeText(JSON.parse(stdout).text)
+}
 
 function getSourceFingerprint() {
   if (!fs.existsSync(defaultLawSourceDir)) return null
@@ -261,8 +279,7 @@ async function buildSeed() {
   for (const entry of entries) {
     const absolutePath = path.join(defaultLawSourceDir, entry.name)
     const relativePath = `法律文件/${entry.name}`
-    const raw = await mammoth.extractRawText({ path: absolutePath })
-    const extractedText = normalizeText(raw.value)
+    const extractedText = await extractLawDocumentText(absolutePath)
     if (!extractedText) {
       continue
     }
@@ -352,6 +369,7 @@ async function prepareDefaultLawLibrary() {
 
 module.exports = {
   prepareDefaultLawLibrary,
+  extractLawDocumentText,
   getSourceFingerprint,
   normalizeText,
   chunkKnowledgeText,

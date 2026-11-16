@@ -177,6 +177,8 @@ function buildDerivedFingerprint(evidences: Evidence[], certificates: Certificat
     hash.update('\u0001')
     hash.update(String(evidence.pages ?? 0))
     hash.update('\u0001')
+    hash.update(evidence.parsing?.artifactKey ?? '')
+    hash.update('\u0001')
     hash.update(evidence.ocrText ?? '')
     hash.update('\u0002')
   }

@@ -70,6 +70,7 @@ export interface UserAccount {
 }
 
 export interface Evidence {
+  parsing?: EvidenceParsing
   id: string
   caseId: string
   number: string
@@ -97,6 +98,19 @@ export interface Evidence {
   summaryError?: string
   summaryUpdatedAt?: string
   summaryCacheKey?: string
+}
+
+export interface EvidenceParsing {
+  status: 'queued' | 'processing' | 'ready' | 'review_required' | 'failed'
+  revision: string
+  sourceKey: string
+  artifactKey?: string
+  mode: 'auto' | 'document' | 'chat'
+  engineVersion?: string
+  warnings?: string[]
+  error?: string
+  updatedAt: string
+  reviewedAt?: string
 }
 
 export interface EvidenceFragment {

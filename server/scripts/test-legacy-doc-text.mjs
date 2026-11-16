@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
-import { extractLegacyDocText, isLegacyDocFile } from '../src/infrastructure/legacy-doc-text.ts'
+import { after, test } from 'node:test'
+import { mkdtempSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { env } from '../src/config/env.ts'
+import { parseDocument } from '../src/infrastructure/document-jobs.ts'
+import { closePythonWorkers } from '../src/infrastructure/python-workers.ts'
+
+env.WORKSPACE_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), 'legacy-doc-'))
+after(closePythonWorkers)
 
 const SECTOR_SIZE = 512
 const FAT_SECT = 0xfffffffd
@@ -80,29 +88,27 @@ function buildLegacyDoc(text, headerPrefix = 0) {
   return Buffer.concat([header, fat, directory, wordDocument, table])
 }
 
-test('旧版 .doc 能抽出正文', () => {
+test('旧版 .doc 能抽出正文', async () => {
   const file = buildLegacyDoc('尊敬的张祎法官：\r这是一封律师函。')
-  assert.equal(isLegacyDocFile(file), true)
-
-  const text = extractLegacyDocText(file)
+  const { text } = await parseDocument(file, '律师函.doc')
   assert.match(text, /尊敬的张祎法官：/)
   assert.match(text, /这是一封律师函。/)
   assert.ok(!text.includes('\r'), '段落标记要换成换行，不能残留控制字符')
 })
 
-test('头部多一段前缀的 .doc（WPS 写法）同样能解析', () => {
+test('头部多一段前缀的 .doc（WPS 写法）同样能解析', async () => {
   const file = buildLegacyDoc('附件一：证据目录。', 16)
-  assert.match(extractLegacyDocText(file), /附件一：证据目录。/)
+  assert.match((await parseDocument(file, 'wps.doc')).text, /附件一：证据目录。/)
 })
 
-test('域代码被丢弃、域结果保留', () => {
+test('域代码被丢弃、域结果保留', async () => {
   const file = buildLegacyDoc('见附件\x13 HYPERLINK "http://x" \x14附件一\x15。')
-  const text = extractLegacyDocText(file)
+  const { text } = await parseDocument(file, 'field.doc')
   assert.ok(!text.includes('HYPERLINK'), '域指令属于控制信息，不应进入正文')
   assert.match(text, /附件一/)
 })
 
-test('不是 OLE2 的文件不会被当成旧版 .doc', () => {
-  assert.equal(isLegacyDocFile(Buffer.from('PK\x03\x04docx')), false)
-  assert.throws(() => extractLegacyDocText(Buffer.from('plain text')), /OLE2/)
+test('不是 OLE2 的文件不会被当成旧版 .doc', async () => {
+  await assert.rejects(parseDocument(Buffer.from('PK\x03\x04docx'), 'invalid.doc'), /OLE2/)
+  await assert.rejects(parseDocument(Buffer.from('plain text'), 'invalid.doc'), /OLE2/)
 })

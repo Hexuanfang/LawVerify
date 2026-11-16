@@ -202,11 +202,14 @@ function createFragment(
 
 function buildPdfFragments(evidence: Evidence) {
   const sourceText = evidence.ocrText?.trim() || evidence.name || evidence.fileName
-  const paragraphs = splitParagraphBlocks(sourceText)
-  const units = paragraphs.length ? paragraphs : splitSentenceBlocks(sourceText, 180)
-  const grouped = chunkIntoGroups(units.length ? units : [sourceText], Math.max(1, evidence.pages ?? 1))
+  const located = splitLocatedEvidenceText(sourceText, /^第 (\d+) 页 · (?:第 \d+ 张图|原生文本)$/)
+  const paragraphs = splitParagraphBlocks(located.text)
+  const units = paragraphs.length ? paragraphs : splitSentenceBlocks(located.text, 180)
+  const grouped = located.text
+    ? chunkIntoGroups(units.length ? units : [located.text], Math.max(1, evidence.pages ?? 1))
+    : []
 
-  return grouped.map((group, index) =>
+  const pages = grouped.map((group, index) =>
     createFragment(
       evidence,
       index + 1,
@@ -218,10 +221,41 @@ function buildPdfFragments(evidence: Evidence) {
       },
     ),
   )
+  return [...pages, ...located.blocks.map((block, index) => {
+    const image = block.locator.endsWith('张图')
+    return createFragment(evidence, pages.length + index + 1, image ? 'ocr_block' : 'page', block.locator, block.text,
+      { page: Number(block.match[1]), sourceKind: image ? 'ocr' : 'native_text' })
+  })]
+}
+
+function splitLocatedEvidenceText(text: string, locatorPattern: RegExp) {
+  const headings = [...text.matchAll(/^【来源：([^】\r\n]+)】\r?\n/gm)]
+    .flatMap(heading => {
+      const match = heading[1].match(locatorPattern)
+      return match ? [{ heading, match }] : []
+    })
+  const first = headings[0]?.heading.index
+  return {
+    text: first === undefined ? text : text.slice(0, first).trim(),
+    blocks: headings.flatMap(({ heading, match }, index) => {
+      const body = text.slice(heading.index! + heading[0].length, headings[index + 1]?.heading.index).trim()
+      return body ? [{ locator: heading[1], match, text: body }] : []
+    }),
+  }
 }
 
 function buildWordFragments(evidence: Evidence) {
   const sourceText = evidence.ocrText?.trim() || evidence.name || evidence.fileName
+  if (evidence.parsing?.artifactKey && /\.docx?$/i.test(evidence.fileName)) {
+    const located = splitLocatedEvidenceText(sourceText, /^(?:第 \d+ 段|第 \d+ 张表第 \d+ 行第 \d+ 列)(?: · 第 \d+ 张图)?$/)
+    if (located.blocks.length && !located.text) {
+      return located.blocks.map((block, index) => {
+        const image = block.locator.endsWith('张图')
+        return createFragment(evidence, index + 1, image ? 'ocr_block' : 'paragraph', block.locator, block.text,
+          { sourceKind: image ? 'ocr' : 'native_text' })
+      })
+    }
+  }
   const paragraphs = splitParagraphBlocks(sourceText)
   const units = paragraphs.length ? paragraphs : splitSentenceBlocks(sourceText, 150)
 

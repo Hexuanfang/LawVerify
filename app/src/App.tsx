@@ -959,18 +959,6 @@ function buildLocalPreviewSourceMap(fileList: Array<File & { webkitRelativePath?
   return entries
 }
 
-function stripRtfControlText(input: string) {
-  return input
-    .replace(/\\par[d]?/g, '\n')
-    .replace(/\\tab/g, ' ')
-    .replace(/\\'[0-9a-fA-F]{2}/g, ' ')
-    .replace(/\\[a-z]+\d* ?/g, ' ')
-    .replace(/[{}]/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim()
-}
-
 function buildImportedParagraphDraftsFromHtml(html: string) {
   if (typeof DOMParser === 'undefined') {
     const text = extractPlainTextFromHtml(html)
@@ -2288,9 +2276,10 @@ function WordPreviewSurface({ evidence, sourceUrl }: { evidence: Evidence; sourc
         if (!response.ok) {
           throw new Error('原件暂时无法读取')
         }
-        const text = new TextDecoder().decode(await readBoundedSource(response, 8 * 1024 * 1024))
+        const bytes = await readBoundedSource(response, 8 * 1024 * 1024)
         if (!disposed) {
-          setFallbackPreviewText(stripRtfControlText(text))
+          const result = await api.parseDocument(new File([bytes], 'preview.rtf', { type: 'application/rtf' }), controller.signal)
+          if (!disposed) setFallbackPreviewText(result.text)
         }
       } catch {
         if (!disposed) {
@@ -6557,55 +6546,14 @@ function App() {
   }
 
   async function readImportedCertificateContent(file: File) {
-    const lowerName = file.name.toLowerCase()
-    if (file.size > 20 * 1024 * 1024) throw new Error('文稿超过20MB，请拆分后导入。')
-
-    if (lowerName.endsWith('.docx')) {
-      const result = await importWordContent(file)
-
-      return {
-        content: result.text.trim(),
-        paragraphs: buildImportedParagraphDraftsFromHtml(result.html),
-      }
+    const result = await importWordContent(file)
+    const paragraphs = result.html ? buildImportedParagraphDraftsFromHtml(result.html) : []
+    return {
+      content: result.text,
+      paragraphs: paragraphs.length ? paragraphs : result.text.split(/\n\s*\n+/)
+        .map(text => text.trim()).filter(Boolean).map(text => ({ text, richText: buildParagraphRichText(text) })),
     }
-
-    if (lowerName.endsWith('.txt') || lowerName.endsWith('.md')) {
-      const content = (await file.text()).trim()
-      return {
-        content,
-        paragraphs: content
-          .split(/\n\s*\n+/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .map((text) => ({
-            text,
-            richText: buildParagraphRichText(text),
-          })),
-      }
-    }
-
-    if (lowerName.endsWith('.rtf')) {
-      const content = stripRtfControlText(await file.text())
-      return {
-        content,
-        paragraphs: content
-          .split(/\n\s*\n+/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .map((text) => ({
-            text,
-            richText: buildParagraphRichText(text),
-          })),
-      }
-    }
-
-    if (lowerName.endsWith('.doc') || lowerName.endsWith('.wps')) {
-      throw new Error('当前支持直接导入 .docx / .rtf / .txt / .md；.doc / .wps 请先另存为 .docx 后再上传。')
-    }
-
-    throw new Error('仅支持导入 Word 兼容文书：.docx / .doc / .rtf / .txt / .md / .wps')
   }
-
   async function handleUploadCertificate(file: File) {
     if (!selectedCase) {
       return
@@ -10814,7 +10762,7 @@ function App() {
                   ref={certificateUploadRef}
                   className="visually-hidden-file-input"
                   type="file"
-                  accept=".docx,.doc,.rtf,.txt,.md,.wps"
+                  accept=".docx,.doc,.rtf,.txt,.md,.markdown,.pdf"
                   onChange={(event) => void handleCertificateUploadInput(event)}
                 />
                 <label

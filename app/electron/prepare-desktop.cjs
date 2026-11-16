@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { prepareDefaultLawLibrary } = require('./prepare-default-law-library.cjs')
+const { prepareParserResources } = require('./parser-resources.cjs')
 
 const appRoot = path.resolve(__dirname, '..')
 const serverRoot = path.resolve(appRoot, '..', 'server')
@@ -29,6 +30,7 @@ async function main() {
   fs.rmSync(desktopRoot, { recursive: true, force: true })
   fs.mkdirSync(desktopServerRoot, { recursive: true })
   copyDirectory(serverDistSource, path.join(desktopServerRoot, 'dist'))
+  prepareParserResources(serverRoot, desktopServerRoot)
 
   if (fs.existsSync(migrationsSource)) {
     copyDirectory(migrationsSource, path.join(desktopServerRoot, 'migrations'))

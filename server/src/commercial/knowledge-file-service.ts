@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { extractWordText } from '../infrastructure/document-jobs.js'
+import { parseDocument, supportsDocumentParsing, documentText } from '../infrastructure/document-jobs.js'
 import type { KnowledgeFileRecord } from '../domain.js'
 import { AppError } from '../core/app-error.js'
 import { readObject, storeObject } from '../infrastructure/object-storage.js'
@@ -199,17 +199,6 @@ function buildKnowledgeVectorKeywords(title: string, text: string) {
   )
 }
 
-function stripRtfControlText(content: string) {
-  return content
-    .replace(/\\par[d]?/g, '\n')
-    .replace(/\\'[0-9a-fA-F]{2}/g, ' ')
-    .replace(/\\[a-z]+\d* ?/g, ' ')
-    .replace(/[{}]/g, ' ')
-    .replace(/\s+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 function normalizeArrayStrings(value: unknown) {
   if (!Array.isArray(value)) {
     return [] as string[]
@@ -264,66 +253,22 @@ async function ensureWorkspaceOrganization() {
 
 async function extractKnowledgeText(file: Express.Multer.File, relativePath: string): Promise<ExtractionResult> {
   const fileName = relativePath || file.originalname
-  const lowerName = fileName.toLowerCase()
-
-  if (
-    lowerName.endsWith('.txt')
-    || lowerName.endsWith('.md')
-    || lowerName.endsWith('.markdown')
-    || file.mimetype.startsWith('text/')
-  ) {
-    return {
-      extractedText: file.buffer.toString('utf8').trim(),
-      extractionStatus: 'ready',
-    }
+  if (!supportsDocumentParsing(fileName, file.mimetype)) {
+    return { extractedText: '', extractionStatus: 'pending', extractionError: '当前格式尚未接入自动解析。' }
   }
-
-  if (lowerName.endsWith('.rtf') || file.mimetype.toLowerCase().includes('rtf')) {
-    return {
-      extractedText: stripRtfControlText(file.buffer.toString('utf8')).trim(),
-      extractionStatus: 'ready',
-    }
-  }
-
-  if (lowerName.endsWith('.docx')) {
-    try {
-      const text = await extractWordText(file.buffer)
-      return {
-        extractedText: text.trim(),
-        extractionStatus: 'ready',
-      }
-    } catch (error) {
-      return {
-        extractedText: '',
-        extractionStatus: 'failed',
-        extractionError: error instanceof Error ? error.message : 'DOCX 正文抽取失败。',
-      }
-    }
-  }
-
-  if (lowerName.endsWith('.pdf')) {
+  try {
+    const result = await parseDocument(file.buffer, fileName, file.mimetype)
+    const extractedText = documentText(result)
+    if (!extractedText || result.reviewRequired) throw new Error(result.warnings[0] ?? '文件没有可读取的正文。')
+    return { extractedText, extractionStatus: 'ready' }
+  } catch (error) {
     return {
       extractedText: '',
-      extractionStatus: 'pending',
-      extractionError: 'PDF 文件已上传，当前版本待接入专用解析/OCR 管线后再执行正文抽取。',
+      extractionStatus: 'failed',
+      extractionError: error instanceof Error ? error.message : '文件解析失败。',
     }
-  }
-
-  if (lowerName.endsWith('.doc') || lowerName.endsWith('.wps')) {
-    return {
-      extractedText: '',
-      extractionStatus: 'pending',
-      extractionError: '旧版 Word/WPS 文件已上传，建议另存为 .docx 后即可自动抽取正文。',
-    }
-  }
-
-  return {
-    extractedText: '',
-    extractionStatus: 'pending',
-    extractionError: '文件已上传，当前格式尚未接入自动抽取管线。',
   }
 }
-
 function mapKnowledgeFileRow(row: KnowledgeFileRow): KnowledgeFileRecord {
   return {
     id: row.id,

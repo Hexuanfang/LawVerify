@@ -88,7 +88,24 @@ export interface RechargeOrder {
   paidAt?: string
 }
 
+export const EVIDENCE_PARSING_LABELS = {
+  queued: '等待解析', processing: '正在解析', ready: '解析已完成',
+  review_required: '待人工审核', failed: '解析失败，待审核',
+} as const
+
 export interface Evidence {
+  parsing?: {
+    status: 'queued' | 'processing' | 'ready' | 'review_required' | 'failed'
+    revision: string
+    sourceKey: string
+    artifactKey?: string
+    mode: 'auto' | 'document' | 'chat'
+    engineVersion?: string
+    warnings?: string[]
+    error?: string
+    updatedAt: string
+    reviewedAt?: string
+  }
   id: string
   caseId: string
   number: string

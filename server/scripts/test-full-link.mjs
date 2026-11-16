@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { after, test } from 'node:test'
 import { env } from '../src/config/env.ts'
 
-const root = mkdtempSync(path.join(os.tmpdir(), 'lawverify-full-link-'))
+const root = mkdtempSync(path.resolve(import.meta.dirname, '../../tmp/lawverify-full-link-'))
 env.WORKSPACE_DATA_DIR = path.join(root, 'data')
 env.STORAGE_LOCAL_ROOT = path.join(root, 'storage')
 env.KNOWLEDGE_RAG_MODE = 'local'
@@ -18,6 +17,7 @@ env.LLM_MODEL = 'test-only'
 
 const { createApp } = await import('../src/app.ts')
 const { rememberCaseAgentCredential } = await import('../src/case-agent-billing.ts')
+const { closePythonWorkers } = await import('../src/infrastructure/python-workers.ts')
 
 // 只拦截模型与账户服务，其余请求（含本地 HTTP）都走真实链路。
 const originalFetch = globalThis.fetch
@@ -52,7 +52,11 @@ globalThis.fetch = async (input, init = {}) => {
 }
 
 // fetch 的 mock 要覆盖整个文件：单个用例结束时恢复会让后续用例打真实网络。
-after(() => { globalThis.fetch = originalFetch })
+after(async () => {
+  await closePythonWorkers()
+  globalThis.fetch = originalFetch
+  rmSync(root, { recursive: true, force: true })
+})
 
 function insightDraft() {
   return {
@@ -140,7 +144,6 @@ function pdfFixture(pages = 4, marker = '', graphicsOnly = false) {
 }
 
 test('全链路：建案 → 上传 → 理解 → 导入文书 → 证据联动 → 增量材料', async t => {
-  t.after(() => { rmSync(root, { recursive: true, force: true }) })
   const server = createApp().app.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   t.after(async () => { await new Promise(resolve => server.close(resolve)) })
@@ -203,11 +206,12 @@ test('全链路：建案 → 上传 → 理解 → 导入文书 → 证据联动
 
   // 4. 等待后台理解完成
   let workspace = imported.workspace
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     workspace = (await (await fetch(`${base}/api/workspace`, { headers })).json()).workspace
     const task = workspace.cases.find((item) => item.id === caseId)?.agent?.task
     if (task?.status === 'failed') throw new Error(task.error)
-    if (task?.status === 'ready') break
+    if (task?.status === 'ready' && workspace.evidences.filter(item => item.caseId === caseId)
+      .every(item => item.parsing?.status === 'ready' && item.summaryStatus === 'ready')) break
     await new Promise(resolve => setTimeout(resolve, 200))
   }
   const task = workspace.cases.find((item) => item.id === caseId)?.agent?.task
@@ -272,6 +276,20 @@ test('全链路：建案 → 上传 → 理解 → 导入文书 → 证据联动
   const afterExtra = (await (await fetch(`${base}/api/workspace`, { headers })).json()).workspace
   const staleCertificate = afterExtra.certificates.find((item) => item.id === certificateId)
   assert.equal(staleCertificate.linkageStale, true, '新增材料后联动结果应提示已过时')
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const current = (await (await fetch(`${base}/api/workspace`, { headers })).json()).workspace
+    const task = current.cases.find(item => item.id === caseId)?.agent?.task
+    if (task?.status === 'failed') throw new Error(task.error)
+    const extra = current.evidences.find(item => item.caseId === caseId && item.fileName === '还款.txt')
+    if (task?.status === 'ready' && extra?.parsing?.status === 'ready' && extra.summaryStatus === 'ready') {
+      assert.ok(current.evidenceInsights.some(item => item.evidenceId === extra.id))
+      assert.equal(current.evidences.find(item => item.id === pdfEvidenceId)?.parsing?.revision,
+        workspace.evidences.find(item => item.id === pdfEvidenceId)?.parsing?.revision, '新增材料应复用旧材料解析结果')
+      break
+    }
+    assert.ok(attempt < 599, '增量材料应完成解析与理解')
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
 
   // 8. 原件下载走流，内容与上传一致
   const pdfEvidence = afterExtra.evidences.find((item) => item.caseId === caseId && item.type === 'pdf')
@@ -282,7 +300,6 @@ test('全链路：建案 → 上传 → 理解 → 导入文书 → 证据联动
 })
 
 test('全链路：超大文件按落盘接入，多页 PDF 走检索式理解，分批上传即入队', async t => {
-  t.after(() => { rmSync(root, { recursive: true, force: true }) })
   const server = createApp().app.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   t.after(async () => { await new Promise(resolve => server.close(resolve)) })
@@ -341,11 +358,12 @@ test('全链路：超大文件按落盘接入，多页 PDF 走检索式理解，
 
   // 3. 等待理解完成，检查检索式覆盖与页数。
   let workspace = null
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     workspace = (await (await fetch(`${base}/api/workspace`, { headers })).json()).workspace
     const task = workspace.cases.find((item) => item.id === caseId)?.agent?.task
     if (task?.status === 'failed') throw new Error(task.error)
-    if (task?.status === 'ready') break
+    if (task?.status === 'ready' && workspace.evidences.filter(item => item.caseId === caseId)
+      .every(item => item.parsing?.status === 'ready' && item.summaryStatus === 'ready')) break
     await new Promise(resolve => setTimeout(resolve, 200))
   }
   const task = workspace.cases.find((item) => item.id === caseId)?.agent?.task
@@ -363,16 +381,13 @@ test('全链路：超大文件按落盘接入，多页 PDF 走检索式理解，
   assert.ok(pdfInsights.some((item) => item.issues.some((issue) => issue.includes('未逐块理解'))), '应说明只理解了命中块')
 })
 
-test('全链路：扫描件走视觉理解，页数封顶后说明覆盖范围', async t => {
-  t.after(() => { rmSync(root, { recursive: true, force: true }) })
+test('全链路：未识别到正文的扫描件先审核，确认后走文本理解', async t => {
   const server = createApp().app.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   t.after(async () => { await new Promise(resolve => server.close(resolve)) })
   const base = `http://127.0.0.1:${server.address().port}`
   const headers = { 'x-workspace-account': 'full-link-scan@test.invalid', 'x-case-agent-token': 'test-only' }
   currentAccountEmail = 'full-link-scan@test.invalid'
-  // 视觉页数封顶调小，测试不必真的渲染十几页。
-  env.EVIDENCE_VISION_PAGE_LIMIT = 2
 
   const post = async (url, body) => {
     const response = await fetch(`${base}${url}`, {
@@ -400,18 +415,30 @@ test('全链路：扫描件走视觉理解，页数封顶后说明覆盖范围',
   })
 
   let workspace = null
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     workspace = (await (await fetch(`${base}/api/workspace`, { headers })).json()).workspace
     const task = workspace.cases.find((item) => item.id === caseId)?.agent?.task
     if (task?.status === 'failed') throw new Error(task.error)
-    if (task?.status === 'ready') break
+    if (['ready', 'review_required', 'failed'].includes(workspace.evidences.find(item => item.caseId === caseId)?.parsing?.status)) break
     await new Promise(resolve => setTimeout(resolve, 200))
   }
-  const task = workspace.cases.find((item) => item.id === caseId)?.agent?.task
-  assert.equal(task?.status, 'ready', `扫描件梳理未完成：${task?.stage ?? ''}`)
-  const insight = workspace.evidenceInsights.find((item) => item.caseId === caseId)
-  assert.ok(insight, '扫描件应产出理解记忆')
   const scannedEvidence = workspace.evidences.find((item) => item.caseId === caseId)
-  assert.ok(insight.issues.some((issue) => issue.includes('仅覆盖前')),
-    `应说明视觉理解只覆盖了前若干页：issues=${JSON.stringify(insight.issues)} pages=${scannedEvidence?.pages} 文本片段=${JSON.stringify((scannedEvidence?.ocrText ?? '').slice(0, 120))}`)
+  assert.equal(scannedEvidence.parsing?.status, 'review_required')
+  assert.equal(scannedEvidence.ocrText.trim(), '', '图片编码不能当作已识别正文')
+  assert.equal(workspace.evidenceInsights.filter(item => item.caseId === caseId).length, 0)
+  const callOffset = modelCalls.length
+  await post(`/api/evidences/${scannedEvidence.id}/parsing/review`, {
+    revision: scannedEvidence.parsing.revision, text: '人工核对原件，借款金额十万元，尚未归还。',
+  })
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    workspace = (await (await fetch(`${base}/api/workspace`, { headers })).json()).workspace
+    const task = workspace.cases.find(item => item.id === caseId)?.agent?.task
+    if (task?.status === 'failed') throw new Error(task.error)
+    if (task?.status === 'ready' && workspace.evidences.find(item => item.id === scannedEvidence.id)?.summaryStatus === 'ready') break
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+  assert.equal(workspace.evidences.find(item => item.id === scannedEvidence.id)?.summaryStatus, 'ready')
+  assert.ok(workspace.evidenceInsights.some(item => item.evidenceId === scannedEvidence.id))
+  assert.ok(modelCalls.slice(callOffset).some(call => JSON.stringify(call.body).includes('人工核对原件')))
+  assert.ok(modelCalls.slice(callOffset).every(call => !JSON.stringify(call.body).includes('image_url')))
 })

@@ -78,6 +78,7 @@
                             "wait-on":  "^9.1.0"
                         },
     "build":  {
+                  "asarUnpack": [".desktop/server/python/**", ".desktop/server/python-runtime/**", ".desktop/server/mineru-home/**"],
                   "appId":  "com.zhijing.lawverify",
                   "productName":  "LawVerify",
                   "compression":  "maximum",

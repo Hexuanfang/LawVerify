@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { EvidenceParsingPanel } from './EvidenceParsingPanel'
 import type { Evidence } from './types'
 import './evidence-manage.css'
 
@@ -24,7 +25,7 @@ export function EvidenceManagePanel({ evidence, busy, onUpdate, onDelete }: {
   }
 
   const trimmedName = name.trim()
-  const dirty = trimmedName !== evidence.name || ocrText !== evidence.ocrText
+  const dirty = trimmedName !== evidence.name || (!evidence.parsing && ocrText !== evidence.ocrText)
   const nameInvalid = !trimmedName
   const savingNow = saving || Boolean(busy)
 
@@ -35,7 +36,7 @@ export function EvidenceManagePanel({ evidence, busy, onUpdate, onDelete }: {
     try {
       const patch: { name?: string; ocrText?: string } = {}
       if (trimmedName !== evidence.name) patch.name = trimmedName
-      if (ocrText !== evidence.ocrText) patch.ocrText = ocrText
+      if (!evidence.parsing && ocrText !== evidence.ocrText) patch.ocrText = ocrText
       await onUpdate(patch)
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败，请重试。')
@@ -57,7 +58,7 @@ export function EvidenceManagePanel({ evidence, busy, onUpdate, onDelete }: {
   }
 
   return (
-    <section className="evidence-manage" aria-label="材料信息">
+    <><EvidenceParsingPanel evidence={evidence} busy={busy} /><section className="evidence-manage" aria-label="材料信息">
       <div className="evidence-manage-head">
         <strong>材料信息</strong>
         <span>修正名称与抽取文本会直接影响 AI 匹配与证据联动结果</span>
@@ -73,14 +74,14 @@ export function EvidenceManagePanel({ evidence, busy, onUpdate, onDelete }: {
         />
       </label>
 
-      <label className="field-block">
+      {!evidence.parsing && <label className="field-block">
         抽取文本
         <textarea
           value={ocrText}
           onChange={event => setOcrText(event.target.value)}
           placeholder="填写材料正文，AI 将据此做证据联动与逐句核验"
         />
-      </label>
+      </label>}
 
       <div className="evidence-manage-meta">
         <span>材料编号</span>
@@ -132,6 +133,6 @@ export function EvidenceManagePanel({ evidence, busy, onUpdate, onDelete }: {
           </button>
         )}
       </div>
-    </section>
+    </section></>
   )
 }

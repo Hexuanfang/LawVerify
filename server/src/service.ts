@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
+import { approveEvidenceParsing, ensureEvidenceParsed, supportsMineru } from './evidence-parsing.js'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { rankCases } from './intelligence/legal-verification.js'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { extractWordText, withDocumentSession } from './infrastructure/document-jobs.js'
+import { parseDocument, supportsDocumentParsing, documentText } from './infrastructure/document-jobs.js'
 import { AppError } from './core/app-error.js'
 import type {
   CaseContextMemory,
@@ -135,8 +136,6 @@ function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-const MAX_BACKGROUND_VISION_PAGES = 3
-const MAX_INLINE_IMAGE_SOURCE_BYTES = 12_000_000
 // 逐页视觉与长文本分块的模型调用并发度；与云端网关单用户 3 个并发的上限保持一致。
 const EVIDENCE_VISION_CONCURRENCY = 3
 // 自动理解时同时处理的材料份数。
@@ -169,10 +168,6 @@ function parseDataUrl(dataUrl: string) {
   }
 }
 
-function bufferToDataUrl(buffer: Buffer, mimeType: string) {
-  return `data:${mimeType};base64,${buffer.toString('base64')}`
-}
-
 function queueBackgroundEvidenceProcessing(caseId: string, evidenceIds: string[]) {
   void evidenceIds
   const account = getCurrentWorkspaceAccount()
@@ -192,6 +187,26 @@ function queueBackgroundEvidenceProcessing(caseId: string, evidenceIds: string[]
       backgroundEvidenceProcessingActive = true
       void drainBackgroundEvidenceProcessingQueue()
     }, 1500)
+  }
+}
+
+// 解析队列独立运行，不占用模型请求配额。单份完成即可进入现有理解队列。
+function startEvidenceParsing(evidenceIds: string[]) {
+  for (const evidenceId of evidenceIds) {
+    void ensureEvidenceParsed(evidenceId).then(async evidence => {
+      if (evidence?.parsing?.status !== 'ready') return
+      const latest = await readWorkspace()
+      const folder = latest.cases.find(item => item.id === evidence.caseId)
+      if (!folder || folder.agent?.autoAnalyze === false) return
+      await runExclusiveWorkspaceMutation(async () => {
+        const current = await readWorkspace()
+        const owner = current.cases.find(item => item.id === evidence.caseId)
+        if (!owner || !current.evidences.some(item => item.id === evidenceId)) return
+        markCaseAgentQueued(owner, [evidenceId])
+        await writeWorkspace(current)
+      })
+      queueBackgroundEvidenceProcessing(evidence.caseId, [evidenceId])
+    }).catch(() => { /* 解析状态由解析模块记录，工作区关闭时留待下次重试。 */ })
   }
 }
 
@@ -277,7 +292,9 @@ async function finalizeCaseAgentTask(caseId: string, revision: number, notes: st
   }
 
   task.status = 'ready'
-  task.stage = notes.length ? `案件理解已更新（${notes.join('，')}）` : '案件理解已更新'
+  const pendingParsing = latest.evidences.filter(item => item.caseId === caseId && item.parsing && item.parsing.status !== 'ready').length
+  task.stage = pendingParsing ? `可用材料理解已更新，${pendingParsing} 份材料仍待解析或审核`
+    : notes.length ? `案件理解已更新（${notes.join('，')}）` : '案件理解已更新'
   task.updatedAt = new Date().toISOString()
   await writeWorkspace(latest)
 }
@@ -408,6 +425,10 @@ async function drainBackgroundEvidenceProcessingQueue() {
         const task = folder?.agent?.task
         if (!folder || !task || folder.agent?.autoAnalyze === false || !['queued', 'processing'].includes(task.status)) return
         const revision = task.revision
+        const unparsedEvidenceIds = task.evidenceIds.filter(id => {
+          const material = initial.evidences.find(item => item.id === id)
+          return material && supportsMineru(material) && !material.parsing && material.summaryStatus !== 'ready'
+        })
         // 只处理还没理解好的材料：分批上传时任务队列会不断追加，
         // 若每次都重扫全部材料，批次一多就会退化成材料数乘批次数次读写。
         const pendingEvidenceIds = task.evidenceIds.filter((evidenceId) => {
@@ -415,6 +436,8 @@ async function drainBackgroundEvidenceProcessingQueue() {
           // 非文档材料（压缩包、镜像等）没有可理解内容，不进理解流程，
           // 否则它们会以「待解析材料」的形式堆满排除提示。
           return material && material.type !== 'other'
+            && !['review_required', 'failed'].includes(material.parsing?.status ?? '')
+            && (!supportsMineru(material) || material.parsing?.status === 'ready')
             && material.summaryStatus !== 'ready' && material.summaryStatus !== 'failed'
         })
         if (!pendingEvidenceIds.length) {
@@ -427,6 +450,7 @@ async function drainBackgroundEvidenceProcessingQueue() {
           task.skippedEvidenceIds = filterStaleSkippedEvidenceIds(initial, task.skippedEvidenceIds)
           task.updatedAt = new Date().toISOString()
           await writeWorkspace(initial)
+          startEvidenceParsing(unparsedEvidenceIds)
           scheduleCaseMemoryRebuild(caseId, revision, [])
           return
         }
@@ -434,6 +458,7 @@ async function drainBackgroundEvidenceProcessingQueue() {
         task.stage = '正在理解新增材料'
         task.updatedAt = new Date().toISOString()
         await writeWorkspace(initial)
+        startEvidenceParsing(unparsedEvidenceIds)
         const skippedEvidenceIds: string[] = []
         const duplicateEvidenceIds: string[] = []
         try {
@@ -450,6 +475,10 @@ async function drainBackgroundEvidenceProcessingQueue() {
               if (!currentFolder || currentFolder.agent?.autoAnalyze === false) return { evidenceId, outcome: 'done', analyzed: false }
               const material = current.evidences.find(e => e.id === evidenceId)
               if (!material) return { evidenceId, outcome: 'done', analyzed: false }
+              if (supportsMineru(material)) {
+                const parsed = await ensureEvidenceParsed(evidenceId)
+                if (!parsed || parsed.parsing?.status !== 'ready') return { evidenceId, outcome: 'skipped', analyzed: false }
+              }
               // 重复文件不重复调用模型：沿用原件的理解结果，避免重复扣费并阻断整案梳理。
               // 用户强制单独理解过的重复件按已理解处理，不再继承原件。
               if (material.duplicateOf) {
@@ -2729,31 +2758,6 @@ export async function getEvidenceSourceAsset(evidenceId: string) {
   }
 }
 
-// 原件引用：落盘原件只给路径，解析时不必再把整份文件读进主进程内存。
-async function getEvidenceSourceAssetRef(evidence: Evidence) {
-  if (evidence.storageKey?.trim()) {
-    return {
-      path: readObjectPath(evidence.storageKey.trim()),
-      buffer: undefined as Buffer | undefined,
-      mimeType: resolveEvidenceMimeType(evidence.fileName, evidence.sourceMimeType, evidence.type),
-      fileName: evidence.fileName,
-    }
-  }
-
-  const dataUrl = evidence.sourceDataUrl ?? evidence.previewDataUrl
-  if (!dataUrl) {
-    throw new Error('当前证据未保存可读取的原件数据。')
-  }
-
-  const { buffer, mimeType } = parseDataUrl(dataUrl)
-  return {
-    path: undefined as string | undefined,
-    buffer,
-    mimeType: resolveEvidenceMimeType(evidence.fileName, evidence.sourceMimeType || mimeType, evidence.type),
-    fileName: evidence.fileName,
-  }
-}
-
 // 原件下载走流：几百页的扫描件不会因为一次预览就把整份文件读进内存。
 export async function getEvidenceSourceAssetStream(evidenceId: string) {
   const workspace = await readWorkspace()
@@ -2784,143 +2788,15 @@ export async function getEvidenceSourceAssetStream(evidenceId: string) {
   }
 }
 
-function shouldHydrateEvidenceForUnderstanding(
-  evidence: Pick<Evidence, 'type' | 'ocrText' | 'sourceDataUrl' | 'previewDataUrl' | 'pageImageDataUrls' | 'sourceMimeType'>,
-) {
-  const hasMeaningfulText = Boolean(getMeaningfulEvidenceText(evidence.ocrText))
-  const hasVisionAssets = canUseEvidenceVision(evidence)
-
-  if (evidence.type === 'image') {
-    return !hasVisionAssets
-  }
-
-  if (evidence.type === 'pdf') {
-    return !hasMeaningfulText || !hasVisionAssets
-  }
-
-  if (evidence.type === 'word' || evidence.type === 'text') {
-    return !hasMeaningfulText
-  }
-
-  return !hasMeaningfulText
-}
-
-async function extractEvidenceContentFromSourceAsset(
-  evidence: Evidence,
-): Promise<Partial<Pick<Evidence, 'ocrText' | 'sourceDataUrl' | 'previewDataUrl' | 'pageImageDataUrls' | 'sourceMimeType' | 'pages'>>> {
-  const hasStoredSource = Boolean(evidence.storageKey?.trim() || evidence.sourceDataUrl || evidence.previewDataUrl)
-  if (!hasStoredSource) {
-    return {}
-  }
-
-  const asset = await getEvidenceSourceAssetRef(evidence)
-  const lowerName = asset.fileName.toLowerCase()
-  const normalizedMimeType = (asset.mimeType || evidence.sourceMimeType || '').toLowerCase()
-
-  if (evidence.type === 'image' || normalizedMimeType.startsWith('image/')) {
-    const buffer = asset.buffer ?? await readObject(evidence.storageKey?.trim() ?? '')
-    const dataUrl = buffer.length <= MAX_INLINE_IMAGE_SOURCE_BYTES
-      ? bufferToDataUrl(buffer, asset.mimeType)
-      : undefined
-
-    return {
-      sourceMimeType: asset.mimeType,
-      sourceDataUrl: dataUrl ?? evidence.sourceDataUrl,
-      previewDataUrl: dataUrl ?? evidence.previewDataUrl,
-      pageImageDataUrls: dataUrl ? [dataUrl] : evidence.pageImageDataUrls,
-      pages: evidence.pages ?? 1,
-      ocrText: evidence.ocrText?.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
-    }
-  }
-
-  if (
-    lowerName.endsWith('.txt')
-    || lowerName.endsWith('.md')
-    || lowerName.endsWith('.markdown')
-    || normalizedMimeType.startsWith('text/')
-  ) {
-    const buffer = asset.buffer ?? await readObject(evidence.storageKey?.trim() ?? '')
-    return {
-      sourceMimeType: asset.mimeType,
-      ocrText: buffer.toString('utf8').trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
-    }
-  }
-
-  if (lowerName.endsWith('.rtf') || normalizedMimeType.includes('rtf')) {
-    const buffer = asset.buffer ?? await readObject(evidence.storageKey?.trim() ?? '')
-    return {
-      sourceMimeType: asset.mimeType,
-      ocrText: stripRtfKnowledgeControlText(buffer.toString('utf8')).trim()
-        || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
-    }
-  }
-
-  if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc')) {
-    try {
-      const text = await extractWordText(asset.path ?? asset.buffer!)
-      return {
-        sourceMimeType: asset.mimeType,
-        ocrText: text.trim() || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
-      }
-    } catch (error) {
-      // 旧版 .doc 抽不出正文时按「无可理解原件」处理：这份材料单独跳过，不拖累整案梳理。
-      throw new Error(
-        `${EVIDENCE_NO_CONTENT_REASON}旧版 Word 文件解析失败：${error instanceof Error ? error.message : '未知错误'}`,
-      )
-    }
-  }
-
-  if (lowerName.endsWith('.pdf') || normalizedMimeType.includes('pdf')) {
-    return withDocumentSession(asset.path ?? asset.buffer!, async session => {
-      const total = await session.request<number>('info')
-      const text = await session.request<string>('text')
-      const pageImageDataUrls: string[] = []
-      const textContent = text.trim()
-      // 有文本层的 PDF 只需要一页预览图：文本理解已经够用，逐页渲染只会拖慢导入。
-      const previewPages = textContent ? 1 : MAX_BACKGROUND_VISION_PAGES
-      for (let page = 1; page <= Math.min(total, previewPages); page++) {
-        pageImageDataUrls.push(await session.request<string>('page', page))
-      }
-      return {
-        sourceMimeType: asset.mimeType,
-        ocrText: textContent || buildEvidenceOcrPlaceholder(asset.fileName, evidence.type),
-        previewDataUrl: pageImageDataUrls[0] ?? evidence.previewDataUrl,
-        pageImageDataUrls,
-        pages: total || evidence.pages || 1,
-      }
-    })
-  }
-
-  return {
-    sourceMimeType: asset.mimeType,
-  }
-}
-
-// 原件解析结果是否影响材料内容：影响则旧的摘要缓存需要作废。
-function isEvidenceContentChanged(base: Evidence, next: Evidence) {
-  return next.ocrText !== base.ocrText
-    || next.previewDataUrl !== base.previewDataUrl
-    || next.sourceDataUrl !== base.sourceDataUrl
-    || JSON.stringify(next.pageImageDataUrls ?? []) !== JSON.stringify(base.pageImageDataUrls ?? [])
-    || next.sourceMimeType !== base.sourceMimeType
-    || next.pages !== base.pages
-}
-
-// 解析原件补全文本与页图：只产出补丁，不直接改写工作区，
-// 这样耗时较久的解析过程可以在工作区写锁之外并发进行。
 async function hydrateEvidenceForUnderstanding(evidence: Evidence) {
-  if (!shouldHydrateEvidenceForUnderstanding(evidence)) {
-    return { patch: {} as Partial<Evidence> }
+  if (supportsMineru(evidence)) {
+    const parsed = await ensureEvidenceParsed(evidence.id)
+    if (!parsed || parsed.parsing?.status !== 'ready') {
+      throw new AppError('材料解析结果待人工审核，请先在材料预览中确认正文。', 409, 'EVIDENCE_PARSE_REVIEW_REQUIRED')
+    }
+    // 解析模块已在工作区锁内写回正文，准备理解时重新读当前值，避免覆盖同期人工审核。
   }
-
-  const patch = await extractEvidenceContentFromSourceAsset(evidence)
-  if (!Object.keys(patch).length) {
-    return { patch: {} as Partial<Evidence> }
-  }
-
-  return { patch }
 }
-
 function splitIntoMeaningfulLines(text: string, limit = 6) {
   return text
     .split(/\n+/)
@@ -3801,16 +3677,22 @@ function caseObjectiveInputKey(folder: CaseFolder, evidences: Evidence[], insigh
   ])).digest('hex')
 }
 
+  const memory = getLatestCaseContextMemory(workspace, caseId)
+  const folder = workspace.cases.find(item => item.id === caseId)
+}
+
 async function rebuildCaseContextMemory(
   workspace: WorkspaceState,
   caseFolder: CaseFolder,
   evidences: Evidence[],
 ) {
+  evidences = evidences.filter(item => !item.parsing || item.parsing.status === 'ready')
   const insights = ensureEvidenceInsightsForCase(workspace, evidences)
   const existing = getLatestCaseContextMemory(workspace, caseFolder.id)
   const inputKey = caseObjectiveInputKey(caseFolder, evidences, insights)
   if (existing?.inputKey === inputKey) return { ...existing, agentContext: caseFolder.agent }
-  const draft = await buildCaseContextMemoryDraftWithLlm(workspace, caseFolder, evidences, insights)
+    return buildCaseContextMemoryDraftWithLlm(workspace, caseFolder, evidences, insights)
+  })
   const memory: CaseContextMemory = {
     id: existing?.id ?? createId('case-memory'),
     caseId: caseFolder.id,
@@ -4150,7 +4032,8 @@ function isImageDataUrl(url: string | undefined, mimeType: string | undefined) {
   return detectImageMimeTypeFromDataUrl(url) !== undefined
 }
 
-function canUseEvidenceVision(evidence: Pick<Evidence, 'sourceDataUrl' | 'previewDataUrl' | 'pageImageDataUrls' | 'sourceMimeType'>) {
+function canUseEvidenceVision(evidence: Pick<Evidence, 'sourceDataUrl' | 'previewDataUrl' | 'pageImageDataUrls' | 'sourceMimeType'> & { parsing?: Evidence['parsing']; ocrText?: string }) {
+  if (evidence.parsing?.status === 'ready' && getMeaningfulEvidenceText(evidence.ocrText ?? '')) return false
   return getEvidenceVisionImageDataUrls(evidence).length > 0
 }
 
@@ -4390,25 +4273,8 @@ async function understandEvidenceWithLlm(
     // 扫描件：视觉理解页数封顶，优先复用导入阶段已经解析出来的页图。
     const pageLimit = Math.max(1, env.EVIDENCE_VISION_PAGE_LIMIT)
     const cachedImages = (evidence.pageImageDataUrls ?? []).slice(0, pageLimit)
-    let pageImages = cachedImages
-    let total = evidence.pages ?? cachedImages.length
-    if (cachedImages.length < Math.min(total, pageLimit)) {
-      // 页面渲染与模型理解分两段：渲染完成后立即释放文档解析进程，
-      // 否则多份 PDF 会互相排队占用解析进程（解析进程最多同时 2 个）。
-      const rendered = await withDocumentSession(readObjectPath(evidence.storageKey), async session => {
-        const pageTotal = await session.request<number>('info')
-        // 页面渲染保持串行（共用同一个文档解析进程），模型理解改为限流并发。
-        const images = [...cachedImages]
-        for (let page = cachedImages.length + 1; page <= Math.min(pageTotal, pageLimit); page += 1) {
-          const image = await session.request<string>('page', page)
-          if (!image) throw new Error(`第${page}页未能完成原件识别，请重试。`)
-          images.push(image)
-        }
-        return { images, total: pageTotal }
-      })
-      pageImages = rendered.images
-      total = rendered.total
-    }
+    const pageImages = cachedImages
+    const total = evidence.pages ?? cachedImages.length
     const pageResults = await mapSettledWithConcurrency<string, EvidencePageInsightDraft | null>(
       pageImages,
       EVIDENCE_VISION_CONCURRENCY,
@@ -4455,7 +4321,7 @@ async function understandEvidenceWithLlm(
   }
   // PDF 有文本层时不再补做视觉理解：文本已经覆盖全文，视觉只会增加耗时与失败面。
   return understandEvidenceTextWithLlm(evidence, fragments, meaningfulText, {
-    skipVision: evidence.type === 'pdf' && Boolean(meaningfulText),
+    skipVision: Boolean(meaningfulText) && (evidence.type === 'pdf' || evidence.parsing?.status === 'ready'),
   })
 }
 
@@ -5247,15 +5113,15 @@ async function recommendKnowledgeCasesFromWorkspace(
 
   if (source.trim()) {
     if (isYuandianCaseSearchConfigured()) {
-      externalSearchTasks.push(searchYuandianCases(source, 4).catch(() => []))
+      externalSearchTasks.push(searchYuandianCases(outboundSource, 4).catch(() => []))
     }
 
     if (isWkCaseSearchConfigured()) {
-      externalSearchTasks.push(searchWkCases(source, 4).catch(() => []))
+      externalSearchTasks.push(searchWkCases(outboundSource, 4).catch(() => []))
     }
 
     if (isPkulawCaseSearchConfigured()) {
-      externalSearchTasks.push(searchPkulawCases(source, 4).catch(() => []))
+      externalSearchTasks.push(searchPkulawCases(outboundSource, 4).catch(() => []))
     }
   }
 
@@ -5951,6 +5817,7 @@ export async function bootstrap() {
       queueBackgroundEvidenceProcessing(folder.id, folder.agent.task.evidenceIds)
     }
   }
+  startEvidenceParsing(workspace.evidences.filter(item => ['queued', 'processing'].includes(item.parsing?.status ?? '')).map(item => item.id))
   return { workspace }
 }
 
@@ -5978,7 +5845,7 @@ async function rebuildCaseStrategy(workspace: WorkspaceState, folder: CaseFolder
   const inputKey = strategyInputKey(memory, position)
   if (folder.agent?.strategy?.inputKey === inputKey) return
   if (!isLlmConfigured()) throw new Error('请先配置模型，再生成案件主张与举证思路。')
-  const evidences = workspace.evidences.filter(e => e.caseId === folder.id)
+  const evidences = workspace.evidences.filter(e => e.caseId === folder.id && (!e.parsing || e.parsing.status === 'ready'))
   const insights = workspace.evidenceInsights.filter(i => i.caseId === folder.id)
   const promptPayload = {
     position,
@@ -6274,6 +6141,10 @@ export async function deleteCase(caseId: string) {
 }
 
 export async function importEvidences(payload: EvidenceImportPayload) {
+  return runExclusiveWorkspaceMutation(() => importEvidencesUnlocked(payload))
+}
+
+async function importEvidencesUnlocked(payload: EvidenceImportPayload) {
   const workspace = await readWorkspace()
   const caseFolder = workspace.cases.find((item) => item.id === payload.caseId)
   const processInBackground = payload.processInBackground === true
@@ -6344,6 +6215,7 @@ export async function importEvidences(payload: EvidenceImportPayload) {
     if (existingEvidence) {
       const nextEvidence = {
         ...existingEvidence,
+        parsing: undefined,
         contentHash: file.contentHash,
         sourceFingerprint: file.sourceFingerprint,
         directoryId: file.directoryId ?? existingEvidence.directoryId,
@@ -6441,6 +6313,7 @@ export async function importEvidences(payload: EvidenceImportPayload) {
       workspace.evidences.find((item) => item.id === evidenceId)?.type !== 'other')
     if (queueEvidenceIds.length) markCaseAgentQueued(folder, queueEvidenceIds)
     await writeWorkspace(workspace)
+    startEvidenceParsing(Array.from(touchedEvidenceIds).filter(id => supportsMineru(workspace.evidences.find(item => item.id === id)!)))
     if (queueEvidenceIds.length) queueBackgroundEvidenceProcessing(caseFolder.id, queueEvidenceIds)
     return { workspace, created }
   }
@@ -6546,6 +6419,11 @@ export async function updateEvidence(
     | 'pages'
   >>,
 ) {
+  return runExclusiveWorkspaceMutation(() => updateEvidenceUnlocked(evidenceId, patch))
+}
+
+async function updateEvidenceUnlocked(evidenceId: string, patch: Parameters<typeof updateEvidence>[1]) {
+  if ('parsing' in patch) throw new AppError('解析状态请通过审核入口修改。', 400, 'PARSE_REVIEW_REQUIRED')
   const workspace = await readWorkspace()
   const current = workspace.evidences.find((item) => item.id === evidenceId)
   const contentChanged = Boolean(
@@ -6606,6 +6484,32 @@ export async function updateEvidence(
   return { workspace }
 }
 
+export async function reviewEvidenceParsing(evidenceId: string, revision: string, text: string) {
+  await approveEvidenceParsing(evidenceId, revision, text)
+  await runExclusiveWorkspaceMutation(async () => {
+    const workspace = await readWorkspace()
+    const evidence = workspace.evidences.find(item => item.id === evidenceId)
+    const folder = workspace.cases.find(item => item.id === evidence?.caseId)
+    if (folder) markCaseAgentQueued(folder, [evidenceId])
+    await writeWorkspace(workspace)
+  })
+  const workspace = await readWorkspace()
+  const evidence = workspace.evidences.find(item => item.id === evidenceId)
+  if (evidence) queueBackgroundEvidenceProcessing(evidence.caseId, [evidenceId])
+  return { workspace }
+}
+
+export async function retryEvidenceParsing(evidenceId: string, mode: 'auto' | 'document' | 'chat' = 'auto') {
+  const workspace = await readWorkspace()
+  const evidence = workspace.evidences.find(item => item.id === evidenceId)
+  if (!evidence) throw new AppError('材料不存在。', 404, 'EVIDENCE_NOT_FOUND')
+  if (!supportsMineru(evidence)) throw new AppError('当前材料没有受支持的可解析原件。', 400, 'PARSE_SOURCE_REQUIRED')
+  void ensureEvidenceParsed(evidenceId, { force: true, mode }).then(parsed => {
+    if (parsed?.parsing?.status === 'ready') startEvidenceParsing([evidenceId])
+  }).catch(() => {})
+  return { workspace: await readWorkspace() }
+}
+
 interface EvidenceSummaryPreparation {
   evidenceId: string
   caseId: string
@@ -6625,7 +6529,7 @@ type EvidenceSummaryPreparationResult =
 async function prepareEvidenceSummary(
   evidenceId: string,
   options: { force?: boolean; cacheOnly?: boolean; background?: boolean },
-  hydrationPatch: Partial<Evidence>,
+
 ): Promise<EvidenceSummaryPreparationResult> {
   let workspace = await readWorkspace()
   let evidence = workspace.evidences.find((item) => item.id === evidenceId)
@@ -6644,31 +6548,9 @@ async function prepareEvidenceSummary(
   }
 
   // 应用原件解析补丁：材料内容变化时旧的摘要缓存作废。
-  if (Object.keys(hydrationPatch).length) {
-    const nextEvidence: Evidence = {
-      ...evidence,
-      ...hydrationPatch,
-      pageImageDataUrls: hydrationPatch.pageImageDataUrls ?? evidence.pageImageDataUrls,
-    }
-    if (isEvidenceContentChanged(evidence, nextEvidence)) {
-      workspace.evidences = workspace.evidences.map((item) =>
-        item.id === evidenceId
-          ? {
-            ...nextEvidence,
-            summaryText: undefined,
-            summaryStatus: 'idle',
-            summaryError: undefined,
-            summaryUpdatedAt: undefined,
-            summaryCacheKey: undefined,
-          }
-          : item,
-      )
-      evidence = workspace.evidences.find((item) => item.id === evidenceId) ?? nextEvidence
-    } else {
-      evidence = nextEvidence
-    }
+  if (supportsMineru(evidence) && evidence.parsing?.status !== 'ready') {
+    throw new AppError('材料解析结果已变化，请完成解析或人工审核后继续。', 409, 'EVIDENCE_PARSE_REVIEW_REQUIRED')
   }
-
   const fragments = getEvidenceFragmentsForEvidence(workspace, evidence.id)
   const existingInsight = getLatestEvidenceInsight(workspace, evidence.id)
   const currentSummaryCacheKey = computeEvidenceSummaryCacheKey(evidence)
@@ -6811,6 +6693,8 @@ async function commitEvidenceSummary(
   if (!evidence) {
     return workspace
   }
+  if (computeEvidenceSummaryCacheKey(evidence) !== preparation.currentSummaryCacheKey) return workspace
+  if (evidence.parsing && evidence.parsing.status !== 'ready') return workspace
 
   const markFailed = (error: unknown) => {
     const message = error instanceof Error ? error.message : '证据内容理解失败'
@@ -6910,7 +6794,7 @@ export async function summarizeEvidence(
     && snapshotEvidence.summaryText?.trim()
     && snapshotEvidence.summaryCacheKey === computeEvidenceSummaryCacheKey(snapshotEvidence)) {
     const cached = await runExclusiveWorkspaceMutation(() =>
-      prepareEvidenceSummary(evidenceId, { ...options, cacheOnly: true }, {}),
+      prepareEvidenceSummary(evidenceId, { ...options, cacheOnly: true }),
     )
     if (cached.kind === 'completed' && cached.reusedCachedSummary) {
       return {
@@ -6921,13 +6805,11 @@ export async function summarizeEvidence(
     }
   }
 
-  const hydration = options.cacheOnly
-    ? { patch: {} as Partial<Evidence> }
-    : await hydrateEvidenceForUnderstanding(snapshotEvidence)
+  if (!options.cacheOnly) await hydrateEvidenceForUnderstanding(snapshotEvidence)
 
   // 阶段二：准备工作区状态（锁内串行）。
   const outcome = await runExclusiveWorkspaceMutation(() =>
-    prepareEvidenceSummary(evidenceId, options, hydration.patch),
+    prepareEvidenceSummary(evidenceId, options),
   )
   if (outcome.kind === 'completed') {
     return {
@@ -6941,7 +6823,9 @@ export async function summarizeEvidence(
   let insightDraft: EvidenceInsightDraft | undefined
   let failure: unknown
   try {
-    insightDraft = await understandEvidenceWithLlm(outcome.preparation.evidence, outcome.preparation.fragments)
+      const { evidence, fragments } = outcome.preparation
+      return understandEvidenceWithLlm(evidence, fragments)
+    })
   } catch (error) {
     failure = error
   }
@@ -6983,6 +6867,10 @@ export async function clearCaseDirectoryEvidences(caseId: string) {
 }
 
 export async function deleteEvidence(evidenceId: string) {
+  return runExclusiveWorkspaceMutation(() => deleteEvidenceUnlocked(evidenceId))
+}
+
+async function deleteEvidenceUnlocked(evidenceId: string) {
   const workspace = await readWorkspace()
   const evidence = workspace.evidences.find((item) => item.id === evidenceId) ?? null
   const owner = evidence ? workspace.cases.find(c => c.id === evidence.caseId) : undefined
@@ -7669,7 +7557,6 @@ export async function autoLinkCertificate(
   }
 
   const signal = options?.signal
-  return withRequestAbortSignal(signal, async () => {
     resetLlmCallCacheHitCount()
     // 进度里回告已复用的模型结果数量：任务被中断后重跑时，可以直观看到哪些阶段被跳过。
     const reportProgress = (text: string) => {
@@ -7685,6 +7572,9 @@ export async function autoLinkCertificate(
     }
 
     const caseEvidences = workspace.evidences.filter((item) => item.caseId === certificate.caseId)
+    if (caseEvidences.some(item => item.parsing && item.parsing.status !== 'ready')) {
+      throw new AppError('案件材料仍在解析或等待人工审核，请完成后再核验文书。', 409, 'CASE_PARSE_REVIEW_REQUIRED')
+    }
     // 其它类型的材料（附件）没有可核验内容，不进入联动候选。
     const linkableEvidences = caseEvidences.filter((item) => item.type !== 'other')
     const caseFolder = workspace.cases.find((item) => item.id === certificate.caseId) ?? null
@@ -7794,7 +7684,7 @@ export async function autoLinkCertificate(
         0,
       ),
     }
-  })
+  }))
 }
 
 export async function reviewParagraphMatches(certificateId: string, paragraphId: string) {
@@ -8337,79 +8227,23 @@ function buildKnowledgeFileRecord(payload: {
   } satisfies KnowledgeFileRecord
 }
 
-function stripRtfKnowledgeControlText(content: string) {
-  return content
-    .replace(/\\par[d]?/g, '\n')
-    .replace(/\\'[0-9a-fA-F]{2}/g, ' ')
-    .replace(/\\[a-z]+\d* ?/g, ' ')
-    .replace(/[{}]/g, ' ')
-    .replace(/\s+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 async function extractKnowledgeUploadText(file: Express.Multer.File, resolvedFileName: string) {
-  const lowerName = resolvedFileName.toLowerCase()
-  const lowerMime = file.mimetype.toLowerCase()
-
-  if (
-    lowerName.endsWith('.txt')
-    || lowerName.endsWith('.md')
-    || lowerName.endsWith('.markdown')
-    || lowerMime.startsWith('text/')
-  ) {
-    return {
-      extractedText: file.buffer.toString('utf8').trim(),
-      extractionStatus: 'ready' as const,
-    }
+  if (!supportsDocumentParsing(resolvedFileName, file.mimetype)) {
+    return { extractedText: '', extractionStatus: 'pending' as const, extractionError: '当前格式尚未接入自动解析。' }
   }
-
-  if (lowerName.endsWith('.rtf') || lowerMime.includes('rtf')) {
-    return {
-      extractedText: stripRtfKnowledgeControlText(file.buffer.toString('utf8')).trim(),
-      extractionStatus: 'ready' as const,
-    }
-  }
-
-  if (lowerName.endsWith('.pdf')) {
+  try {
+    const result = await parseDocument(file.buffer, resolvedFileName, file.mimetype)
+    const extractedText = documentText(result)
+    if (!extractedText || result.reviewRequired) throw new Error(result.warnings[0] ?? '文件没有可读取的正文。')
+    return { extractedText, extractionStatus: 'ready' as const }
+  } catch (error) {
     return {
       extractedText: '',
-      extractionStatus: 'pending' as const,
-      extractionError: 'PDF 文件已上传，当前版本待接入专用解析/OCR 管线后再执行正文抽取。',
+      extractionStatus: 'failed' as const,
+      extractionError: error instanceof Error ? error.message : '文件解析失败。',
     }
-  }
-
-  if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc')) {
-    try {
-      const text = await extractWordText(file.buffer)
-      return {
-        extractedText: text.trim(),
-        extractionStatus: 'ready' as const,
-      }
-    } catch (error) {
-      return {
-        extractedText: '',
-        extractionStatus: 'failed' as const,
-        extractionError: error instanceof Error ? error.message : 'Word 正文抽取失败。',
-      }
-    }
-  }
-
-  if (lowerName.endsWith('.wps')) {
-    return {
-      extractedText: '',
-      extractionStatus: 'pending' as const,
-      extractionError: 'WPS 专有格式已上传，当前版本暂不支持抽取正文，建议另存为 .docx 后再导入。',
-    }
-  }
-
-  return {
-    extractedText: '',
-    extractionStatus: 'pending' as const,
-    extractionError: '文件已上传，当前格式尚未接入自动抽取管线。',
   }
 }
-
 function normalizeStorageObjectKey(key: string) {
   return key.replace(/\\/g, '/').replace(/^\/+/, '')
 }

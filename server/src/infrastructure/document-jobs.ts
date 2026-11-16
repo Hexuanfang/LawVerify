@@ -1,109 +1,81 @@
-import { fork, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { copyFile, mkdir, mkdtemp, readFile, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import { AppError } from '../core/app-error.js'
 import { env } from '../config/env.js'
+import { getMineruPool, parserRoot } from './mineru-runtime.js'
 
-const MAX_ACTIVE = 2
-const MAX_QUEUED = 16
-const maxEvidenceFileBytes = env.MAX_EVIDENCE_FILE_MB * 1024 * 1024
-let active = 0
-const queue: Array<() => void> = []
-async function acquire() {
-  if (active < MAX_ACTIVE) { active++; return }
-  if (queue.length >= MAX_QUEUED) throw new AppError('材料处理任务较多，请稍后重试。', 429, 'DOCUMENT_QUEUE_FULL')
-  await new Promise<void>((resolve, reject) => {
-    const resume = () => { clearTimeout(timer); resolve() }
-    const timer = setTimeout(() => {
-      queue.splice(queue.indexOf(resume), 1)
-      reject(new AppError('等待材料处理超时，请稍后重试。', 503, 'DOCUMENT_QUEUE_TIMEOUT'))
-    }, 60000)
-    queue.push(resume)
-  })
-}
-function release() {
-  const next = queue.shift()
-  if (next) next()
-  else active--
+export interface ParsedDocumentBlock {
+  page: number
+  bbox: number[]
+  coordinateSpace: string
+  text: string
+  locator?: string
 }
 
-export interface DocumentSession {
-  request<T>(action: 'word' | 'info' | 'text' | 'page', page?: number): Promise<T>
+export interface ParsedArtifact {
+  schemaVersion: number
+  engineVersion: string
+  text: string
+  html?: string
+  pages: number
+  blocks: ParsedDocumentBlock[]
+  layout?: { pages: number; blocks: ParsedDocumentBlock[] }
+  warnings: string[]
+  reviewRequired: boolean
+  chat?: { title: string; group?: boolean; messages: Array<{ sender: string; text: string; bbox: number[]; time_context?: string; display_name?: string }> }
 }
 
-export async function withDocumentSession<T>(
-  source: Buffer | string,
-  operation: (session: DocumentSession) => Promise<T>,
-) {
-  // 传路径时不在主进程再读一份原件，几百页的扫描件也不会把内存顶满。
-  const buffer = typeof source === 'string' ? undefined : source
-  const sourcePath = typeof source === 'string' ? source : undefined
-  if (buffer && buffer.byteLength > maxEvidenceFileBytes) {
-    throw new AppError(`材料超过${Math.round(maxEvidenceFileBytes / 1024 / 1024)}MB，请拆分后处理。`, 413, 'DOCUMENT_TOO_LARGE')
+export function supportsDocumentParsing(fileName: string, mimeType = '') {
+  return /\.(docx?|rtf|pdf|png|jpe?g|webp|bmp|tiff?|txt|md|markdown|csv|tsv|json|log|gif)$/i.test(fileName)
+    || /^text\//i.test(mimeType) || /^application\/rtf$/i.test(mimeType)
+}
+
+export async function readParsedArtifact(location: string): Promise<ParsedArtifact> {
+  if ((await stat(location)).size > 64 * 1024 ** 2) throw new Error('解析结果过大')
+  const result = JSON.parse(await readFile(location, 'utf8')) as ParsedArtifact
+  if (result.schemaVersion !== 1 || typeof result.text !== 'string'
+    || (result.html !== undefined && typeof result.html !== 'string')
+    || result.text.length + (result.html?.length ?? 0) > 8_000_000
+    || !Array.isArray(result.blocks) || !Array.isArray(result.warnings)) throw new Error('解析结果格式无效')
+  return result
+}
+
+export function documentText(result: ParsedArtifact) {
+  return (result.html ? result.blocks.map(block => block.text).join('\n\n') : result.text).trim()
+}
+
+export async function runDocumentParsing(inputPath: string, outputPath: string, fileName: string, mimeType?: string, mode?: string) {
+  await getMineruPool().run({ action: 'parse', inputPath, outputPath, fileName, mimeType, mode })
+  return readParsedArtifact(outputPath)
+}
+
+export async function parseDocument(source: Buffer | string, fileName: string, mimeType?: string) {
+  if (!supportsDocumentParsing(fileName, mimeType)) {
+    throw new AppError('当前文件格式尚未接入解析。', 415, 'DOCUMENT_FORMAT_UNSUPPORTED')
   }
-  await acquire()
-  let worker: ChildProcess | undefined
-  let lifetimeTimer: ReturnType<typeof setTimeout> | undefined
+  const size = typeof source === 'string' ? (await stat(source)).size : source.length
+  if (size > env.MAX_EVIDENCE_FILE_MB * 1024 ** 2) {
+    throw new AppError('文件超过解析大小上限。', 413, 'DOCUMENT_TOO_LARGE')
+  }
+  const root = parserRoot()
+  await mkdir(root, { recursive: true })
+  const directory = await mkdtemp(path.join(root, 'document-'))
+  const output = path.join(directory, 'result.json')
+  const suffix = path.extname(fileName).replace(/[^.a-z0-9]/gi, '').toLowerCase()
+  const staged = typeof source === 'string' && path.extname(source).toLowerCase() === suffix
+    ? undefined : path.join(directory, 'source' + suffix)
   try {
-    const builtWorker = new URL('./document-worker.js', import.meta.url)
-    // Native PDF/canvas modules cannot safely unload in Windows worker_threads.
-    worker = fork(existsSync(builtWorker) ? builtWorker : new URL('./document-worker.ts', import.meta.url), [], {
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true, serialization: 'advanced',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      execArgv: [...process.execArgv.filter(arg => !arg.startsWith('--inspect')), '--max-old-space-size=256'],
-    })
-    worker.send({ type: 'initialize', bytes: buffer, path: sourcePath })
-    const runningWorker = worker
-    let sequence = 0
-    const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-    let terminalError: Error | undefined
-    const fail = (error: Error) => {
-      terminalError = error
-      for (const task of pending.values()) { clearTimeout(task.timer); task.reject(error) }
-      pending.clear()
+    let input: string
+    if (typeof source === 'string') {
+      if (staged) await copyFile(source, staged)
+      input = staged ?? source
+    } else {
+      input = staged!
+      await writeFile(input, source)
     }
-    runningWorker.on('message', (message: unknown) => {
-      const { id, result, failed } = message as { id: number; result?: unknown; failed?: boolean }
-      const task = pending.get(id)
-      if (!task) return
-      pending.delete(id)
-      clearTimeout(task.timer)
-      if (failed) task.reject(new AppError('材料无法解析或超出安全处理范围，请检查原件并拆分后重试。', 400, 'DOCUMENT_PARSE_FAILED'))
-      else task.resolve(result)
-    })
-    runningWorker.on('error', () => fail(new AppError('材料处理进程异常，原件会保留，请重试。', 503, 'DOCUMENT_WORKER_FAILED')))
-    runningWorker.on('exit', () => fail(new AppError('材料处理已中断，请重试。', 503, 'DOCUMENT_WORKER_EXIT')))
-    lifetimeTimer = setTimeout(() => {
-      fail(new AppError('材料处理超过15分钟，请拆分后重试。', 408, 'DOCUMENT_TIMEOUT'))
-      runningWorker.kill()
-    }, 15 * 60 * 1000)
-    return await operation({
-      request<R>(action: 'word' | 'info' | 'text' | 'page', page?: number) {
-        if (terminalError) return Promise.reject(terminalError)
-        return new Promise<R>((resolve, reject) => {
-          const id = ++sequence
-          const timer = setTimeout(() => {
-            fail(new AppError('材料解析超时，请检查原件并拆分后重试。', 408, 'DOCUMENT_TIMEOUT'))
-            runningWorker.kill()
-          }, 60000)
-          pending.set(id, { resolve: value => resolve(value as R), reject, timer })
-          runningWorker.send({ id, action, page }, error => {
-            if (error) fail(new AppError('材料处理连接中断，请重试。', 503, 'DOCUMENT_WORKER_EXIT'))
-          })
-        })
-      },
-    })
+    return await runDocumentParsing(input, output, fileName, mimeType)
   } finally {
-    clearTimeout(lifetimeTimer)
-    if (worker && worker.exitCode === null && worker.signalCode === null) {
-      await new Promise<void>(resolve => {
-        worker!.once('exit', () => resolve())
-        worker!.kill()
-      })
-    }
-    release()
+    await Promise.allSettled([output, ...(staged ? [staged] : [])].map(file => unlink(file)))
+    await rmdir(directory).catch(() => undefined)
   }
-}
-
-export function extractWordText(source: Buffer | string) {
-  return withDocumentSession(source, session => session.request<string>('word'))
 }

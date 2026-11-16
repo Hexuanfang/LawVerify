@@ -93,7 +93,7 @@ app.whenReady().then(async () => {
       assert.equal(await evaluate('window.testEditor.isEditable'), true)
       await wait("window.stabilityTests.readDraft(window.stabilityTests.draftKey('stability@test.invalid','certificate','paragraph')).then(draft=>!draft)")
     })
-    await check('Word import executes in a browser worker', async () => {
+    await check('Word import submits the source to the parser API', async () => {
       const text = await evaluate(`(async()=>{
         const response=await fetch('/__fixture.docx');
         const file=new File([await response.arrayBuffer()],'fixture.docx');

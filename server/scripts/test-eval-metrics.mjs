@@ -163,11 +163,11 @@ test('解析健壮率：期望能解析的响应全部解析成功', () => {
       : []
   ))
   assert.equal(result.value, 1)
-  assert.equal(result.total, 1)
+  assert.equal(result.total, 2)
   assert.match(result.notes, /正确未产出结果/)
 
   const broken = evaluateParseSuccess(entries, () => [])
-  assert.equal(broken.value, 0)
+  assert.equal(broken.value, 0.5)
   assert.equal(broken.failures[0].id, 'f-1')
 })
 
@@ -178,4 +178,27 @@ test('语料自检：句子与段落正文对不上时报错', () => {
   }])
   assert.equal(issues.length, 1)
   assert.match(issues[0].reason, /不一致/)
+})
+
+test('严格定位：非法、空定位以及部分越界页码都不能退化为全文命中', () => {
+  for (const locator of ['', '完全无法解析的定位', '第0页', '第2-999页', '第2页随意附加']) {
+    assert.equal(checkLinkGrounded(baseMaterial, locator, '合同总价款为人民币120万元').grounded, false, locator)
+  }
+  assert.equal(checkLinkGrounded(baseMaterial, '全文', '合同总价款为人民币120万元').grounded, true)
+})
+
+test('解析健壮率：错误接受脏响应也必须计入失败', () => {
+  const entries = [
+    { id: 'good', kind: 'normal', raw: '{}', paragraphIds: ['p-1'], stage: 'links', expectParse: true },
+    { id: 'bad', kind: 'garbage', raw: '拒绝', paragraphIds: ['p-1'], stage: 'links', expectParse: false },
+  ]
+  const result = evaluateParseSuccess(entries, () => [{ paragraphId: 'p-1' }])
+  assert.equal(result.value, 0.5)
+  assert.ok(result.failures.some(item => item.id === 'bad'))
+})
+
+test('解析健壮率：段落 ID 错误或漏段不能算成功', () => {
+  const entries = [{ id: 'batch', kind: 'normal', raw: '{}', paragraphIds: ['p-1', 'p-2'], stage: 'links', expectParse: true }]
+  assert.equal(evaluateParseSuccess(entries, () => [{ paragraphId: 'wrong' }]).value, 0)
+  assert.equal(evaluateParseSuccess(entries, () => [{ paragraphId: 'p-1' }]).value, 0)
 })

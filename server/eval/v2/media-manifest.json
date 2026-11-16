@@ -1,0 +1,523 @@
+{
+  "corpus": "synthetic-v2",
+  "font": "simhei.ttf",
+  "annotation": "合成附件的明文事实标注；无隐含 OCR 文本层；非真实案件。",
+  "documents": [
+    {
+      "id": "native-contract",
+      "file": "assets/native-contract.pdf",
+      "kind": "native_pdf",
+      "sha256": "349ba1264c425545aaf37df16e73151494d9274eb83b63973b26069284757967",
+      "pages": [
+        {
+          "text": "购销合同\n付款方：甲电子公司；收款方：乙贸易公司。\n合同金额128000元；签订日期2026年9月1日。\n付款期限为2026年10月15日。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "128000元",
+            "2026年9月1日",
+            "2026年10月15日"
+          ],
+          "mode": "text"
+        }
+      ],
+      "claims": [
+        {
+          "text": "本合同金额为128000元。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "native-multipage",
+      "file": "assets/native-multipage.pdf",
+      "kind": "native_pdf",
+      "sha256": "94568b41ad793d77151e4b3f2f11d9870e51df1899e469f72efb83e6369de511",
+      "pages": [
+        {
+          "text": "购销合同\n付款方：甲电子公司；收款方：乙贸易公司。\n合同金额128000元；签订日期2026年9月1日。\n付款期限为2026年10月15日。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "128000元",
+            "2026年9月1日",
+            "2026年10月15日"
+          ],
+          "mode": "text"
+        },
+        {
+          "text": "银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "text"
+        },
+        {
+          "text": "双方对账确认书\n截至2026年11月1日，甲电子公司尚未支付尾款64000元。\n双方确认尚未付清，不存在现金支付记录。",
+          "fields": [
+            "2026年11月1日",
+            "尚未支付尾款64000元",
+            "不存在现金支付记录"
+          ],
+          "mode": "text"
+        }
+      ],
+      "claims": [
+        {
+          "text": "本合同金额为128000元。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 2
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 2
+        },
+        {
+          "text": "截至2026年11月1日，甲电子公司已付清尾款64000元。",
+          "relation": "contradict",
+          "page": 3
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "scan-receipt",
+      "file": "assets/scan-receipt.pdf",
+      "kind": "scan_pdf",
+      "sha256": "5a8e8c14b28036dcf8d5835ae16d7566eacbc2b00970b83d2190b49496869d1e",
+      "pages": [
+        {
+          "text": "银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "mixed-alternating",
+      "file": "assets/mixed-alternating.pdf",
+      "kind": "mixed_pdf",
+      "sha256": "1fd7815ed75d38319a0968823225f1946b7e7c6190f406da57800e03df702e88",
+      "pages": [
+        {
+          "text": "购销合同\n付款方：甲电子公司；收款方：乙贸易公司。\n合同金额128000元；签订日期2026年9月1日。\n付款期限为2026年10月15日。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "128000元",
+            "2026年9月1日",
+            "2026年10月15日"
+          ],
+          "mode": "text"
+        },
+        {
+          "text": "银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "image"
+        },
+        {
+          "text": "双方对账确认书\n截至2026年11月1日，甲电子公司尚未支付尾款64000元。\n双方确认尚未付清，不存在现金支付记录。",
+          "fields": [
+            "2026年11月1日",
+            "尚未支付尾款64000元",
+            "不存在现金支付记录"
+          ],
+          "mode": "text"
+        }
+      ],
+      "claims": [
+        {
+          "text": "本合同金额为128000元。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 2
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 2
+        },
+        {
+          "text": "截至2026年11月1日，甲电子公司已付清尾款64000元。",
+          "relation": "contradict",
+          "page": 3
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "mixed-same-page",
+      "file": "assets/mixed-same-page.pdf",
+      "kind": "mixed_pdf",
+      "sha256": "573ad284621d98a607034912b383a75397517fd677a0c3a1fc6e7d1b12dc203e",
+      "pages": [
+        {
+          "text": "付款说明（文本层）\n银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "mixed"
+        }
+      ],
+      "claims": [
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "scan-four-pages",
+      "file": "assets/scan-four-pages.pdf",
+      "kind": "scan_pdf",
+      "sha256": "e64f081c785f80410ad4169922e66bfa017c04345f6827f1f3a14e2765913f8f",
+      "pages": [
+        {
+          "text": "购销合同\n付款方：甲电子公司；收款方：乙贸易公司。\n合同金额128000元；签订日期2026年9月1日。\n付款期限为2026年10月15日。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "128000元",
+            "2026年9月1日",
+            "2026年10月15日"
+          ],
+          "mode": "image"
+        },
+        {
+          "text": "银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "image"
+        },
+        {
+          "text": "付款明细表\n日期                 金额           状态\n2026年10月12日      64000元        成功\n2026年10月13日      6400元         失败\n只有成功交易计入已付款，失败记录不计入。",
+          "fields": [
+            "64000元",
+            "6400元",
+            "失败"
+          ],
+          "mode": "image"
+        },
+        {
+          "text": "双方对账确认书\n截至2026年11月1日，甲电子公司尚未支付尾款64000元。\n双方确认尚未付清，不存在现金支付记录。",
+          "fields": [
+            "2026年11月1日",
+            "尚未支付尾款64000元",
+            "不存在现金支付记录"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "本合同金额为128000元。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 2
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 2
+        },
+        {
+          "text": "明细表中2026年10月13日的6400元交易成功。",
+          "relation": "contradict",
+          "page": 3
+        },
+        {
+          "text": "截至2026年11月1日，甲电子公司已付清尾款64000元。",
+          "relation": "contradict",
+          "page": 4
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "receipt",
+      "file": "assets/receipt.png",
+      "kind": "image_normal",
+      "sha256": "102e969c08caae29c0bead2fc396b122083a51318a3b205b83c6279d92fc9ede",
+      "pages": [
+        {
+          "text": "银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "table",
+      "file": "assets/table.png",
+      "kind": "image_normal",
+      "sha256": "c9ed0bf8795f9ec7b892e134d02f359662e852426d5b9c55cca6214b0de3edc1",
+      "pages": [
+        {
+          "text": "付款明细表\n日期                 金额           状态\n2026年10月12日      64000元        成功\n2026年10月13日      6400元         失败\n只有成功交易计入已付款，失败记录不计入。",
+          "fields": [
+            "2026年10月12日",
+            "64000元",
+            "2026年10月13日",
+            "6400元",
+            "失败"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "明细表中2026年10月13日的6400元交易成功。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "chat",
+      "file": "assets/chat.png",
+      "kind": "image_normal",
+      "sha256": "3463e662099600783d14c25d731053342a0eb5d50c0f998b410006ea5dc24480",
+      "pages": [
+        {
+          "text": "聊天记录截图\n2026年10月12日 09:00 甲方：已转账64000元，请确认。\n2026年10月12日 09:05 乙方：已收到64000元。\n2026年10月13日 10:00 乙方：尾款尚未收到。",
+          "fields": [
+            "09:00",
+            "09:05",
+            "10:00",
+            "已收到64000元",
+            "尾款尚未收到"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "乙方在2026年10月13日10:00表示尾款尚未收到。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "rotated",
+      "file": "assets/rotated.png",
+      "kind": "image_rotated",
+      "sha256": "ad13ea250c3b26970e69f4ac094a727a72ab2fbd82a4c809ee935184a603a3c7",
+      "pages": [
+        {
+          "text": "双方对账确认书\n截至2026年11月1日，甲电子公司尚未支付尾款64000元。\n双方确认尚未付清，不存在现金支付记录。",
+          "fields": [
+            "2026年11月1日",
+            "尚未支付尾款64000元",
+            "不存在现金支付记录"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "截至2026年11月1日，甲电子公司已付清尾款64000元。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "low-contrast",
+      "file": "assets/low-contrast.png",
+      "kind": "image_low_contrast",
+      "sha256": "afe9e2b337cc0ace8d37fdc3d2a86cb5b57c75022e53c59b1f3d0bcc636c69d0",
+      "pages": [
+        {
+          "text": "银行转账回单\n付款方：甲电子公司；收款方：乙贸易公司。\n交易日期2026年10月12日；转账金额64000元。\n交易状态：成功；用途：货款。",
+          "fields": [
+            "甲电子公司",
+            "乙贸易公司",
+            "2026年10月12日",
+            "64000元",
+            "成功"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "甲电子公司于2026年10月12日向乙贸易公司转账64000元，交易成功。",
+          "relation": "support",
+          "page": 1
+        },
+        {
+          "text": "本回单的转账金额为6400元。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "blurred",
+      "file": "assets/blurred.png",
+      "kind": "image_blurred",
+      "sha256": "f4c4215d865851f6f09e3ddac33cc0c487720d5c09a245772d3269dd8f58301e",
+      "pages": [
+        {
+          "text": "双方对账确认书\n截至2026年11月1日，甲电子公司尚未支付尾款64000元。\n双方确认尚未付清，不存在现金支付记录。",
+          "fields": [
+            "2026年11月1日",
+            "尚未支付尾款64000元",
+            "不存在现金支付记录"
+          ],
+          "mode": "image"
+        }
+      ],
+      "claims": [
+        {
+          "text": "截至2026年11月1日，甲电子公司已付清尾款64000元。",
+          "relation": "contradict",
+          "page": 1
+        },
+        {
+          "text": "双方同意另行支付现金补偿金99999元。",
+          "relation": null,
+          "page": null
+        }
+      ]
+    },
+    {
+      "id": "corrupt",
+      "file": "assets/corrupt.pdf",
+      "kind": "corrupt_pdf",
+      "sha256": "99999bd8a7e03d17550ad7c242c30849bda25d552dd002b2096fbcb1dbc4c29b",
+      "pages": [],
+      "claims": [],
+      "expectFailure": true
+    }
+  ]
+}

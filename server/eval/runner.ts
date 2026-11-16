@@ -332,6 +332,7 @@ async function main() {
   }
   if (datasetIssues.length) {
     console.warn(`语料自检发现 ${datasetIssues.length} 处问题，指标不可信`)
+    if (args.strict) process.exitCode = 1
   }
   console.log(`报告：${reportPath}`)
 
@@ -343,7 +344,7 @@ async function main() {
     }
   }
   if (args.strict) {
-    console.log('严格模式：全部指标达标')
+    console.log(datasetIssues.length ? '严格模式：语料自检失败' : '严格模式：全部指标达标')
   }
 }
 

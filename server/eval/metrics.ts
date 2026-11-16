@@ -221,13 +221,13 @@ export function parseLocatorPages(locator: string): number[] | null {
   if (!normalized || /全文|全部|整篇/.test(normalized)) {
     return null
   }
-  const matched = normalized.match(/第?(\d+)(?:[-~至](\d+))?页/)
+  const matched = normalized.match(/^第?(\d+)(?:[-~至](\d+))?页$/)
   if (!matched) {
     return null
   }
   const start = Number(matched[1])
   const end = matched[2] ? Number(matched[2]) : start
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start || end > 1000) {
     return null
   }
   const pages: number[] = []
@@ -248,12 +248,15 @@ export function checkLinkGrounded(material: EvalMaterial | undefined, locator: s
   }
 
   const pages = parseLocatorPages(locator)
+  if (!pages && !/^(?:全文|全部|整篇|原件全文)$/.test(locator.replace(/\s+/g, ''))) {
+    return { grounded: false, reason: `定位「${locator}」无效` }
+  }
   const pageTexts = splitEvidenceTextIntoPages(material.text)
   let candidate = material.text
 
   if (pages) {
     const picked = pageTexts.filter(page => page.page !== undefined && pages.includes(page.page))
-    if (!picked.length) {
+    if (pages.some(page => !picked.some(item => item.page === page))) {
       return { grounded: false, reason: `定位「${locator}」在材料中不存在` }
     }
     candidate = picked.map(page => page.content).join('\n')
@@ -368,7 +371,9 @@ export function evaluateParseSuccess(entries: FixtureEntry[], parse: ParseFn): M
 
   for (const entry of expected) {
     const parsed = parse(entry.raw, entry.paragraphIds, entry.stage)
-    if (parsed.length) {
+    const ids = parsed.map(item => item.paragraphId)
+    if (ids.length === entry.paragraphIds.length && new Set(ids).size === ids.length
+      && entry.paragraphIds.every(id => ids.includes(id))) {
       correct += 1
     } else {
       failures.push({ id: entry.id, reason: `未能解析出段落结果（kind=${entry.kind}）` })
@@ -380,15 +385,17 @@ export function evaluateParseSuccess(entries: FixtureEntry[], parse: ParseFn): M
   for (const entry of rejected) {
     if (!parse(entry.raw, entry.paragraphIds, entry.stage).length) {
       rejectedCorrect += 1
+    } else {
+      failures.push({ id: entry.id, reason: `错误接受应拒绝的响应（kind=${entry.kind}）` })
     }
   }
 
   return {
     key: 'parse_success_rate',
     label: '解析健壮率',
-    value: ratio(correct, expected.length),
-    total: expected.length,
-    correct,
+    value: ratio(correct + rejectedCorrect, entries.length),
+    total: entries.length,
+    correct: correct + rejectedCorrect,
     failures,
     notes: rejected.length
       ? `另有 ${rejected.length} 条应当被拒绝的脏响应，其中 ${rejectedCorrect} 条正确未产出结果`

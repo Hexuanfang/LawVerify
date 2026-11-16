@@ -68,6 +68,7 @@ import {
 import { deleteObject, readObject, readObjectPath, storeObject } from './infrastructure/object-storage.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { createChatCompletion, createChatCompletionStream, isLlmConfigured, withRequestAbortSignal, type LlmChatMessage } from './integrations/llm-service.js'
+import { currentModelRedaction, withModelRedaction } from './integrations/model-redaction.js'
 import { getLlmCallCacheHitCount, resetLlmCallCacheHitCount, withLlmCallCache } from './infrastructure/llm-call-cache.js'
 import { createSemaphore, mapSettledWithConcurrency, mapWithConcurrency } from './infrastructure/concurrency.js'
 import { runExclusiveWorkspaceMutation } from './infrastructure/workspace-lock.js'
@@ -3677,8 +3678,14 @@ function caseObjectiveInputKey(folder: CaseFolder, evidences: Evidence[], insigh
   ])).digest('hex')
 }
 
+function learnCaseRedaction(workspace: WorkspaceState, caseId: string, evidences: Evidence[]) {
+  const redaction = currentModelRedaction()
+  if (!redaction) return
   const memory = getLatestCaseContextMemory(workspace, caseId)
   const folder = workspace.cases.find(item => item.id === caseId)
+  redaction.addNames([...(memory?.parties ?? []), ...(memory?.keyPersons ?? [])])
+  if (folder) redaction.learnText(folder.description)
+  for (const evidence of evidences) redaction.learnText(evidence.ocrText)
 }
 
 async function rebuildCaseContextMemory(
@@ -3691,6 +3698,8 @@ async function rebuildCaseContextMemory(
   const existing = getLatestCaseContextMemory(workspace, caseFolder.id)
   const inputKey = caseObjectiveInputKey(caseFolder, evidences, insights)
   if (existing?.inputKey === inputKey) return { ...existing, agentContext: caseFolder.agent }
+  const draft = await withModelRedaction(() => {
+    learnCaseRedaction(workspace, caseFolder.id, evidences)
     return buildCaseContextMemoryDraftWithLlm(workspace, caseFolder, evidences, insights)
   })
   const memory: CaseContextMemory = {
@@ -5109,6 +5118,7 @@ async function recommendKnowledgeCasesFromWorkspace(
 ) {
   const caseFolder = payload.caseId ? workspace.cases.find((item) => item.id === payload.caseId) : null
   const source = [caseFolder?.name, caseFolder?.description, payload.focus, payload.paragraphText].filter(Boolean).join(' ')
+  const outboundSource = currentModelRedaction()?.redact(source) ?? source
   const externalSearchTasks: Array<Promise<WorkspaceState['knowledgeCases']>> = []
 
   if (source.trim()) {
@@ -6823,7 +6833,9 @@ export async function summarizeEvidence(
   let insightDraft: EvidenceInsightDraft | undefined
   let failure: unknown
   try {
+    insightDraft = await withModelRedaction(() => {
       const { evidence, fragments } = outcome.preparation
+      learnCaseRedaction(snapshot, evidence.caseId, [evidence])
       return understandEvidenceWithLlm(evidence, fragments)
     })
   } catch (error) {
@@ -7557,6 +7569,7 @@ export async function autoLinkCertificate(
   }
 
   const signal = options?.signal
+  return withRequestAbortSignal(signal, () => withModelRedaction(async () => {
     resetLlmCallCacheHitCount()
     // 进度里回告已复用的模型结果数量：任务被中断后重跑时，可以直观看到哪些阶段被跳过。
     const reportProgress = (text: string) => {
@@ -7572,6 +7585,8 @@ export async function autoLinkCertificate(
     }
 
     const caseEvidences = workspace.evidences.filter((item) => item.caseId === certificate.caseId)
+    learnCaseRedaction(workspace, certificate.caseId, caseEvidences)
+    for (const paragraph of certificate.paragraphs) currentModelRedaction()?.learnText(paragraph.text)
     if (caseEvidences.some(item => item.parsing && item.parsing.status !== 'ready')) {
       throw new AppError('案件材料仍在解析或等待人工审核，请完成后再核验文书。', 409, 'CASE_PARSE_REVIEW_REQUIRED')
     }

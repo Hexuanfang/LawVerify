@@ -1,5 +1,6 @@
 import { env } from '../config/env.js'
 import { cloudAiFetch, isCloudAiEnabled } from './cloud-ai.js'
+import { currentModelRedaction } from './model-redaction.js'
 
 interface OpenAiEmbeddingResponse {
   data?: Array<{
@@ -37,6 +38,11 @@ export function getEmbeddingRuntimeStatus() {
 }
 
 async function requestEmbeddings(input: string[]) {
+  const redaction = currentModelRedaction()
+  if (redaction) {
+    input.forEach(text => redaction.learnText(text))
+    input = input.map(text => redaction.redact(text))
+  }
   if (!isEmbeddingConfigured()) {
     throw new Error('Embedding 尚未配置，请先设置 EMBEDDING_BASE_URL 与 EMBEDDING_MODEL。')
   }

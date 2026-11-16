@@ -1,6 +1,7 @@
 import { env } from '../config/env.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { z } from 'zod'
+import { currentModelRedaction } from './model-redaction.js'
 import { cloudAiFetch, hasCloudAiToken, isCloudAiEnabled, waitBeforeRetry } from './cloud-ai.js'
 
 export interface LlmChatMessage {
@@ -187,7 +188,25 @@ export function getLlmRuntimeStatus() {
 }
 
 export async function createChatCompletion(options: ChatCompletionOptions) {
-  const response = await requestChat(options, false)
+  const redaction = currentModelRedaction()
+  const sentTexts: string[] = []
+  let outbound = options
+  if (redaction) {
+    const texts = options.messages.flatMap(message => typeof message.content === 'string'
+      ? [message.content] : message.content.flatMap(part => part.type === 'text' ? [part.text] : []))
+    texts.forEach(text => redaction.learnText(text))
+    const redact = (text: string) => {
+      const masked = redaction.redact(text)
+      sentTexts.push(masked)
+      return masked
+    }
+    outbound = { ...options, messages: options.messages.map(message => ({
+      ...message,
+      content: typeof message.content === 'string' ? redact(message.content) : message.content.map(part =>
+        part.type === 'text' ? { ...part, text: redact(part.text) } : part),
+    })) }
+  }
+  const response = await requestChat(outbound, false)
 
   const payload = await response.json() as OpenAiCompatibleResponse
   const content = payload.choices?.[0]?.message?.content?.trim()
@@ -197,7 +216,7 @@ export async function createChatCompletion(options: ChatCompletionOptions) {
   }
 
   return {
-    content,
+    content: redaction ? redaction.restore(content, sentTexts) : content,
     model: env.LLM_MODEL!,
     provider: env.LLM_PROVIDER,
   }

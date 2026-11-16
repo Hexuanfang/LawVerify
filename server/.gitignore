@@ -1,2 +1,11 @@
-.env.local
-data/workspaces/*/workspace.backup.json
+# 服务端构建产物和本地业务数据
+/dist/
+*.tsbuildinfo
+/data/
+/storage/
+/eval/reports/
+
+# Python 解析环境和模型
+/python/.venv/
+/python/.runtime/
+/python/.models/

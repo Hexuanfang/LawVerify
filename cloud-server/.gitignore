@@ -1,3 +1,4 @@
-node_modules
-dist
-.env.local
+# 云端构建产物和本地数据
+/dist/
+*.tsbuildinfo
+/.data/

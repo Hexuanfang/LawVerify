@@ -1,0 +1,5 @@
+# 官网构建产物和历史配置编译产物
+/dist/
+*.tsbuildinfo
+/vite.config.js
+/vite.config.d.ts

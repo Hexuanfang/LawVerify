@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --config vite.config.ts",
     "test:proxy": "node --test --test-timeout=15000 test-api-proxy.mjs",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "tsc -b && vite build --config vite.config.ts",
+    "preview": "vite preview --config vite.config.ts"
   },
   "dependencies": {
     "qrcode": "^1.5.4",

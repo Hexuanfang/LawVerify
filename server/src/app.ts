@@ -3,12 +3,10 @@ import cors from 'cors'
 import express from 'express'
 import helmet from 'helmet'
 import { existsSync } from 'node:fs'
-import type { Server } from 'node:http'
 import path from 'node:path'
 import { env } from './config/env.js'
 import { getFrontendDistDir, getStorageRoot } from './config/paths.js'
 import { runMigrations } from './infrastructure/migrations.js'
-import { createCollaboraProxy } from './integrations/collabora-proxy.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { errorHandler, notFound } from './middleware/error-handler.js'
 import { requestContext } from './middleware/request-context.js'
@@ -65,10 +63,6 @@ export function createApp() {
   const app = express()
   const frontendDist = getFrontendDistDir()
   const hasFrontendDist = existsSync(frontendDist)
-  const collaboraProxy = createCollaboraProxy({
-    publicPath: env.COLLABORA_PROXY_PATH,
-    target: env.COLLABORA_PROXY_TARGET,
-  })
 
   app.disable('x-powered-by')
   // API 响应不生成 ETag：工作区等接口按 x-workspace-account 请求头区分账号，
@@ -94,7 +88,6 @@ export function createApp() {
     env.STORAGE_PUBLIC_BASE_URL,
     express.static(getStorageRoot()),
   )
-  app.use(collaboraProxy.middleware)
   if (hasFrontendDist) {
     app.use(express.static(frontendDist))
   }
@@ -116,7 +109,6 @@ export function createApp() {
       request.path.startsWith(env.API_V1_PREFIX)
       || request.path.startsWith(env.API_PREFIX)
       || request.path.startsWith(env.STORAGE_PUBLIC_BASE_URL)
-      || request.path.startsWith(env.COLLABORA_PROXY_PATH)
     ) {
       next()
       return
@@ -129,9 +121,6 @@ export function createApp() {
 
   return {
     app,
-    attachUpgrade(server: Server) {
-      collaboraProxy.attachUpgrade(server)
-    },
   }
 }
 

@@ -31,8 +31,7 @@
     "test:agent": "node --import tsx --test scripts/test-case-agent.mjs scripts/test-case-agent-evidence-skip.mjs scripts/test-case-agent-duplicate-evidence.mjs scripts/test-case-agent-queue-race.mjs scripts/test-assistant-controls.mjs scripts/test-evidence-summary-concurrency.mjs && node --test ../app/electron/test-case-directories.cjs",
     "test:deletion": "node --import tsx --test scripts/test-case-deletion.mjs",
     "test:cloud-ai": "node --import tsx --test scripts/test-cloud-ai.mjs scripts/test-llm-retry.mjs",
-    "start": "node dist/index.js",
-    "start:collabora-proxy": "node dist/collabora-proxy.js"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@prisma/client": "^7.10.0",
@@ -43,7 +42,6 @@
     "dotenv": "^18.0.1",
     "express": "^5.1.0",
     "helmet": "^8.3.0",
-    "http-proxy": "^1.18.1",
     "jsonwebtoken": "^9.0.3",
     "mammoth": "^1.12.3",
     "multer": "^2.4.0",
@@ -55,7 +53,6 @@
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.3",
-    "@types/http-proxy": "^1.17.16",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^24.13.3",

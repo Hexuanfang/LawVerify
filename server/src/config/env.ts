@@ -139,10 +139,6 @@ const envSchema = z.object({
   WECHAT_PAY_API_V3_KEY: z.string().optional(),
   WECHAT_PAY_NOTIFY_URL: z.string().optional(),
   WECHAT_PAY_API_BASE: z.string().default('https://api.mch.weixin.qq.com'),
-  COLLABORA_PUBLIC_URL: z.string().optional(),
-  COLLABORA_PROXY_PATH: z.string().default('/collabora'),
-  COLLABORA_PROXY_TARGET: z.string().default('http://127.0.0.1:9980'),
-  COLLABORA_WOPI_ALLOW_EDIT: booleanFromEnv.default(true),
   // 调试埋点上报地址：留空表示不发送任何调试请求。
   // 启用方式：在 server/.env.local 或系统环境变量中设置
   // DEBUG_EVENT_URL=http://127.0.0.1:7777/event，并自行启动对应调试收集器。

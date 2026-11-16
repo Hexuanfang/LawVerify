@@ -36,7 +36,6 @@ async function main() {
     const instance = bootstrap.app.listen(Number(process.env.PORT), '127.0.0.1', () => resolve(instance))
     instance.once('error', reject)
   })
-  bootstrap.attachUpgrade(server)
   process.parentPort?.postMessage({ type: 'ready' })
 }
 

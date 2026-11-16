@@ -43,7 +43,7 @@ flowchart TB
     Service["service.ts 业务总线<br/>材料 / 案件记忆 / 文书 / 联动 / 支付"]
     Intel["intelligence/<br/>evidence-matching / evidence-retrieval<br/>evidence-risk-scan / linkage-policy<br/>legal-verification / case-agent"]
     Infra["infrastructure/<br/>workspace-sqlite / workspace-lock<br/>workspace-backups / document-jobs<br/>llm-call-cache / object-storage"]
-    Integrations["integrations/<br/>llm-service / cloud-ai / embedding-service<br/>qdrant-service / MCP 案例源 / collabora"]
+    Integrations["integrations/<br/>llm-service / cloud-ai / embedding-service<br/>qdrant-service / MCP 案例源"]
     Commercial["commercial/<br/>auth-service(JWT) / rbac<br/>knowledge-file-service / organization"]
   end
 
@@ -67,7 +67,6 @@ flowchart TB
     CaseMCP["元典 / 威科 / 北大法宝 MCP"]
     Pay["支付宝 / 微信支付"]
     Offic["官方法源<br/>npc_flk / moj_xzfg / gov_gjgzk"]
-    Collab["Collabora (WOPI) :9980"]
   end
 
   Main -->|utilityProcess.fork| Renderer
@@ -94,7 +93,6 @@ flowchart TB
   Integrations -->|MCP 透传| CloudHTTP
   Service --> Pay
   Service --> Offic
-  Integrations --> Collab
   CloudHTTP --> PointSvc
   CloudHTTP --> CloudAuth
   CloudHTTP --> Release
@@ -169,14 +167,11 @@ flowchart LR
   CF --> W["web preview-server :4273<br/>静态 + /api 代理"]
   W --> C["cloud-server :8788"]
   C --> PG[("PostgreSQL")]
-  C --> Collab["Collabora :9980"]
 ```
 
 - `platform-dev.cmd` 管理 web 与 cloud-server；`install-platform-recovery.ps1`
   注册登录自启任务 `LawVerify-Platform-Autostart` 与每分钟健康检查 `LawVerify-Platform-Recovery`。
 - 本地 PostgreSQL 容器端口 `54329`（`docker-compose.cloud-postgres.yml`）。
-- Collabora 容器 `9980`，服务端通过 `COLLABORA_PROXY_PATH=/collabora` 反代（`integrations/collabora-proxy.ts`），
-  支持 WebSocket 升级。
 
 ---
 
@@ -346,8 +341,7 @@ flowchart TB
   CP --> JS["express.json（100mb）"]
   JS --> HB["streamHeartbeat<br/>空闲 15s 补注释行"]
   HB --> ST1["静态 /uploads 原件目录"]
-  ST1 --> CL["Collabora 反代（支持 WS 升级）"]
-  CL --> ST2["静态 app/dist 前端产物"]
+  ST1 --> ST2["静态 app/dist 前端产物"]
   ST2 --> NS["/api 与 /api/v1 强制 no-store"]
   NS --> Route{"路由归属"}
   Route -->|"/api/v1/*"| V1["v1Router<br/>统一响应 {success,requestId,data,meta}"]
@@ -605,7 +599,6 @@ sqlite 损坏时阻止自动重置而不是清库；
 | `LLM_TIMEOUT_MS` | 60000 | 直连超时；云端 120000 |
 | `MAX_EVIDENCE_FILE_MB` / `MAX_UPLOAD_BATCH_MB` | 512 / 512 | 单文件与单批上限 |
 | `JSON_LIMIT` | 100mb | 桌面端工作区快照体积较大 |
-| `COLLABORA_PROXY_PATH` / `_TARGET` | `/collabora` / `http://127.0.0.1:9980` | WOPI 反代 |
 
 ### cloud-server/（云端）
 

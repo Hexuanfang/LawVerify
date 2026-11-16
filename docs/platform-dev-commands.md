@@ -62,18 +62,3 @@ Invoke-WebRequest -UseBasicParsing https://lawverify.zhijing.fun/api/web/site/co
 
 恢复检查不接管其他程序占用的端口，也不重启 Cloudflared、数据库或 AI 提供方。
 每分钟检查不等于零停机保证；发布后还需验证公网及桌面代理业务接口。
-
-## 6. Collabora 对接平台官网域名
-
-`docker-compose.collabora.yml` 已不再写死官网域名，改为读取平台官网映射：
-
-```powershell
-$env:PLATFORM_WEB_DOMAIN="你的平台官网域名"
-$env:PLATFORM_WEB_ORIGIN="https://你的平台官网域名:443"
-docker compose -f .\docker-compose.collabora.yml up -d
-```
-
-说明：
-
-- `PLATFORM_WEB_DOMAIN`：平台官网主机名
-- `PLATFORM_WEB_ORIGIN`：Collabora 使用的完整 HTTPS 来源地址

@@ -127,7 +127,7 @@ Windows / macOS Electron 客户端 / 浏览器工作台
 | `app/electron/` | 桌面启动、IPC、更新、资源准备与验签 |
 | `server/src/` | Express API、文书联动、材料理解、本地工作区 |
 | `server/src/intelligence/` | 证据匹配、句级门控、模型响应解析 |
-| `server/src/integrations/` | LLM、Embedding、Qdrant、案例 MCP、Collabora |
+| `server/src/integrations/` | LLM、Embedding、Qdrant、案例 MCP |
 | `cloud-server/src/` | 云端认证、账务、支付、发票、发行与管理 |
 | `web/` | 官网与账户中心、静态服务及 API 代理 |
 | `files/法律文件/` | 构建内置法律库的 Word 源文件 |

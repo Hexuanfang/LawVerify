@@ -6,7 +6,6 @@ import type {
   Evidence,
   CasePositionDraft,
   CertificateParagraph,
-  CollaboraSession,
   EvidenceType,
   LoginPayload,
   PaymentProvider,
@@ -1313,11 +1312,6 @@ export const api = {
         method: 'POST',
       },
     )
-  },
-  getCollaboraSession(certificateId: string) {
-    return requestV1<CollaboraSession>(`/api/v1/integrations/collabora/certificates/${certificateId}/session`, {
-      method: 'POST',
-    })
   },
   importKnowledgeStatutes(payload: {
     items: AppState['knowledgeStatutes']

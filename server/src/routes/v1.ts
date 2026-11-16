@@ -15,14 +15,6 @@ import { storeObject } from '../infrastructure/object-storage.js'
 import { isDatabaseEnabled } from '../infrastructure/postgres.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
-import {
-  getCollaboraSession,
-  getWopiFileInfo,
-  isCollaboraEnabled,
-  readWopiFileContents,
-  verifyWopiAccessToken,
-  writeWopiFileContents,
-} from '../integrations/collabora-service.js'
 import { getLlmRuntimeStatus, pingLlm } from '../integrations/llm-service.js'
 import { env } from '../config/env.js'
 import {
@@ -116,14 +108,6 @@ const uploadSchema = z.object({
   caseId: z.string().uuid().optional(),
 })
 
-function getRequestOrigin(request: Request) {
-  const forwardedProto = String(request.headers['x-forwarded-proto'] ?? '').split(',')[0]?.trim()
-  const forwardedHost = String(request.headers['x-forwarded-host'] ?? request.headers.host ?? '').split(',')[0]?.trim()
-  const proto = forwardedProto || request.protocol || 'https'
-  const host = forwardedHost || new URL(env.APP_PUBLIC_BASE_URL).host
-  return `${proto}://${host}`.replace(/\/$/, '')
-}
-
 export function createV1Router() {
   const router = Router()
   const resolveWorkspaceAccount = (request: Request) =>
@@ -182,7 +166,6 @@ export function createV1Router() {
         workspace: true,
         evidenceViewer: true,
         certificateLinking: true,
-        collabora: isCollaboraEnabled(),
         llmConfigured: llmStatus.configured,
       },
       roadmap: [
@@ -209,96 +192,6 @@ export function createV1Router() {
     const result = await pingLlm()
     sendSuccess(response, result)
   })
-
-  router.get('/integrations/collabora/status', (_request, response) => {
-    sendSuccess(response, {
-      enabled: isCollaboraEnabled(),
-    })
-  })
-
-  router.post('/integrations/collabora/certificates/:certificateId/session', async (request, response) => {
-    const requestOrigin = getRequestOrigin(request)
-    const session = await getCollaboraSession(request.params.certificateId, {
-      appBaseUrl: requestOrigin,
-      collaboraBaseUrl: `${requestOrigin}${env.COLLABORA_PROXY_PATH}`,
-    })
-    sendSuccess(response, session)
-  })
-
-  router.get('/wopi/files/:fileId', async (request, response) => {
-    const accessToken = String(request.query.access_token ?? '')
-    const fileId = request.params.fileId
-
-    if (!verifyWopiAccessToken(accessToken, fileId)) {
-      response.status(401).json({ message: 'WOPI access token 无效。' })
-      return
-    }
-
-    const file = await getWopiFileInfo(fileId)
-    response.json({
-      BaseFileName: file.fileName,
-      Size: file.size,
-      Version: file.version,
-      OwnerId: 'lawverify',
-      UserId: 'lawverify-user',
-      UserFriendlyName: 'LawVerify User',
-      UserCanWrite: env.COLLABORA_WOPI_ALLOW_EDIT,
-      ReadOnly: !env.COLLABORA_WOPI_ALLOW_EDIT,
-      SupportsUpdate: env.COLLABORA_WOPI_ALLOW_EDIT,
-      SupportsLocks: false,
-      SupportsRename: false,
-      SupportsUserInfo: false,
-      HidePrintOption: false,
-      HideSaveOption: false,
-    })
-  })
-
-  router.get('/wopi/files/:fileId/contents', async (request, response) => {
-    const accessToken = String(request.query.access_token ?? '')
-    const fileId = request.params.fileId
-
-    if (!verifyWopiAccessToken(accessToken, fileId)) {
-      response.status(401).json({ message: 'WOPI access token 无效。' })
-      return
-    }
-
-    const file = await getWopiFileInfo(fileId)
-    const contents = await readWopiFileContents(fileId)
-    response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    response.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`)
-    response.send(contents)
-  })
-
-  router.post(
-    '/wopi/files/:fileId/contents',
-    express.raw({ type: '*/*', limit: '50mb' }),
-    async (request, response) => {
-      const accessToken = String(request.query.access_token ?? '')
-      const fileId = request.params.fileId
-
-      if (!verifyWopiAccessToken(accessToken, fileId)) {
-        response.status(401).json({ message: 'WOPI access token 无效。' })
-        return
-      }
-
-      const override = String(request.header('x-wopi-override') ?? '').toUpperCase()
-      const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from([])
-
-      if (!env.COLLABORA_WOPI_ALLOW_EDIT) {
-        response.status(403).json({ message: '当前 Collabora 会话为只读模式。' })
-        return
-      }
-
-      if (override && override !== 'PUT') {
-        response.status(501).json({ message: `暂未支持的 WOPI override: ${override}` })
-        return
-      }
-
-      const file = await writeWopiFileContents(fileId, body)
-      response.setHeader('X-WOPI-ItemVersion', file.version)
-      response.status(200).end()
-    },
-  )
 
   router.post('/iam/register', async (request, response) => {
     const payload = registerSchema.parse(request.body)

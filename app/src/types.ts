@@ -537,14 +537,3 @@ export interface LoginPayload {
   password: string
   loginType: 'password' | 'code'
 }
-
-export interface CollaboraSession {
-  enabled: boolean
-  reason?: string
-  fileId?: string
-  fileName?: string
-  wopiSrc?: string
-  accessToken?: string
-  editorUrl?: string
-  mode?: 'edit' | 'readonly'
-}

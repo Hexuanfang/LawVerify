@@ -44,7 +44,7 @@ The desktop installer bundles the local service. End users do not need Node.js, 
 | `app/electron/` | Desktop lifecycle, IPC, updates, asset preparation, signature checks |
 | `server/src/` | Express API, document linkage, material analysis, local workspaces |
 | `server/src/intelligence/` | Evidence matching, sentence gating, model response parsing |
-| `server/src/integrations/` | LLM, embeddings, Qdrant, case MCP providers, Collabora |
+| `server/src/integrations/` | LLM, embeddings, Qdrant, case MCP providers |
 | `cloud-server/src/` | Authentication, billing, payments, invoices, releases, administration |
 | `web/` | Website, account center, static server, API proxy |
 | `files/法律文件/` | Word source documents for the bundled legal library |

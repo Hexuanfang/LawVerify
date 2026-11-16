@@ -530,7 +530,6 @@ function applyDesktopServerEnv(port) {
   process.env.FRONTEND_DIST_DIR = frontendDistDir
   process.env.APP_PUBLIC_BASE_URL = `http://127.0.0.1:${port}`
   process.env.AUTO_RUN_MIGRATIONS = 'false'
-  process.env.COLLABORA_PUBLIC_URL = ''
 
   if (!isDev && isLocalHostOrigin(process.env.CLOUD_API_BASE_URL)) {
     process.env.CLOUD_API_BASE_URL = OFFICIAL_PLATFORM_BASE_URL

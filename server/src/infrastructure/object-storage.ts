@@ -97,7 +97,7 @@ export async function storeObjectFromPath(
   }
 }
 
-// 只允许回收证据桶里的上传原件：知识库文件与 Collabora 会话目录不在此列。
+// 只允许回收证据桶里的上传原件，知识库文件不在此列。
 const DELETABLE_OBJECT_KEY = /^evidence\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9._-]+$/
 
 export async function deleteObject(key: string) {

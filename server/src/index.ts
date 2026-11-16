@@ -2,7 +2,7 @@ import { createApp, initializeCommercialInfrastructure, closeParsingWorkers } fr
 import { env } from './config/env.js'
 import { clearUploadTempFiles } from './middleware/bounded-upload.js'
 
-const { app, attachUpgrade } = createApp()
+const { app } = createApp()
 
 // #region debug-point A:process-lifecycle
 // 启用方式：设置环境变量 DEBUG_EVENT_URL=http://127.0.0.1:7777/event 后重启服务；未设置则不发送任何调试请求。
@@ -66,7 +66,6 @@ async function main() {
     console.log(`Versioned API: http://localhost:${env.PORT}${env.API_V1_PREFIX}`)
   })
 
-  attachUpgrade(server)
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => { void closeParsingWorkers().finally(() => server.close(() => process.exit(0))) })
   }

@@ -55,6 +55,7 @@ type SiteRoute =
   | '/ai-notice'
   | '/login'
   | '/register'
+  | '/cocreate'
   | '/console'
   | '/console/billing'
   | '/console/orders'
@@ -511,6 +512,7 @@ function normalizeRoute(pathname: string): SiteRoute {
     '/ai-notice',
     '/login',
     '/register',
+    '/cocreate',
     '/console',
     '/console/billing',
     '/console/orders',
@@ -782,19 +784,71 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
       <section className="cocreate" id="cocreate-section" aria-labelledby="cocreate-title">
         <div className="cc-main">
           <span className="section-kicker">共建计划</span>
-          <h2 id="cocreate-title">招募 <mark>30</mark> 位共建律师</h2>
-          <a className="primary-button" href="/register?apply=cocreate" onClick={() => track('hero_cta_click', 'register:cocreate')}>
-            注册并申请
+          <h2 id="cocreate-title">招募 <mark>50</mark> 位共创律师</h2>
+          <a className="primary-button" href="/cocreate" onClick={() => track('hero_cta_click', 'cocreate:home')}>
+            申请参与共创
           </a>
         </div>
         <ul className="cc-points">
-          <li><b>民商事诉讼律师优先</b><span>名额共 30 位</span></li>
-          <li><b>共建期间赠送专业版额度</b><span>具体额度与期限，在确认参与时说明</span></li>
+          <li><b>民商事诉讼律师优先</b><span>共创报名无需注册产品账号</span></li>
+          <li><b>入选享终身全功能 VIP</b><span>具体范围与使用规则以正式共创方案为准</span></li>
           <li><b>反馈直接进入产品迭代</b><span>你提的问题和需求会被持续跟进</span></li>
         </ul>
       </section>
 
     </div>
+  )
+}
+
+function CocreatePage() {
+  const [submitted, setSubmitted] = useState(() => new URLSearchParams(window.location.search).get('preview') === 'wechat')
+  const [copied, setCopied] = useState(false)
+  return (
+    <section className="card stack cocreate-page" aria-labelledby="cocreate-page-title">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <img src="/brand/lawverify-wordmark.svg" alt="LawVerify" width={146} height={42} />
+        <span style={{ borderInlineStart: '1px solid currentColor', paddingInlineStart: 14, fontSize: 14, fontWeight: 600 }}>律师共创计划</span>
+      </div>
+      <h1 id="cocreate-page-title">{submitted ? '报名已提交（预览）' : '一起做出更懂律师的 AI'}</h1>
+      {!submitted && <>
+      <p><strong>招募 50 位执业律师，入选可享终身全功能 VIP。</strong> LawVerify 将文书里的事实逐句与本案证据对照，提示依据不足、支持不完整或前后矛盾的地方，方便你回到原件复核。无论是自己写的还是 AI 辅助生成的文书，最终判断都由律师作出。</p>
+      <ul>
+        <li><strong>试一试，直接提意见。</strong> 哪一步太绕、哪条提示不清楚、哪个功能该优先做，都欢迎告诉我们。需要举例时，请用虚构场景。</li>
+        <li><strong>一起把反馈变成改进。</strong> 我们会在共创群同步进展。你也可以自愿参与官网署名、共创案例集和发布活动；公开署名前会征得你的同意。</li>
+      </ul>
+      <p>报名无需注册 LawVerify 账号。请准备一段简短的执业履历、工作年限、所在城市、律所、擅长领域、共创期望，以及姓名和一种联系方式。</p>
+      <p className="muted">报名信息用于共创筛选和联系。请勿填写客户姓名、案号或上传案卷材料。</p>
+      <p className="muted">本轮限 50 位，民商事诉讼律师优先。参与要求、VIP 权益范围及活动安排以共创协议为准。</p>
+      </>}
+      {submitted ? (
+        <div className="stack" role="status">
+          <img src="/xiao-hetao.jpg" alt="LawVerify 的小核桃" width={144} height={144} style={{ borderRadius: 20 }} />
+          <h2>下一步：来和小核桃打个招呼</h2>
+          <p>谢谢你报名！请添加小核桃微信，方便我们与你沟通后续安排。</p>
+          <p>微信号：<strong>info_LawVerify</strong><br />好友验证请写「共创报名 + 你的姓名」。添加微信不代表入选。</p>
+          <div className="hero-actions">
+            <button className="primary-button" type="button" onClick={async () => {
+              try { await navigator.clipboard.writeText('info_LawVerify'); setCopied(true) } catch { setCopied(false) }
+            }}>{copied ? '已复制微信号' : '复制微信号'}</button>
+            <a className="ghost-button" href="/">返回首页</a>
+          </div>
+        </div>
+      ) : (
+        <form className="cocreate-form" onSubmit={(event) => { event.preventDefault(); setSubmitted(true) }}>
+          <h2>填写共创申请</h2>
+          <label>姓名<input required placeholder="请输入姓名" /></label>
+          <label>微信或手机号<input required placeholder="填写一种即可" /></label>
+          <label>工作年限<select required defaultValue=""><option value="">请选择</option><option>不足 3 年</option><option>3 至不足 5 年</option><option>5 至不足 10 年</option><option>10 年及以上</option></select></label>
+          <label>所在地区<input required placeholder="例如：浙江省杭州市" /></label>
+          <label>所在律所<input required placeholder="请输入律所名称" /></label>
+          <label>擅长领域<input required placeholder="例如：民商事诉讼、证据审查" /></label>
+          <label className="cocreate-extra">简要履历<textarea required rows={3} placeholder="简述执业经历及主要业务" /></label>
+          <label className="cocreate-extra">共创期望<textarea required rows={3} placeholder="最想改善哪个办案环节？希望怎样参与共创？" /></label>
+          <div className="hero-actions"><button className="primary-button" type="submit">模拟提交申请</button><a className="ghost-button" href="/">返回首页</a></div>
+          <p className="muted">本地设计预览，请用虚构信息；不会保存或发送到飞书。</p>
+        </form>
+      )}
+    </section>
   )
 }
 
@@ -3302,10 +3356,10 @@ function CocreateBanner() {
   return (
     <div className="cocreate-banner" role="region" aria-label="共建律师招募">
       <p>
-        <b>正在招募 30 位共建律师</b>
-        <span>民商事诉讼律师优先，共建期间赠送专业版额度</span>
+        <b>正在招募 50 位共创律师</b>
+        <span>一起打磨核验体验 · 入选享终身全功能 VIP</span>
       </p>
-      <a href="/register?apply=cocreate" onClick={() => track('hero_cta_click', 'register:banner')}>立即申请 →</a>
+      <a href="/cocreate" onClick={() => track('hero_cta_click', 'cocreate:banner')}>申请参与共创 →</a>
       <button
         type="button"
         aria-label="关闭招募通知"
@@ -3371,6 +3425,10 @@ function Content({
   onLogin: (formData: FormData) => Promise<void>
   onRegister: (formData: FormData) => Promise<void>
 }) {
+  if (route === '/cocreate' || (route === '/register' && new URLSearchParams(window.location.search).get('apply') === 'cocreate')) {
+    return <CocreatePage />
+  }
+
   if (route === '/login') {
     return <AuthPage mode="login" busy={authBusy} errorMessage={authError} onSubmit={onLogin} />
   }
@@ -3920,6 +3978,7 @@ export default function App() {
           ) : (
             <>
               <a className="ghost-button" href="/login">登录</a>
+              <a className="ghost-button" style={{ background: '#fff2d6', color: '#784409', borderColor: '#edbf70', fontWeight: 700 }} href="/cocreate" onClick={() => track('hero_cta_click', 'cocreate:nav')}>共创报名</a>
               <a className="primary-button" href="/register" onClick={() => track('hero_cta_click', 'register:nav')}>免费注册</a>
             </>
           )}

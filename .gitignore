@@ -27,6 +27,8 @@ Thumbs.db
 
 # 根目录本地产物
 /pay/
+# 本机运行数据（工作区 SQLite 等）
+/data/
 
 # 签名私钥和证书容器
 *.pfx

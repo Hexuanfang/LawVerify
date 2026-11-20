@@ -1,2 +1,9 @@
 # 本地方案和执行记录
 /superpowers/
+
+# 本地交付副本（视觉交付、PRD 交付、桌面录屏快照），不入库
+/lawverify-视觉交付/
+/lawverify-ui-v1.2.0/
+/prd开发交付/
+/LawVerify-桌面录屏-20261118/
+/LawVerify-桌面登录-20261118/

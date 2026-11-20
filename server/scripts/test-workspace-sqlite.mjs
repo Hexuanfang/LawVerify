@@ -254,6 +254,21 @@ test('foreign keys enforce sentence-link ownership and normal case deletion succ
   finally { db.close() }
 })
 
+test('声明协议在 SQLite 回环后保留定位、来源和旧段落链接', t => {
+  const { store, state } = isolated(t)
+  const [certificate] = state.certificates
+  certificate.docKey = 'qs'
+  certificate.verification = { version: 1, profileVersion: '1.2.0', inputKey: 'fixture', docKey: 'qs', classificationRequired: false,
+    declarations: [{ id: 'claim', type: 'E-FACT', quote: 'First sentence.',
+      location: { paragraphId: 'paragraph', paragraphIndex: 0, sentenceIndex: 0, start: 0, end: 15 },
+      verdict: 'pending', checks: {}, sources: [], reason: 'fixture', conf: null, aiOrigin: 'draft' }] }
+  store.save(state)
+  const [saved] = read(store).certificates
+  assert.equal(saved.docKey, 'qs')
+  assert.deepEqual(saved.verification, certificate.verification)
+  assert.equal(saved.paragraphs[0].links[0].locator, 'original')
+})
+
 test('failed migration rolls back without marking an empty workspace initialized', t => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'lawverify-sqlite-test-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))

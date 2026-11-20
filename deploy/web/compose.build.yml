@@ -1,0 +1,18 @@
+# 由 deploy.sh 在发布端执行。
+name: lawverify-build
+
+services:
+  web:
+    image: ${DEPLOY_BUILD_IMAGE:?请通过 deploy.sh 构建镜像}
+    platform: ${DEPLOY_PLATFORM:?请通过 deploy.sh 选择构建架构}
+    build:
+      context: ../web
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        VITE_SITE_URL: ${VITE_SITE_URL:-}
+        VITE_COMPANY_NAME: ${VITE_COMPANY_NAME:-}
+        VITE_BAIDU_TONGJI_ID: ${VITE_BAIDU_TONGJI_ID:-}
+        VITE_ICP_NUMBER: ${VITE_ICP_NUMBER:-}
+        VITE_TERMS_URL: ${VITE_TERMS_URL:-}
+        VITE_PRIVACY_URL: ${VITE_PRIVACY_URL:-}
+

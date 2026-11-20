@@ -3,7 +3,6 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { spawnSync } = require('node:child_process')
-const os = require('node:os')
 const { pathToFileURL } = require('node:url')
 const { version } = require('../package.json')
 const { runStapler } = require('./verify-mac-stapler.cjs')
@@ -30,10 +29,14 @@ async function main() {
     const binary = path.join(appDir, 'Contents', 'MacOS', 'LawVerify')
     assert.ok(run('lipo', ['-archs', binary]).trim().split(/\s+/).includes(arch === 'x64' ? 'x86_64' : 'arm64'))
     if (arch === process.arch) {
-      const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'lawverify-mac-smoke-'))
+      const scratch = path.resolve(__dirname, '../../tmp')
+      fs.mkdirSync(scratch, { recursive: true })
+      const temporary = fs.mkdtempSync(path.join(scratch, 'lawverify-mac-smoke-'))
       const runtime = path.join(appDir, 'Contents', 'Resources', 'app.asar', '.desktop', 'server')
       const sqliteUrl = pathToFileURL(path.join(runtime, 'dist', 'infrastructure', 'workspace-sqlite.js')).href
       const backendUrl = pathToFileURL(path.join(runtime, 'dist', 'app.js')).href
+      const parserUrl = pathToFileURL(path.join(runtime, 'dist', 'infrastructure', 'document-jobs.js')).href
+      const samplePdf = path.resolve(__dirname, '../../server/eval/v2/assets/native-contract.pdf')
       try {
         const script = `
           const { WorkspaceSqliteStore } = await import(${JSON.stringify(sqliteUrl)});
@@ -49,14 +52,20 @@ async function main() {
           await new Promise(resolve => server.once('listening', resolve));
           const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/health');
           if (!response.ok) throw new Error('Packaged backend health check failed');
+          const { parseDocument, closeDocumentParser } = await import(${JSON.stringify(parserUrl)});
+          globalThis.fetch = () => { throw new Error('Unexpected network call during document parsing'); };
+          const parsed = await parseDocument(${JSON.stringify(samplePdf)}, 'native-contract.pdf');
+          if (!parsed.pages || !parsed.text.trim()) throw new Error('Packaged PDF parsing failed');
+          await closeDocumentParser();
           server.closeAllConnections();
           await new Promise(resolve => server.close(resolve));
-          console.log('Packaged Mac SQLite and backend health passed');
+          console.log('Packaged Mac SQLite, backend health and local PDF parsing passed');
           process.exit(0);
         `
         console.log(run(binary, ['--input-type=module', '--eval', script], {
           ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'test',
           APP_RUNTIME_ROOT: runtime, APP_DATA_ROOT: temporary,
+          PARSER_BUNDLE_ROOT: path.join(appDir, 'Contents', 'Resources', 'parser'),
           WORKSPACE_DATA_DIR: temporary, STORAGE_LOCAL_ROOT: path.join(temporary, 'storage'),
           AUTO_RUN_MIGRATIONS: 'false', KNOWLEDGE_RAG_MODE: 'local', AI_GATEWAY_MODE: 'cloud',
         }).trim())

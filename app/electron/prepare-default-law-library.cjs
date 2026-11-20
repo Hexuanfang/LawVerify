@@ -20,12 +20,11 @@ async function extractLawDocumentText(file) {
   const relative = process.platform === 'win32' ? 'python.exe' : 'bin/python3'
   const interpreters = [
     process.env.LAWVERIFY_PYTHON,
-    path.join(desktopRoot, 'server', 'python-runtime', relative),
-    path.join(serverRoot, 'python', '.runtime', relative),
+    path.join(desktopRoot, 'parser', 'python-runtime', relative),
   ]
   const interpreter = interpreters.find(candidate => candidate && fs.existsSync(candidate))
     || process.env.LAWVERIFY_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
-  const { stdout } = await run(interpreter, [path.join(serverRoot, 'python', 'worker.py'), '--word-text', file], {
+  const { stdout } = await run(interpreter, [path.join(projectRoot, 'python-workers', 'worker.py'), '--word-text', file], {
     encoding: 'utf8', env: { ...process.env, PYTHONUTF8: '1' }, windowsHide: true,
     timeout: 60_000, maxBuffer: 64 * 1024 ** 2,
   })

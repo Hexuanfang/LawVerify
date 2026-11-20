@@ -1,0 +1,13 @@
+# 与同机的 cloud-server 共用默认网络。
+name: lawverify
+
+services:
+  web:
+    container_name: lawverify-web
+    image: lawverify-web:${WEB_IMAGE_TAG:-${IMAGE_TAG:-latest}}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      CLOUD_SERVER_UPSTREAM: ${CLOUD_SERVER_UPSTREAM:-http://cloud-server:8788}
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8090}:80"

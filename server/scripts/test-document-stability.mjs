@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Document, Packer, Paragraph } from 'docx'
-import { parseDocument } from '../src/infrastructure/document-jobs.ts'
-import { closePythonWorkers } from '../src/infrastructure/python-workers.ts'
+import { closeDocumentParser, parseDocument } from '../src/infrastructure/document-jobs.ts'
 import { env } from '../src/config/env.ts'
-import { mkdtempSync } from 'node:fs'
-import os from 'node:os'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { notifyWorkspaceChanged, subscribeWorkspaceChanges } from '../src/infrastructure/workspace-events.ts'
 import { boundedMemoryStorage, maxUploadBatchBytes, reserveUpload } from '../src/middleware/bounded-upload.ts'
 import { Readable } from 'node:stream'
 import { EventEmitter } from 'node:events'
 
-env.WORKSPACE_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), 'document-stability-'))
-after(closePythonWorkers)
+const tempRoot = path.resolve(import.meta.dirname, '../../tmp')
+mkdirSync(tempRoot, { recursive: true })
+env.WORKSPACE_DATA_DIR = mkdtempSync(path.join(tempRoot, 'document-stability-'))
+after(closeDocumentParser)
 
 function pdfFixture(pages = 2) {
   const objects = [
@@ -56,8 +56,8 @@ test('PDF parsing preserves text and block page numbers', async () => {
   assert.ok(result.blocks.some(block => block.page === 2 && /Page 2/.test(block.text)))
 })
 
-test('corrupted files fail locally and a subsequent valid job still succeeds', async () => {
-  await assert.rejects(parseDocument(Buffer.from('invalid archive'), 'bad.docx'), error => error.code === 'PARSE_FAILED')
+test('the parser rejects corrupted files and still accepts a subsequent valid job', async () => {
+  await assert.rejects(parseDocument(Buffer.from('invalid archive'), 'bad.docx'), { code: 'PARSE_FAILED', statusCode: 422 })
   assert.equal((await parseDocument(pdfFixture(1), 'valid.pdf')).pages, 1)
 })
 

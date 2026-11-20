@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import type { CaseFolder, Certificate, CertificateParagraph, WorkspaceState } from '../domain.js'
 import { AppError } from '../core/app-error.js'
+import { caseFileIdentity, evidenceObjectKey, readCaseFileReferences, type CaseFile } from './workspace-case-files.js'
 
 const collections = {
   cases: 'cases',
@@ -43,6 +44,41 @@ export interface WorkspaceSnapshot {
 
 const snapshotKey = Symbol('lawverify.workspace.snapshot')
 const mediaKeys = new Set(['sourceDataUrl', 'previewDataUrl', 'pageImageDataUrls'])
+const caseFileHistoryKey = (caseId: string) => `case-files:${caseId}`
+
+function appendCaseFiles(db: DatabaseSync, caseId: string, files: Set<CaseFile>) {
+  if (!files.size) return
+  const key = caseFileHistoryKey(caseId)
+  const history = db.prepare('SELECT value FROM workspace_meta WHERE key = ?').get(key)
+  const previous = history ? JSON.parse(String(history.value)) as CaseFile[] : []
+  db.prepare('INSERT OR REPLACE INTO workspace_meta (key, value) VALUES (?, ?)')
+    .run(key, JSON.stringify([...new Set([...previous, ...files])]))
+}
+
+function* liveCaseFileHistory(db: DatabaseSync) {
+  const rows = db.prepare("SELECT value FROM workspace_meta JOIN cases ON workspace_meta.key = 'case-files:' || cases.id").iterate()
+  for (const row of rows) yield* JSON.parse(String(row.value)) as CaseFile[]
+}
+
+function recordRemovedCaseFiles(db: DatabaseSync, current: Map<string, RecordRow>, merged: Map<string, RecordRow>) {
+  const changes = new Map<string, Set<CaseFile>>()
+  for (const [key, row] of current) {
+    const caseId = row.table === 'cases' ? row.id : row.caseId
+    const next = merged.get(key)
+    if (!caseId || row.payload === next?.payload) continue
+    const removed = new Set<CaseFile>()
+    readCaseFileReferences(row.payload, removed)
+    if (!removed.size) continue
+    const remaining = new Set<CaseFile>()
+    if (next) readCaseFileReferences(next.payload, remaining)
+    const files = changes.get(caseId) ?? new Set<CaseFile>()
+    for (const file of removed) {
+      if (!remaining.has(file)) files.add(file)
+    }
+    changes.set(caseId, files)
+  }
+  for (const [caseId, files] of changes) appendCaseFiles(db, caseId, files)
+}
 
 // 资产文件的完整性校验结果：同一份资产在一个进程里只校验一次。
 // 之后用体积与修改时间判断文件是否仍然可信，避免每次读写都重新读回整份文件算哈希。
@@ -195,40 +231,49 @@ export class WorkspaceSqliteStore {
     }
   }
 
-  private encodeAssets(value: unknown, persist: boolean, media = false): unknown {
+  private encodeAssets(value: unknown, assets?: Map<string, string>, media = false): unknown {
     if (media && typeof value === 'string' && value.startsWith('data:')) {
       const hash = createHash('sha256').update(value).digest('hex')
-      if (persist) {
-        mkdirSync(this.assetsDir, { recursive: true })
-        const file = path.join(this.assetsDir, hash)
-        if (existsSync(file)) {
-          // 文件名就是内容哈希，已校验过且未被改动时不必再读回整份文件重算。
-          if (!this.isAssetTrusted(file)) {
-            if (createHash('sha256').update(readFileSync(file)).digest('hex') !== hash) {
-              throw new AppError('证据原件缓存校验失败，已阻止保存。请检查工作区存储。', 500, 'WORKSPACE_ASSET_CORRUPT')
-            }
-            this.rememberAsset(file)
-          }
-        } else {
-          const temporary = `${file}.${randomUUID()}.tmp`
-          try {
-            writeFileSync(temporary, value, { encoding: 'utf8', flag: 'wx', flush: true })
-            renameSync(temporary, file)
-          } finally {
-            rmSync(temporary, { force: true })
-          }
-          this.rememberAsset(file)
-        }
-      }
+      assets?.set(hash, value)
       return { __lawverifyAsset: hash }
     }
-    if (Array.isArray(value)) return value.map(item => this.encodeAssets(item, persist, media))
+    if (Array.isArray(value)) return value.map(item => this.encodeAssets(item, assets, media))
     if (isObject(value)) {
       return Object.fromEntries(Object.entries(value).map(([key, item]) =>
-        [key, this.encodeAssets(item, persist, mediaKeys.has(key))],
+        [key, this.encodeAssets(item, assets, mediaKeys.has(key))],
       ))
     }
     return value
+  }
+
+  private persistAssets(assets: Map<string, string>, rows: Map<string, RecordRow>) {
+    if (!assets.size) return
+    const retained = new Set<CaseFile>()
+    for (const row of rows.values()) {
+      if (row.payload.includes('"__lawverifyAsset"')) readCaseFileReferences(row.payload, retained)
+    }
+    for (const [hash, value] of assets) {
+      // 合并前的旧快照可能仍包含已删除案件的缓存，只写入合并后仍被引用的文件。
+      if (!retained.has(`asset:${hash}`)) continue
+      mkdirSync(this.assetsDir, { recursive: true })
+      const file = path.join(this.assetsDir, hash)
+      if (existsSync(file)) {
+        // 文件名就是内容哈希，已校验过且未被改动时不必再读回整份文件重算。
+        if (this.isAssetTrusted(file)) continue
+        if (createHash('sha256').update(readFileSync(file)).digest('hex') !== hash) {
+          throw new AppError('证据原件缓存校验失败，已阻止保存。请检查工作区存储。', 500, 'WORKSPACE_ASSET_CORRUPT')
+        }
+      } else {
+        const temporary = `${file}.${randomUUID()}.tmp`
+        try {
+          writeFileSync(temporary, value, { encoding: 'utf8', flag: 'wx', flush: true })
+          renameSync(temporary, file)
+        } finally {
+          rmSync(temporary, { force: true })
+        }
+      }
+      this.rememberAsset(file)
+    }
   }
 
   private decodeAssets(value: unknown): unknown {
@@ -304,11 +349,11 @@ export class WorkspaceSqliteStore {
     if (stat) verifiedAssets.set(file, stat)
   }
 
-  private flatten(state: WorkspaceState, persistAssets: boolean) {
+  private flatten(state: WorkspaceState, assets?: Map<string, string>) {
     const rows = new Map<string, RecordRow>()
     const add = (table: Table, id: string, value: unknown, position = 0, parentId: string | null = null, caseId: string | null = null) => {
       if (typeof id !== 'string' || !id) throw new Error(`Missing record ID in ${table}`)
-      const row: RecordRow = { table, id, parentId, caseId, position, payload: JSON.stringify(this.encodeAssets(value, persistAssets)) }
+      const row: RecordRow = { table, id, parentId, caseId, position, payload: JSON.stringify(this.encodeAssets(value, assets)) }
       const key = rowKey(row)
       if (rows.has(key)) throw new Error(`Duplicate record ID in ${table}: ${id}`)
       rows.set(key, row)
@@ -515,11 +560,13 @@ export class WorkspaceSqliteStore {
       try {
         if (!db.prepare("SELECT value FROM workspace_meta WHERE key = 'initialized'").get()) {
           const state = initialize()
-          const rows = this.flatten(state, true)
+          const assets = new Map<string, string>()
+          const rows = this.flatten(state, assets)
+          this.persistAssets(assets, rows)
           this.putRows(db, rows)
           const stored = this.readRows(db)
           if (!isDeepStrictEqual(rows, stored)) throw new Error('Workspace migration verification failed')
-          if (!isDeepStrictEqual(this.flatten(this.assemble(stored), false), rows)) {
+          if (!isDeepStrictEqual(this.flatten(this.assemble(stored)), rows)) {
             throw new Error('Workspace asset migration verification failed')
           }
           db.prepare('INSERT INTO workspace_meta(key, value) VALUES (?, ?)').run('initialized', new Date().toISOString())
@@ -578,12 +625,89 @@ export class WorkspaceSqliteStore {
     }
   }
 
+  rememberCaseFiles(caseId: string, files: Set<CaseFile>) {
+    const db = this.open()
+    try {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        if (!db.prepare('SELECT 1 FROM cases WHERE id = ?').get(caseId)) {
+          throw new AppError('案件不存在。', 404, 'CASE_NOT_FOUND')
+        }
+        appendCaseFiles(db, caseId, files)
+        db.exec('COMMIT')
+      } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+      }
+    } finally {
+      db.close()
+    }
+  }
+
+  readEvidenceObjectReferences(keys: Set<CaseFile>) {
+    try {
+      statSync(this.databasePath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+      throw error
+    }
+    const db = new DatabaseSync(this.databasePath, { readOnly: true })
+    try {
+      db.exec('PRAGMA busy_timeout = 5000; BEGIN')
+      if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'workspace_meta'").get()
+        || !db.prepare("SELECT 1 FROM workspace_meta WHERE key = 'initialized'").get()) return false
+      for (const table of ['evidences', 'cases', 'knowledge_files']) {
+        const refs = db.prepare(`SELECT DISTINCT ref.value FROM ${table}, json_tree(payload) AS ref
+          WHERE ref.key = 'storageKey' AND ref.type = 'text'`).iterate()
+        for (const ref of refs) {
+          const key = evidenceObjectKey(String(ref.value))
+          if (key) keys.add(caseFileIdentity(`evidence:${key}`))
+        }
+      }
+      for (const file of liveCaseFileHistory(db)) {
+        if (file.startsWith('evidence:')) keys.add(caseFileIdentity(file))
+      }
+      db.exec('COMMIT')
+      return true
+    } finally {
+      db.close()
+    }
+  }
+
+  cleanupDeletedCaseFiles(caseId: string, remove: (file: CaseFile) => void) {
+    const db = this.open()
+    try {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        const key = caseFileHistoryKey(caseId)
+        const history = db.prepare('SELECT value FROM workspace_meta WHERE key = ?').get(key)
+        if (history && !db.prepare('SELECT 1 FROM cases WHERE id = ?').get(caseId)) {
+          const retained = new Set<CaseFile>(liveCaseFileHistory(db))
+          for (const row of this.readRows(db).values()) readCaseFileReferences(row.payload, retained)
+          const identities = new Set([...retained].map(caseFileIdentity))
+          for (const file of JSON.parse(String(history.value)) as CaseFile[]) {
+            if (!identities.has(caseFileIdentity(file))) remove(file)
+          }
+          db.prepare('DELETE FROM workspace_meta WHERE key = ?').run(key)
+        }
+        db.exec('COMMIT')
+      } catch (error) {
+        // 已经清理的文件允许重复删除，失败时保留整份清单供重试。
+        db.exec('ROLLBACK')
+        throw error
+      }
+    } finally {
+      db.close()
+    }
+  }
+
   save(state: WorkspaceState) {
     const base = (state as unknown as Record<symbol, WorkspaceSnapshot>)[snapshotKey]
     if (!base || base.databasePath !== this.databasePath) {
       throw new AppError('工作区保存缺少有效版本，请刷新后重试。', 409, 'WORKSPACE_SNAPSHOT_REQUIRED')
     }
-    const desired = this.flatten(state, true)
+    const assets = new Map<string, string>()
+    const desired = this.flatten(state, assets)
     const db = this.open()
     try {
       db.exec('BEGIN IMMEDIATE')
@@ -611,6 +735,8 @@ export class WorkspaceSqliteStore {
             })
           }
         }
+        this.persistAssets(assets, merged)
+        recordRemovedCaseFiles(db, current, merged)
         this.putRows(db, merged, current)
         const result = this.assemble(merged)
         db.exec('COMMIT')

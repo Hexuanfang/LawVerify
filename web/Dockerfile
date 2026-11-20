@@ -20,7 +20,9 @@ ENV VITE_SITE_URL=$VITE_SITE_URL \
 RUN npm run build
 
 FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV CLOUD_SERVER_UPSTREAM=http://cloud-server:8788 \
+    NGINX_ENVSUBST_FILTER=^CLOUD_SERVER_UPSTREAM$
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /build/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 \

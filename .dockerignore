@@ -1,0 +1,7 @@
+**
+!python-workers/
+python-workers/*
+!python-workers/*.mjs
+!python-workers/*.py
+!python-workers/python-workers.ts
+!python-workers/requirements.txt

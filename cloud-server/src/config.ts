@@ -51,6 +51,7 @@ const schema = z.object({
   REFERRAL_INVITEE_POINTS: z.coerce.number().int().min(0).max(10000).default(50),
   REFERRAL_MIN_PAYMENT_FEN: z.coerce.number().int().positive().default(1000),
   AI_GATEWAY_ENABLED: booleanFromEnv.default(false),
+  PARSER_TICKET_PRIVATE_KEY: z.string().trim().min(1).optional(),
   LLM_BASE_URL: z.string().optional(),
   LLM_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().optional(),

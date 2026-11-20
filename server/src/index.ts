@@ -1,4 +1,4 @@
-import { createApp, initializeCommercialInfrastructure, closeParsingWorkers } from './app.js'
+import { createApp, initializeCommercialInfrastructure } from './app.js'
 import { env } from './config/env.js'
 import { clearUploadTempFiles } from './middleware/bounded-upload.js'
 
@@ -67,7 +67,9 @@ async function main() {
   })
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => { void closeParsingWorkers().finally(() => server.close(() => process.exit(0))) })
+    process.once(signal, () => {
+      server.close(() => process.exit(0))
+    })
   }
 }
 

@@ -5,5 +5,8 @@
 #   echo '新密码' | ./admin.sh set-password admin --password-stdin
 set -eu
 cd "$(dirname "$0")"
+env_file=cloud-server/.env
+if [ ! -f "$env_file" ]; then env_file=.env; fi
 if [ -t 0 ]; then tty_flag=""; else tty_flag="-T"; fi
-exec docker compose exec $tty_flag cloud-server node dist/scripts/admin-account.js "$@"
+CLOUD_SERVER_ENV_FILE="$env_file" exec docker compose --project-directory . --env-file "$env_file" \
+  -f cloud-server/compose.yml exec $tty_flag cloud-server node dist/scripts/admin-account.js "$@"

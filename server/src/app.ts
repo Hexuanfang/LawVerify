@@ -12,7 +12,6 @@ import { errorHandler, notFound } from './middleware/error-handler.js'
 import { requestContext } from './middleware/request-context.js'
 import { createLegacyRouter } from './routes/legacy.js'
 import { createV1Router } from './routes/v1.js'
-export { closePythonWorkers as closeParsingWorkers } from './infrastructure/python-workers.js'
 
 // 流式响应统一心跳：长时间没有新数据时补一个注释行，
 // 让客户端知道连接还活着，不会把空闲当成断开。
@@ -75,12 +74,7 @@ export function createApp() {
       crossOriginResourcePolicy: false,
     }),
   )
-  app.use(
-    cors({
-      origin: buildCorsOrigin,
-      credentials: true,
-    }),
-  )
+  app.use(cors({ origin: buildCorsOrigin, credentials: true }))
   app.use(compression())
   app.use(express.json({ limit: env.JSON_LIMIT }))
   app.use(streamHeartbeat())

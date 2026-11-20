@@ -1,19 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Evidence, EvidenceParsing } from './domain.js'
 import { AppError } from './core/app-error.js'
-import { getStorageRoot } from './config/paths.js'
-import { getCurrentWorkspaceAccount, readWorkspace, writeWorkspace } from './store.js'
+import { getParserStorageDirectory, getStorageRoot, getWorkspaceDataDir } from './config/paths.js'
+import { getCurrentWorkspaceAccount, readWorkspace, rememberCaseFile, writeWorkspace } from './store.js'
 import { runExclusiveWorkspaceMutation } from './infrastructure/workspace-lock.js'
-import { parserRoot } from './infrastructure/mineru-runtime.js'
 import { readParsedArtifact, runDocumentParsing, supportsDocumentParsing, type ParsedArtifact } from './infrastructure/document-jobs.js'
 import { createSemaphore } from './infrastructure/concurrency.js'
+import { PARSE_ARTIFACT, parseInputName } from './infrastructure/workspace-case-files.js'
 
 export type { ParsedArtifact } from './infrastructure/document-jobs.js'
 
 const pending = new Map<string, Promise<Evidence | undefined>>()
-// 上传可继续登记，进入原生进程前施加背压，避免单批几百份材料挤爆协议队列。
+const activeParsing = new Map<{ controller: AbortController; finished: Promise<void> }, string>()
+const caseScope = (caseId: string) => JSON.stringify([getCurrentWorkspaceAccount(), caseId])
+// 上传可继续登记，向本机解析进程提交任务前限制并发。
 const admission = createSemaphore(8)
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const now = () => new Date().toISOString()
@@ -29,11 +31,11 @@ function sourceKey(evidence: Evidence) {
 }
 
 function accountDirectory() {
-  return path.join(parserRoot(), hash(getCurrentWorkspaceAccount() ?? '__local__'))
+  return path.join(getWorkspaceDataDir(), getParserStorageDirectory(getCurrentWorkspaceAccount()))
 }
 
 function artifactPath(key: string) {
-  if (!/^[a-f0-9-]+\.json$/.test(key)) throw new AppError('解析结果定位无效。', 400, 'PARSE_RESULT_INVALID')
+  if (!PARSE_ARTIFACT.test(key)) throw new AppError('解析结果定位无效。', 400, 'PARSE_RESULT_INVALID')
   return path.join(accountDirectory(), key)
 }
 
@@ -48,7 +50,7 @@ async function readArtifact(evidence: Evidence): Promise<ParsedArtifact | null> 
   }
 }
 
-async function inputPath(evidence: Evidence) {
+async function inputPath(evidence: Evidence, staged: string | null, signal: AbortSignal) {
   if (evidence.storageKey) {
     const root = path.resolve(getStorageRoot())
     const resolved = path.resolve(root, evidence.storageKey)
@@ -58,12 +60,21 @@ async function inputPath(evidence: Evidence) {
   }
   const data = evidence.sourceDataUrl || evidence.previewDataUrl || ''
   const match = data.match(/^data:[^;,]+;base64,([\s\S]+)$/)
-  if (!match) throw new Error('当前材料没有可读取的本地原件')
-  const directory = path.join(accountDirectory(), 'inputs')
-  await mkdir(directory, { recursive: true })
-  const location = path.join(directory, `${sourceKey(evidence)}${path.extname(evidence.fileName).replace(/[^.a-z0-9]/gi, '') || '.png'}`)
-  await writeFile(location, Buffer.from(match[1], 'base64'))
-  return location
+  if (!match || !staged) throw new Error('当前材料没有可读取的本地原件')
+  await mkdir(path.dirname(staged), { recursive: true })
+  await writeFile(staged, Buffer.from(match[1], 'base64'), { signal })
+  return staged
+}
+
+export function cancelCaseEvidenceParsing(caseId: string) {
+  const scope = caseScope(caseId)
+  const stopping: Promise<void>[] = []
+  for (const [task, owner] of activeParsing) {
+    if (owner !== scope) continue
+    task.controller.abort()
+    stopping.push(task.finished)
+  }
+  return Promise.all(stopping)
 }
 
 async function mutateCurrent(evidenceId: string, revision: string, action: (evidence: Evidence) => void) {
@@ -77,7 +88,13 @@ async function mutateCurrent(evidenceId: string, revision: string, action: (evid
   })
 }
 
-export async function ensureEvidenceParsed(evidenceId: string, options: { force?: boolean; mode?: EvidenceParsing['mode'] } = {}) {
+interface EvidenceParsingOptions {
+  force?: boolean
+  mode?: EvidenceParsing['mode']
+  batchSize?: number
+}
+
+export async function ensureEvidenceParsed(evidenceId: string, options: EvidenceParsingOptions = {}) {
   const snapshot = await readWorkspace()
   const source = snapshot.evidences.find(item => item.id === evidenceId)
   if (!source) return undefined
@@ -90,7 +107,7 @@ export async function ensureEvidenceParsed(evidenceId: string, options: { force?
   return task
 }
 
-async function performParsing(evidenceId: string, options: { force?: boolean; mode?: EvidenceParsing['mode'] }) {
+async function performParsing(evidenceId: string, options: EvidenceParsingOptions) {
   const revision = randomUUID()
   const captured = await runExclusiveWorkspaceMutation(async () => {
     const workspace = await readWorkspace()
@@ -107,15 +124,29 @@ async function performParsing(evidenceId: string, options: { force?: boolean; mo
   if (!captured.run || !captured.evidence) return captured.evidence
   const evidence = captured.evidence
   return admission.run(async () => {
+    const controller = new AbortController()
+    let finish!: () => void
+    const finished = new Promise<void>(resolve => { finish = resolve })
+    const task = { controller, finished }
+    const artifactKey = `${revision}.json`
+    const output = artifactPath(artifactKey)
+    const inputName = evidence.storageKey ? null : parseInputName(revision, evidence.fileName)
+    const staged = inputName ? path.join(accountDirectory(), 'inputs', inputName) : null
+    let saved = false
     try {
-      const current = await mutateCurrent(evidenceId, revision, item => { item.parsing!.status = 'processing'; item.parsing!.updatedAt = now() })
+      const current = await mutateCurrent(evidenceId, revision, item => {
+        // 在创建任何文件前登记归属，并在同一工作区锁内登记正在运行的任务。
+        rememberCaseFile(item.caseId, `parse:${artifactKey}`)
+        if (inputName) rememberCaseFile(item.caseId, `parse-input:${inputName}`)
+        activeParsing.set(task, caseScope(item.caseId))
+        item.parsing!.status = 'processing'
+        item.parsing!.updatedAt = now()
+      })
       if (!current) return undefined
-      const artifactKey = `${revision}.json`
-      const output = artifactPath(artifactKey)
-      await mkdir(path.dirname(output), { recursive: true })
-      const artifact = await runDocumentParsing(await inputPath(evidence), output, evidence.fileName,
-        evidence.sourceMimeType, evidence.parsing!.mode)
-      return mutateCurrent(evidenceId, revision, item => {
+      controller.signal.throwIfAborted()
+      const artifact = await runDocumentParsing(await inputPath(evidence, staged, controller.signal), output,
+        evidence.fileName, evidence.sourceMimeType, evidence.parsing!.mode, controller.signal, options.batchSize)
+      const parsed = await mutateCurrent(evidenceId, revision, item => {
         item.parsing = { ...item.parsing!, artifactKey, engineVersion: artifact.engineVersion,
           warnings: artifact.warnings, status: artifact.reviewRequired ? 'review_required' : 'ready', updatedAt: now() }
         item.ocrText = artifact.text
@@ -125,11 +156,18 @@ async function performParsing(evidenceId: string, options: { force?: boolean; mo
         item.summaryStatus = artifact.reviewRequired ? 'idle' : 'processing'
         item.summaryError = undefined
       })
+      saved = Boolean(parsed)
+      return parsed
     } catch (error) {
-      return mutateCurrent(evidenceId, revision, item => {
+      if (controller.signal.aborted) return undefined
+      return await mutateCurrent(evidenceId, revision, item => {
         item.parsing = { ...item.parsing!, status: 'failed', error: error instanceof Error ? error.message : '材料解析失败，请人工审核', updatedAt: now() }
         item.summaryStatus = 'idle'
       })
+    } finally {
+      await Promise.allSettled([...(staged ? [staged] : []), ...(!saved ? [output] : [])].map(file => unlink(file)))
+      activeParsing.delete(task)
+      finish()
     }
   })
 }

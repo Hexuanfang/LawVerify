@@ -23,8 +23,6 @@ jobs:
         include:
           - runner: macos-15
             arch: arm64
-          - runner: macos-15-intel
-            arch: x64
     runs-on: ${{ matrix.runner }}
     environment: ${{ inputs.signed && 'mac-signing' || 'mac-test' }}
     timeout-minutes: 180
@@ -77,6 +75,13 @@ jobs:
         run: |
           node --test electron/test-mac-update.cjs electron/test-update-download.cjs electron/test-update-release.cjs electron/test-mac-platform.cjs electron/test-mac-stapler.cjs
           node electron/test-mac-update-native.cjs
+      - name: Prepare bundled Python and MinerU weights
+        env:
+          UV_CACHE_DIR: ${{ github.workspace }}/tmp/parser-build-cache
+          UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/tmp/uv-python
+        run: |
+          brew install uv
+          uv run --no-project --managed-python --python 3.13 server/scripts/prepare-parser-runtime.py --download-models
       - name: Build unsigned test package
         if: ${{ !inputs.signed }}
         working-directory: app

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type {
   CaseFolder,
@@ -16,9 +16,12 @@ import type {
 } from './domain.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { listKnowledgeFilesForWorkspace } from './commercial/knowledge-file-service.js'
-import { getWorkspaceDataDir } from './config/paths.js'
+import { getOfficeStorageDirectory, getParserStorageDirectory, getWorkspaceDataDir } from './config/paths.js'
+import { AppError } from './core/app-error.js'
+import { deleteObject } from './infrastructure/object-storage.js'
 import { shouldUseCommercialKnowledgeStore } from './knowledge-mode.js'
 import { inheritWorkspaceSnapshot, WorkspaceSqliteStore } from './infrastructure/workspace-sqlite.js'
+import { ASSET_HASH, caseFileIdentity, collectCaseFileReferences, OFFICE_FILE_ID, PARSE_ARTIFACT, PARSE_INPUT, removeManagedFile, type CaseFile } from './infrastructure/workspace-case-files.js'
 import { notifyWorkspaceChanged } from './infrastructure/workspace-events.js'
 import { scheduleWorkspaceBackup } from './infrastructure/workspace-backups.js'
 import {
@@ -543,6 +546,85 @@ export async function writeWorkspace(state: WorkspaceState) {
   notifyWorkspaceChanged(paths.account)
   if (process.env.LAWVERIFY_DESKTOP === '1') {
     scheduleWorkspaceBackup(path.join(paths.dataDir, 'workspace.sqlite'))
+  }
+}
+
+export function rememberCaseFile(caseId: string, file: CaseFile) {
+  const paths = resolveWorkspacePaths()
+  new WorkspaceSqliteStore(paths.dataDir).rememberCaseFiles(caseId, new Set([file]))
+}
+
+function readLegacyEvidenceObjects(directory: string, references: Set<CaseFile>) {
+  let failure: unknown
+  for (const name of ['workspace.json', 'workspace.backup.json']) {
+    try {
+      const workspace = JSON.parse(readFileSync(path.join(directory, name), 'utf8')) as WorkspaceState
+      if (!workspace?.user || [workspace.cases, workspace.evidences, workspace.knowledgeFiles]
+        .some(collection => collection != null && !Array.isArray(collection))) {
+        throw new Error('旧工作区格式无效。')
+      }
+      const files = new Set<CaseFile>()
+      collectCaseFileReferences([workspace.cases, workspace.evidences, workspace.knowledgeFiles], files)
+      for (const file of files) {
+        if (file.startsWith('evidence:')) references.add(caseFileIdentity(file))
+      }
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') failure = error
+    }
+  }
+  if (failure) throw failure
+}
+
+function readSharedEvidenceObjects(currentDirectory: string) {
+  // 上传对象位于共用存储根目录，其他登录账号可能还引用同一个旧对象。
+  const workspaces = path.join(dataDir, 'workspaces')
+  let directories = [dataDir]
+  try {
+    directories = directories.concat(readdirSync(workspaces, { withFileTypes: true })
+      .filter(entry => entry.isDirectory()).map(entry => path.join(workspaces, entry.name)))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const keys = new Set<CaseFile>()
+  for (const dir of directories) {
+    if (!path.relative(currentDirectory, dir)) continue
+    if (!new WorkspaceSqliteStore(dir).readEvidenceObjectReferences(keys)) readLegacyEvidenceObjects(dir, keys)
+  }
+  return keys
+}
+
+export function cleanupDeletedCaseFiles(caseId: string) {
+  const paths = resolveWorkspacePaths()
+  const officeDirectory = getOfficeStorageDirectory(paths.account)
+  const parserDirectory = getParserStorageDirectory(paths.account)
+  let sharedObjects: Set<CaseFile> | undefined
+  try {
+    new WorkspaceSqliteStore(paths.dataDir).cleanupDeletedCaseFiles(caseId, file => {
+      const separator = file.indexOf(':')
+      const kind = file.slice(0, separator)
+      const identifier = file.slice(separator + 1)
+      if (kind === 'evidence') {
+        sharedObjects ??= readSharedEvidenceObjects(paths.dataDir)
+        if (!sharedObjects.has(caseFileIdentity(file))) deleteObject(identifier)
+      } else if (kind === 'asset' && ASSET_HASH.test(identifier)) {
+        removeManagedFile(dataDir, path.join(path.relative(dataDir, paths.dataDir), 'workspace-assets', identifier))
+      } else if (kind === 'office' && OFFICE_FILE_ID.test(identifier)) {
+        for (const suffix of ['bin', 'json', 'json.tmp']) {
+          removeManagedFile(getWorkspaceDataDir(), path.join(officeDirectory, `${identifier}.${suffix}`))
+        }
+      } else if (kind === 'parse' && PARSE_ARTIFACT.test(identifier)) {
+        for (const name of [identifier, `${identifier}.tmp`]) {
+          removeManagedFile(dataDir, path.join(parserDirectory, name))
+        }
+      } else if (kind === 'parse-input' && PARSE_INPUT.test(identifier)) {
+        removeManagedFile(dataDir, path.join(parserDirectory, 'inputs', identifier))
+      } else {
+        throw new Error('无效的案件文件标识。')
+      }
+    })
+  } catch {
+    throw new AppError('案件记录已删除，部分应用内文件清理失败。请检查文件是否被占用后重试。', 500, 'CASE_FILE_CLEANUP_FAILED')
   }
 }
 

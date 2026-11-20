@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { env } from './env.js'
 
 function normalizeRoot(input: string) {
@@ -15,6 +16,16 @@ export function getAppDataRoot() {
 
 export function getWorkspaceDataDir() {
   return normalizeRoot(env.WORKSPACE_DATA_DIR ?? path.join(getAppDataRoot(), 'data'))
+}
+
+export function getOfficeStorageDirectory(account: string | null) {
+  const owner = createHash('sha256').update(account ?? '__local__').digest('hex')
+  return path.join('office', owner)
+}
+
+export function getParserStorageDirectory(account: string | null) {
+  const owner = createHash('sha256').update(account ?? '__local__').digest('hex')
+  return path.join('parsing', owner)
 }
 
 export function getStorageRoot() {

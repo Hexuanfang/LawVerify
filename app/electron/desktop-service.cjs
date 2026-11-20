@@ -2,7 +2,6 @@ const { pathToFileURL } = require('node:url')
 const path = require('node:path')
 
 let server
-let closeParsingWorkers = async () => {}
 function diagnostic(event, error) {
   // Never send exception messages, case text, credentials or filesystem paths.
   process.parentPort?.postMessage({ type: 'diagnostic', event, code: typeof error?.code === 'string' ? error.code : undefined })
@@ -21,7 +20,7 @@ process.parentPort?.on('message', ({ data }) => {
     process.parentPort.postMessage({ type: 'pong', rssMB: Math.round(process.memoryUsage().rss / 1024 / 1024) })
   }
   if (data?.type === 'stop') {
-    void closeParsingWorkers().finally(() => server?.close(() => process.exit(0)))
+    server?.close(() => process.exit(0))
     setTimeout(() => process.exit(0), 2000).unref()
   }
 })
@@ -29,7 +28,6 @@ process.parentPort?.on('message', ({ data }) => {
 async function main() {
   const backendEntry = path.join(process.env.APP_RUNTIME_ROOT, 'dist', 'app.js')
   const backend = await import(pathToFileURL(backendEntry).href)
-  if (typeof backend.closeParsingWorkers === 'function') closeParsingWorkers = backend.closeParsingWorkers
   await backend.initializeCommercialInfrastructure()
   const bootstrap = backend.createApp()
   server = await new Promise((resolve, reject) => {
@@ -37,6 +35,10 @@ async function main() {
     instance.once('error', reject)
   })
   process.parentPort?.postMessage({ type: 'ready' })
+  const parserEntry = path.join(process.env.APP_RUNTIME_ROOT, 'dist', 'infrastructure', 'document-jobs.js')
+  void import(pathToFileURL(parserEntry).href)
+    .then(parser => parser.warmupDocumentParser())
+    .catch(error => diagnostic('parser-start-failed', error))
 }
 
 void main().catch(error => fatal('service-start-failed', error))

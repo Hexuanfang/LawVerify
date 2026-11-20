@@ -10,6 +10,8 @@ interface PoolOptions {
   startupTimeoutMs?: number
   taskTimeoutMs?: number
   maxQueued?: number
+  retryOnExit?: boolean
+  onReady?: () => void
 }
 
 interface Job {
@@ -24,6 +26,7 @@ interface Worker {
   child: ChildProcessWithoutNullStreams
   ready: boolean
   dead: boolean
+  memoryMB?: number
   job?: Job
   timer?: ReturnType<typeof setTimeout>
 }
@@ -38,6 +41,7 @@ process.once('exit', () => { for (const pool of pools) pool.terminate() })
 export class PythonWorkerPool {
   private options: PoolOptions
   private workers = new Set<Worker>()
+  private exiting = new Set<Promise<void>>()
   private queue: Job[] = []
   private sequence = 0
   private closed = false
@@ -48,6 +52,14 @@ export class PythonWorkerPool {
     this.options = options
     this.limit = options.size ?? 1
     pools.add(this)
+  }
+
+  get measuredMemoryMB() {
+    return [...this.workers].reduce((sum, worker) => sum + (worker.memoryMB ?? 0), 0)
+  }
+
+  get hasWorker() {
+    return this.workers.size > 0
   }
 
   run<T = { pid: number; value?: unknown }>(input: Record<string, unknown>): Promise<T> {
@@ -70,7 +82,7 @@ export class PythonWorkerPool {
         this.send(worker)
       }
     }
-    while (this.queue.length && this.workers.size < this.limit) this.start(this.queue.shift()!)
+    while (this.queue.length && this.workers.size + this.exiting.size < this.limit) this.start(this.queue.shift()!)
   }
 
   private start(job: Job) {
@@ -92,6 +104,11 @@ export class PythonWorkerPool {
       }
       try {
         const response = JSON.parse(line)
+        if (Number.isInteger(response.memoryMB) && response.memoryMB >= 0) worker.memoryMB = response.memoryMB
+        if (response.type === 'startup-error' && !worker.ready) {
+          this.fail(worker, poolError(response.error, response.code), false)
+          return
+        }
         if (response.type === 'ready' && !worker.ready) {
           clearTimeout(worker.timer)
           worker.ready = true
@@ -101,11 +118,16 @@ export class PythonWorkerPool {
               ? 1 : Math.min(2, Math.max(1, Math.floor(availableParallelism() / 4)))
           }
           this.send(worker)
+          this.options.onReady?.()
           this.schedule()
           return
         }
         if (!worker.job || response.id !== worker.job.id) {
           this.fail(worker, poolError('解析进程响应序号不匹配。', 'PARSER_PROTOCOL'), false)
+          return
+        }
+        if (response.code === 'PARSER_MEMORY_LIMIT') {
+          this.fail(worker, poolError(response.error, response.code), false)
           return
         }
         clearTimeout(worker.timer)
@@ -119,11 +141,12 @@ export class PythonWorkerPool {
       }
     })
     child.once('error', () => this.fail(worker, poolError('Python 解析进程无法启动，请检查解析运行环境。', 'PARSER_START_FAILED'), false))
-    child.once('exit', () => {
+    child.once('exit', code => {
       reader.close()
-      this.fail(worker, poolError('解析进程中断，请重试。', 'PARSER_WORKER_EXIT'), true)
+      if (code === 75) this.fail(worker, poolError('材料解析已达到本机内存上限，请拆分后重试。', 'PARSER_MEMORY_LIMIT'), false)
+      else this.fail(worker, poolError('解析进程中断，请重试。', 'PARSER_WORKER_EXIT'), this.options.retryOnExit !== false)
     })
-    child.stdin.on('error', () => this.fail(worker, poolError('解析进程连接中断。', 'PARSER_WORKER_EXIT'), true))
+    child.stdin.on('error', () => this.fail(worker, poolError('解析进程连接中断。', 'PARSER_WORKER_EXIT'), this.options.retryOnExit !== false))
     worker.timer = setTimeout(() => this.fail(worker, poolError('解析进程启动超时，请检查模型是否就绪。', 'PARSER_START_TIMEOUT'), false),
       this.options.startupTimeoutMs ?? 120000)
   }
@@ -140,7 +163,15 @@ export class PythonWorkerPool {
     worker.dead = true
     clearTimeout(worker.timer)
     this.workers.delete(worker)
-    worker.child.kill()
+    if (worker.child.exitCode === null && worker.child.signalCode === null) {
+      const finished = new Promise<void>(resolve => worker.child.once('close', resolve))
+      this.exiting.add(finished)
+      void finished.then(() => {
+        this.exiting.delete(finished)
+        this.schedule()
+      })
+      worker.child.kill()
+    }
     const job = worker.job
     worker.job = undefined
     if (job) {
@@ -160,15 +191,8 @@ export class PythonWorkerPool {
   }
 
   async close() {
-    const exits = [...this.workers].map(worker => new Promise<void>(resolve => {
-      if (worker.child.exitCode !== null || worker.child.signalCode !== null) resolve()
-      else worker.child.once('exit', () => resolve())
-    }))
     this.terminate()
-    await Promise.all(exits)
+    await Promise.all(this.exiting)
   }
 }
 
-export async function closePythonWorkers() {
-  await Promise.all([...pools].map(pool => pool.close()))
-}

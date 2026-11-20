@@ -9,13 +9,14 @@ import { env } from '../src/config/env.ts'
 
 const directory = mkdtempSync(path.join(os.tmpdir(), 'lawverify-upload-'))
 env.WORKSPACE_DATA_DIR = directory
+env.APP_DATA_ROOT = directory
+env.STORAGE_LOCAL_ROOT = 'storage'
 env.KNOWLEDGE_RAG_MODE = 'local'
 
 const { boundedFileStorage } = await import('../src/middleware/bounded-upload.ts')
 const { storeObjectFromPath, readObject, readObjectPath } = await import('../src/infrastructure/object-storage.ts')
-const { parseDocument } = await import('../src/infrastructure/document-jobs.ts')
-const { closePythonWorkers } = await import('../src/infrastructure/python-workers.ts')
-after(closePythonWorkers)
+const { closeDocumentParser, parseDocument } = await import('../src/infrastructure/document-jobs.ts')
+after(closeDocumentParser)
 
 function pdfFixture(pages = 1) {
   const objects = [

@@ -11,6 +11,7 @@ import { consumePointAction, listPointPolicies, quotePointAction, refundPointAct
 import { getReferralSummary } from '../referral-service.js'
 import { eventBatchSchema, getAnalyticsPreference, ingestProductEvents, setAnalyticsPreference } from '../analytics-service.js'
 import { isAllowedRegistrationEmail } from '../commercial/admin-identifiers.js'
+import { issueParserTicket } from '../parser-ticket.js'
 
 const registerSchema = z.object({
   organizationName: z.string().min(2, '机构名称至少 2 个字。'),
@@ -68,6 +69,11 @@ const feedbackCreateSchema = z.object({
 })
 
 export const accountRouter = Router()
+
+accountRouter.post('/parser-ticket', authenticate, requirePermission('account.read'), (request, response) => {
+  response.setHeader('Cache-Control', 'no-store')
+  sendSuccess(response, issueParserTicket(request.actor!))
+})
 
 accountRouter.get('/referrals', authenticate, requirePermission('account.read'), async (req, res) => {
   sendSuccess(res, await getReferralSummary(req.actor!))

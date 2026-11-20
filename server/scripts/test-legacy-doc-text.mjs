@@ -4,11 +4,10 @@ import { mkdtempSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { env } from '../src/config/env.ts'
-import { parseDocument } from '../src/infrastructure/document-jobs.ts'
-import { closePythonWorkers } from '../src/infrastructure/python-workers.ts'
+import { closeDocumentParser, parseDocument } from '../src/infrastructure/document-jobs.ts'
 
 env.WORKSPACE_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), 'legacy-doc-'))
-after(closePythonWorkers)
+after(closeDocumentParser)
 
 const SECTOR_SIZE = 512
 const FAT_SECT = 0xfffffffd
@@ -109,6 +108,6 @@ test('域代码被丢弃、域结果保留', async () => {
 })
 
 test('不是 OLE2 的文件不会被当成旧版 .doc', async () => {
-  await assert.rejects(parseDocument(Buffer.from('PK\x03\x04docx'), 'invalid.doc'), /OLE2/)
-  await assert.rejects(parseDocument(Buffer.from('plain text'), 'invalid.doc'), /OLE2/)
+  await assert.rejects(parseDocument(Buffer.from('PK\x03\x04docx'), 'invalid.doc'), { code: 'PARSE_FAILED', statusCode: 422 })
+  await assert.rejects(parseDocument(Buffer.from('plain text'), 'invalid.doc'), { code: 'PARSE_FAILED', statusCode: 422 })
 })

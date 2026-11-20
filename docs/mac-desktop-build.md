@@ -2,7 +2,7 @@
 
 ## 当前方案
 
-- 共用现有客户端与内置服务代码，分别构建 Apple 芯片（arm64）和 Intel（x64）。
+- 自动构建适用于 macOS 14 及以上的 Apple 芯片（arm64）安装包。Intel（x64）需要兼容的解析运行环境。
 - 当前版本以 `app/package.json` 为准，本次保留 0.1.52，不修改 Windows 安装包。
 - 未签名测试包采用本机临时签名（ad-hoc），不代表 Developer ID 签名或 Apple 公证。
 - 测试包写入 `app/release-mac-unsigned/`；正式签名包写入 `app/release-mac/`。
@@ -16,11 +16,9 @@
 工作流合并到默认分支后，也可在 GitHub Actions 中手动运行 `Build Mac desktop`，
 将 `signed` 保持为 false。
 
-两台 macOS runner 分别原生构建并验证 Apple 芯片和 Intel 安装包。
-在成功任务的 Artifacts 中下载对应架构的归档，解压后得到：
+macOS runner 原生构建并验证 Apple 芯片安装包。成功任务的 Artifacts 中包含：
 
 - `LawVerify-Mac-0.1.52-arm64-unsigned.dmg`
-- `LawVerify-Mac-0.1.52-x64-unsigned.dmg`
 - 对应 ZIP、SHA256 文件和 `verification-*.json`
 
 Artifact 默认保存 30 天，不等同于官网正式下载地址。版本变动时文件名随之变化。
@@ -73,13 +71,14 @@ npm.cmd --prefix app run export:law-cache
 
 ## Mac 本地构建
 
-在 Mac 安装 Node.js 22 并安装依赖后，在仓库根目录执行：
+在 Mac 安装 Node.js 22 和 uv 后，在仓库根目录准备对应架构的 Python 与 MinerU 模型，再打包：
 
 ```bash
 npm ci --prefix server
 npm ci --prefix app
+UV_CACHE_DIR="$PWD/tmp/parser-build-cache" UV_PYTHON_INSTALL_DIR="$PWD/tmp/uv-python" \
+  uv run --no-project --managed-python --python 3.13 server/scripts/prepare-parser-runtime.py --download-models
 npm --prefix app run build:mac -- --arch arm64
-# Intel 使用 --arch x64
 ```
 
 正式构建先安全配置 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、
@@ -90,6 +89,7 @@ npm --prefix app run build:mac:signed -- --arch arm64
 ```
 
 Windows 入口会明确拒绝 DMG 构建，避免误将 Windows Electron 打入 Mac 包。
+MinerU 4.2.2 依赖的 DocVortex 和 ONNX Runtime 缺少 Intel Mac 的官方构建。若已有兼容的 Intel 运行环境，可用 `LAWVERIFY_PARSER_RUNTIME_SOURCE` 指定该目录并执行 `--arch x64`。使用 `--arch all` 时分别准备 `tmp/parser-runtime-arm64` 和 `tmp/parser-runtime-x64`，并将 `LAWVERIFY_PARSER_MODELS_SOURCE` 指向共用模型目录。打包后会在与构建机同架构的应用上验证真实 PDF 解析。
 
 ## 验证与上线
 

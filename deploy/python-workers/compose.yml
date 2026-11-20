@@ -1,0 +1,31 @@
+# 与同机的 cloud-server 和 web 共用默认网络。
+name: lawverify
+
+services:
+  parser:
+    container_name: lawverify-parser
+    image: lawverify-parser:${PARSER_IMAGE_TAG:-local}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      PARSER_SERVICE_TOKEN: ${PARSER_SERVICE_TOKEN:-}
+      PARSER_TICKET_PUBLIC_KEY: ${PARSER_TICKET_PUBLIC_KEY:-}
+      PARSER_DEVICE: cpu
+      PARSER_WORKERS: ${PARSER_WORKERS:-1}
+      PARSER_TIMEOUT_MS: ${PARSER_TIMEOUT_MS:-900000}
+      PARSER_MAX_PENDING: ${PARSER_MAX_PENDING:-16}
+      PARSER_MAX_ACCOUNT_PENDING: ${PARSER_MAX_ACCOUNT_PENDING:-2}
+      PARSER_MAX_ACCOUNT_IN_FLIGHT_MB: ${PARSER_MAX_ACCOUNT_IN_FLIGHT_MB:-512}
+      PARSER_MAX_IN_FLIGHT_MB: ${PARSER_MAX_IN_FLIGHT_MB:-1024}
+    ports:
+      - "${SERVICE_BIND:-127.0.0.1}:${PARSER_PORT:-8790}:8790"
+    volumes:
+      - ${PARSER_MODELS_DIR:-../python-workers/mineru-home}:/models:ro
+      - parser-data:/data
+    mem_limit: ${PARSER_MEMORY_LIMIT:-4g}
+    cpus: ${PARSER_CPUS:-8}
+    init: true
+    stop_grace_period: 45s
+
+volumes:
+  parser-data:

@@ -1,0 +1,10 @@
+name: lawverify-build
+
+services:
+  cloud-server:
+    image: ${DEPLOY_BUILD_IMAGE:?请通过 deploy.sh 构建镜像}
+    platform: ${DEPLOY_PLATFORM:?请通过 deploy.sh 选择构建架构}
+    build:
+      context: ../cloud-server
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}

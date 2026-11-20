@@ -1,5 +1,7 @@
+const { loadReleaseEndpoints } = require('./release-endpoints.cjs')
+
 const ACCOUNT_REQUEST_CHANNEL = 'lawverify:account-request'
-const ACCOUNT_BASE_URL = 'https://lawverify.zhijing.fun'
+const ACCOUNT_BASE_URL = loadReleaseEndpoints().loginBaseUrl
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const allowedHeaders = new Set(['authorization', 'content-type', 'accept', 'x-product-surface'])

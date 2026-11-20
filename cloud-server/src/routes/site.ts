@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
+import path from 'node:path'
 
 import { config } from '../config.js'
 import { AppError } from '../core/app-error.js'
@@ -6,8 +7,11 @@ import { sendSuccess } from '../http.js'
 import { sitePlans } from '../mock-data.js'
 import { getReleaseSha256 } from '../release-checksum.js'
 import { buildReleaseDownloadUrl, getLatestPublicRelease, listPublicReleases, resolveReleaseDownloadAsset } from '../release-service.js'
+import { createParserResourceRouter } from '../parser-resource-download.js'
 
 export const siteRouter = Router()
+
+siteRouter.use('/parser-resources', createParserResourceRouter(path.resolve(config.cloudServerRoot, '..', 'app/release/parser-resources')))
 
 siteRouter.get('/site/config', (_request, response) => {
   sendSuccess(response, {

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { env } from '../config/env.js'
 import { getStorageRoot } from '../config/paths.js'
 import type { StoredObject } from '../commercial/types.js'
+import { evidenceObjectKey, removeManagedFile } from './workspace-case-files.js'
 
 export async function storeObject(
   file: Express.Multer.File,
@@ -66,6 +67,7 @@ export async function storeObjectFromPath(
   options?: {
     bucket?: string
     fileName?: string
+    beforeStore?: (key: string) => void
   },
 ): Promise<StoredObject & { contentHash: string }> {
   const datePartition = new Date().toISOString().slice(0, 10)
@@ -73,6 +75,7 @@ export async function storeObjectFromPath(
   const resolvedFileName = options?.fileName?.trim() || file.originalname
   const ext = path.extname(resolvedFileName)
   const key = `${bucket}/${datePartition}/${randomUUID()}${ext}`
+  options?.beforeStore?.(key)
   const root = getStorageRoot()
   const fullPath = path.join(root, key)
   await mkdir(path.dirname(fullPath), { recursive: true })
@@ -98,21 +101,10 @@ export async function storeObjectFromPath(
 }
 
 // 只允许回收证据桶里的上传原件，知识库文件不在此列。
-const DELETABLE_OBJECT_KEY = /^evidence\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9._-]+$/
-
-export async function deleteObject(key: string) {
-  const normalizedKey = key.replace(/\\/g, '/').replace(/^\/+/, '')
-  if (!DELETABLE_OBJECT_KEY.test(normalizedKey)) {
+export function deleteObject(key: string) {
+  const normalizedKey = evidenceObjectKey(key)
+  if (!normalizedKey) {
     throw new Error('存储对象 key 不合法，无法删除。')
   }
-
-  const root = getStorageRoot()
-  const fullPath = path.join(root, normalizedKey)
-  // 二次校验绝对路径仍在存储根目录内，避免 key 越界删除其它文件。
-  const relative = path.relative(root, fullPath)
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('存储对象路径越界，无法删除。')
-  }
-
-  await rm(fullPath, { force: true })
+  removeManagedFile(getStorageRoot(), normalizedKey)
 }

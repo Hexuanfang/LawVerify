@@ -102,7 +102,7 @@ class Parser:
             result["pages"] = 1
             result["warnings"].append("GIF 仅识别首帧")
         else:
-            return self.parse_visual_document(path, mode, result)
+            return self.parse_visual_document(path, mode, result, file_name)
         if len(result["text"]) + len(result.get("html", "")) > 8_000_000:
             raise ValueError("解析正文超过安全处理上限，请拆分材料")
         if not result["text"].strip():
@@ -111,7 +111,7 @@ class Parser:
         return result
 
 
-    def parse_visual_document(self, path, mode, result):
+    def parse_visual_document(self, path, mode, result, file_name=None):
         if path.suffix.lower() == ".pdf":
             import pypdfium2
             document = pypdfium2.PdfDocument(path)
@@ -125,7 +125,7 @@ class Parser:
                 if source.width * source.height > 100_000_000:
                     raise ValueError("图片像素过大，请拆分后解析")
                 image = ImageOps.exif_transpose(source).convert("RGB")
-                chat = analyze_chat(image, path.name, self.ocr, mode) if mode != "document" else None
+                chat = analyze_chat(image, file_name or path.name, self.ocr, mode) if mode != "document" else None
             if chat is not None:
                 result["chat"] = chat
                 result["pages"] = 1

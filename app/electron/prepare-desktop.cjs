@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { prepareDefaultLawLibrary } = require('./prepare-default-law-library.cjs')
+const { loadReleaseEndpoints } = require('./release-endpoints.cjs')
 const { prepareParserResources } = require('./parser-resources.cjs')
 
 const appRoot = path.resolve(__dirname, '..')
@@ -10,7 +11,6 @@ const serverDistSource = path.join(serverRoot, 'dist')
 const migrationsSource = path.join(serverRoot, 'migrations')
 const desktopServerRoot = path.join(desktopRoot, 'server')
 const desktopServerEnvTarget = path.join(desktopServerRoot, '.env.local')
-const OFFICIAL_PLATFORM_BASE_URL = 'https://lawverify.zhijing.fun'
 
 function ensureExists(targetPath, label) {
   if (!fs.existsSync(targetPath)) {
@@ -25,12 +25,15 @@ function copyDirectory(from, to) {
 
 
 async function main() {
+  const { loginBaseUrl } = loadReleaseEndpoints()
   ensureExists(serverDistSource, '服务端构建目录')
 
   fs.rmSync(desktopRoot, { recursive: true, force: true })
   fs.mkdirSync(desktopServerRoot, { recursive: true })
   copyDirectory(serverDistSource, path.join(desktopServerRoot, 'dist'))
-  prepareParserResources(serverRoot, desktopServerRoot)
+  prepareParserResources(serverRoot, path.join(desktopRoot, 'parser'), {
+    arch: process.platform === 'win32' ? 'x64' : undefined,
+  })
 
   if (fs.existsSync(migrationsSource)) {
     copyDirectory(migrationsSource, path.join(desktopServerRoot, 'migrations'))
@@ -41,7 +44,7 @@ async function main() {
   // DEBUG_EVENT_URL 的注释并重启客户端；保持注释则不发送任何调试请求。
   fs.writeFileSync(desktopServerEnvTarget, [
     'KNOWLEDGE_RAG_MODE=local', 'AI_GATEWAY_MODE=cloud', 'LLM_TIMEOUT_MS=120000',
-    'EMBEDDING_DIMENSION=1024', `CLOUD_API_BASE_URL=${OFFICIAL_PLATFORM_BASE_URL}`,
+    'EMBEDDING_DIMENSION=1024', `CLOUD_API_BASE_URL=${loginBaseUrl}`,
     '# Debug event endpoint; leave empty to disable debug reporting.', '# DEBUG_EVENT_URL=http://127.0.0.1:7777/event', '',
   ].join('\n'), 'utf8')
 

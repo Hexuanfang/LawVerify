@@ -1506,6 +1506,10 @@ function AuthPage({
               <input name="organizationName" placeholder="例如：北京市某某律师事务所" required minLength={2} autoComplete="organization" />
             </label>
             <label>
+              姓名或昵称
+              <input name="ownerName" placeholder="请输入姓名或昵称" required minLength={2} autoComplete="name" />
+            </label>
+            <label>
               邀请码（选填）
               <input name="inviteCode" maxLength={16} defaultValue={new URLSearchParams(window.location.search).get('invite') ?? ''} />
             </label>
@@ -3726,12 +3730,18 @@ export default function App() {
   }
 
   async function handleRegister(formData: FormData) {
+    const ownerName = String(formData.get('ownerName') ?? '').trim()
+    if (ownerName.length < 2) {
+      setAuthError('请输入姓名或昵称（至少 2 个字符）。')
+      return
+    }
     setAuthBusy(true)
     setAuthError('')
 
     try {
       const result = await api.register({
         organizationName: String(formData.get('organizationName') ?? ''),
+        ownerName,
         email: String(formData.get('email') ?? ''),
         password: String(formData.get('password') ?? ''),
         inviteCode: String(formData.get('inviteCode') ?? '').trim() || undefined,

@@ -260,6 +260,8 @@ npm --prefix app run verify:signature
 
 产物位于 `app/release/`，安装包名为 `LawVerify-Setup-<version>.exe`。根目录构建脚本使用当前版本，不自动升级版本号。
 
+Windows 和 macOS 安装包内置 Python 与 MinerU 模型。应用启动后在后台准备本机解析进程，材料原件在本机解析。登录地址通过 [`app/electron/release-endpoints.json`](app/electron/release-endpoints.json) 配置。[解析资源准备](python-workers/README.md#桌面打包)
+
 若 `app/release` 被编辑器或杀软进程占用（表现为打包时报 `EBUSY`），构建脚本会自动改用临时输出目录 `app/release-temp` 完成打包，再把产物同步回 `app/release/`；关闭占用程序后重新打包即可恢复标准输出目录。
 
 内置法律库使用真实向量缓存，构建时校验原件指纹并复用匹配结果；法律原件变更后需配置可用 Embedding API 重新生成并导出缓存，可能产生费用，不可用空库或关键词索引替代。商业发行前必须实际验证签名。当前默认构建不签名（`signExecutable=false`，但仍会写入应用图标与版本信息），`-Signed` 缺少证书时直接失败；有效签名不保证完全消除 SmartScreen 提示。

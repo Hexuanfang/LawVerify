@@ -150,7 +150,13 @@ if ($useTempOutput) {
     Write-Host ("Files that could not be copied: {0}" -f ($failedFiles -join ', ')) -ForegroundColor Yellow
     Write-Host 'Close the program locking the release folder and run the build again.' -ForegroundColor Yellow
   }
-  Remove-Item -LiteralPath $tempReleaseRoot -Recurse -Force -ErrorAction SilentlyContinue
+  if ($failedFiles.Count -eq 0) {
+    $resolvedTempRoot = [IO.Path]::GetFullPath($tempReleaseRoot)
+    if ($resolvedTempRoot -ne [IO.Path]::GetFullPath((Join-Path $appRoot 'release-temp'))) {
+      throw "Unexpected temporary output directory: $resolvedTempRoot"
+    }
+    Remove-Item -LiteralPath $resolvedTempRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 $duration = (Get-Date) - $startedAt
@@ -167,10 +173,25 @@ if (-not (Test-Path $artifactPath)) {
 
 $artifact = Get-Item $artifactPath
 
+# 安装包校验文件：与云端下载接口保持同一格式（哈希 + 两个空格 + 文件名），
+# 构建后自动重建，避免发布时拿到与产物不匹配的旧校验值。
+$checksumPath = $null
+if (-not $Dir) {
+  $checksumPath = "$artifactPath.sha256"
+  $checksum = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  # Windows PowerShell 5.1 的 -Encoding UTF8 会写入 BOM，导致校验文件不可用，这里显式使用无 BOM 编码。
+  $checksumText = "$checksum  $($artifact.Name)`n"
+  [System.IO.File]::WriteAllText($checksumPath, $checksumText, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 Write-Host ''
 Write-Host '== Build Complete ==' -ForegroundColor Green
 Write-Host "Artifact: $($artifact.FullName)"
 Write-Host ("Size: {0:N2} MB" -f ($artifact.Length / 1MB))
+if ($checksumPath) {
+  Write-Host "SHA256: $checksum"
+  Write-Host "Checksum: $checksumPath"
+}
 Write-Host "Elapsed: $([int][Math]::Round($duration.TotalMinutes, 0)) min $($duration.Seconds) sec"
 Write-Host ''
 Write-Host 'Minimal reusable actions:'

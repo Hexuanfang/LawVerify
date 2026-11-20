@@ -15,8 +15,7 @@ import { issueParserTicket } from '../parser-ticket.js'
 
 const registerSchema = z.object({
   organizationName: z.string().min(2, '机构名称至少 2 个字。'),
-  // 负责人姓名已从注册表单移除；旧客户端仍会传入，非空时照旧保存。
-  ownerName: z.string().trim().min(2, '负责人姓名至少 2 个字。').optional(),
+  ownerName: z.string().trim().min(2, '姓名或昵称至少 2 个字符。').optional(),
   email: z.string().trim().min(1, '请输入邮箱或管理员账号标识。')
     .refine(isAllowedRegistrationEmail, '请输入正确的邮箱地址，或使用管理员账号标识。'),
   password: z.string().min(6, '密码至少 6 位。'),

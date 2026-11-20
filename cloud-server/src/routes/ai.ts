@@ -11,7 +11,7 @@ import { beginAiRequest, updateAiRequest } from '../ai-request-store.js'
 import { requestChatProvider } from '../integrations/chat-provider.js'
 
 const pending = new Map<string, number>()
-const mcpSessions = new Map<string, string>()
+const mcpSessions = new Map<string, string[]>()
 const text = z.string().max(150000)
 const image = z.string().max(18000000).regex(/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$/)
 const message = z.object({
@@ -206,23 +206,28 @@ aiRouter.post('/mcp/:provider', async (request, response) => {
   }).parse(request.body)
   const allowedTools = ['search_case', 'search_case_keyword', 'yuandian_semantic_search_cases',
     'yuandian_case_vector_search__v2', 'yuandian_rh_qwal_search__v3', 'yuandian_search_authoritative_cases']
+  if (provider === 'yuandian') allowedTools.push('yuandian_semantic_search_legal_articles', 'yuandian_search_legal_articles',
+    'yuandian_get_legal_article_detail', 'yuandian_search_judicial_cases', 'yuandian_get_case_detail')
   if (rpc.method === 'tools/call' && !allowedTools.includes(String(rpc.params?.name ?? ''))) {
-    throw new AppError('仅允许案例检索操作。', 403, 'MCP_TOOL_FORBIDDEN')
+    throw new AppError('仅允许已配置的法源检索和详情操作。', 403, 'MCP_TOOL_FORBIDDEN')
   }
   const credentials = {
     yuandian: [config.YUANDIAN_MCP_URL, config.YUANDIAN_API_KEY],
     wk: [config.WK_MCP_URL, config.WK_API_KEY], pkulaw: [config.PKULAW_MCP_URL, config.PKULAW_API_KEY],
   }[provider]
-  if (!credentials[0] || !credentials[1]) throw new AppError('案例检索服务未配置。', 503, 'MCP_NOT_CONFIGURED')
+  if (!credentials[0] || !credentials[1]) throw new AppError('法源检索服务未配置。', 503, 'MCP_NOT_CONFIGURED')
   await billedAiRequest(request.actor!, 'case_reference', async () => {
     const headers: Record<string, string> = { Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2024-11-05' }
     const sessionKey = `${request.actor!.organizationId}:${request.actor!.userId}:${provider}`
-    const session = mcpSessions.get(sessionKey)
-    if (session) headers['Mcp-Session-Id'] = session
+    const sessions = mcpSessions.get(sessionKey) ?? []
+    const requestedSession = request.header('mcp-session-id')
+    const session = requestedSession ? sessions.find(value => value === requestedSession) : sessions.at(-1)
+    if (rpc.method !== 'initialize' && session) headers['Mcp-Session-Id'] = session
     const result = await upstream(credentials[0]!, credentials[1]!, rpc, headers)
     const sessionId = result.headers.get('mcp-session-id')
     if (sessionId) {
-      mcpSessions.set(sessionKey, sessionId)
+      const current = mcpSessions.get(sessionKey) ?? []
+      mcpSessions.set(sessionKey, [...current.filter(value => value !== sessionId), sessionId].slice(-8))
       response.setHeader('mcp-session-id', sessionId)
     }
     const contentType = result.headers.get('content-type') || 'application/json'

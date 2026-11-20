@@ -8,6 +8,9 @@ export default defineConfig({
     allowedHosts: ['lawverify.zhijing.fun', 'lawagent.zhijing.fun'],
     port: 4273,
     strictPort: true,
+    proxy: {
+      '/api': 'http://127.0.0.1:8788',
+    },
   },
   preview: {
     host: '0.0.0.0',

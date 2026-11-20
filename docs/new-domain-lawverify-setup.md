@@ -107,7 +107,7 @@ docker exec diagnosis-test-web-1 nginx -s reload
 
 ### 7. 更新云端环境变量
 
-`/opt/lawverify/deploy/.env`：
+`/opt/lawverify/deploy/cloud-server/.env`：
 
 ```dotenv
 CLOUD_WEB_ORIGIN=https://lawverify.zhijing.fun,https://lawagent.zhijing.fun
@@ -119,19 +119,16 @@ CLOUD_PUBLIC_BASE_URL=https://lawverify.zhijing.fun
 
 ```bash
 cd /opt/lawverify/deploy
-docker compose up -d --force-recreate cloud-server
+docker compose --project-directory . --env-file cloud-server/.env -f cloud-server/compose.yml up -d --force-recreate cloud-server
 ```
 
 ### 8. 部署本次仓库改动
 
 仓库侧改动涉及 `web`（官网链接、canonical、sitemap）与 `cloud-server`（`config.ts` 默认值）。
-`web` 镜像需要在 `/opt/lawverify/deploy` 目录用最新代码重新构建（构建参数 `VITE_SITE_URL` 来自同目录 `.env`，
-该值若非空会覆盖代码里的官网域名，请设为空或 `https://lawverify.zhijing.fun`）：
+`web` 镜像在发布端构建，构建参数 `VITE_SITE_URL` 来自 `deploy/web/.env.build`，请设为空或 `https://lawverify.zhijing.fun`。在发布端执行以下命令。
 
 ```bash
-cd /opt/lawverify/deploy
-docker compose build web
-docker compose up -d web
+./deploy/deploy.sh --host user@host web
 ```
 
 或使用仓库自带的发布脚本（`scripts/deploy-platform-release.ps1`，会构建 web + cloud-server 并上传）：

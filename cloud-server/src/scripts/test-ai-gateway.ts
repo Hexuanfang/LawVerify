@@ -146,6 +146,14 @@ try {
   assert.equal(mcp.status, 200)
   assert.match(mcp.headers.get('content-type')!, /application\/json/)
   assert.deepEqual((await mcp.json() as { result: unknown }).result, {})
+  const callMcp = (provider: string, name: string) => request(`mcp/${provider}`, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } })
+  for (const name of ['yuandian_get_legal_article_detail', 'yuandian_get_case_detail', 'yuandian_search_judicial_cases']) {
+    assert.equal((await callMcp('yuandian', name)).status, 200)
+  }
+  const beforeBlockedTools = upstreamCalls
+  assert.equal((await callMcp('pkulaw', 'yuandian_get_case_detail')).status, 403)
+  assert.equal((await callMcp('yuandian', 'yuandian_authorize_cli')).status, 403)
+  assert.equal(upstreamCalls, beforeBlockedTools)
   assert.equal((await request('chat/completions', { messages: [{ role: 'user', content: [
     { type: 'image_url', image_url: { url: 'http://127.0.0.1/private' } },
   ] }] })).status >= 400, true)

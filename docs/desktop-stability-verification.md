@@ -52,6 +52,8 @@
 
 ## 复验命令
 
+上文为 2026-10-28 的历史验收记录。当前桌面版已移除旧页面；`test:layout` 检查新版登录、工作台、助手切换和 Word 导出，`test:stability` 保留服务监督器、草稿存储、解析和预览等回归，不再运行旧编辑器或旧证据列表用例。
+
 在 `server` 目录：
 
 ```powershell
@@ -82,6 +84,41 @@ Remove-Item Env:LAWVERIFY_SOAK_MINUTES
 ```
 
 测试程序临时使用 8787/18787，需要先停止占用对应端口的开发或桌面服务；测试结束关闭临时服务，不启动额外 5173 预览。
+
+## Windows 完整 Electron 套件启动失败
+
+Codex 受限进程中，Electron 44.4.2 主进程可启动，但 GPU 子进程返回 `-1073741515`（`0xC0000135`），渲染进程同时报告 `launch-failed`，页面加载报 `ERR_FAILED (-2)`。用同一个二进制加载内联 HTML 也能复现，排除了 LawVerify 页面和 Express 服务；关闭 GPU、禁用软件光栅化或切换 SwiftShader 仍复现。仅允许在 Windows 桌面环境启动探针后，内联 HTML 渲染通过。对照验证定位到受限进程环境，具体受影响的 DLL 或启动资源尚未定位。
+
+**完整套件使用登录态 Windows 桌面 PowerShell 执行。** Codex 中遇到上述组合错误，可在受限环境完成单测、类型检查和编译，再将仅本地的 Electron 测试命令交给桌面执行环境。套件已有 `app.disableHardwareAcceleration()`。若桌面环境下的最小窗口也失败，先用 Windows 应用程序事件日志或 Process Monitor 检查失败的 Electron 子进程及其 DLL 加载，再按查到的组件修复 Electron 安装或对应运行库。
+
+在项目根目录执行以下命令。服务端和前端构建使用独立目录。需要解析材料的套件使用回环测试服务，并通过环境变量提供 `PARSER_SERVICE_TOKEN`。生产环境见 [云端 Python 解析服务部署](deployment-parser.md)。
+
+```powershell
+node --version
+$env:APP_RUNTIME_ROOT = (Resolve-Path server).Path
+$env:PARSER_SERVICE_URL = 'http://127.0.0.1:8790'
+$env:LAWVERIFY_REDESIGN_SERVER_DIST = Join-Path $env:APP_RUNTIME_ROOT 'tmp/v12-verification-loopback-dist'
+$env:LAWVERIFY_REDESIGN_FRONTEND_DIST = Join-Path (Resolve-Path app).Path 'tmp/v12-verification-current-dist'
+if ((Test-Path 'server/tmp/.env') -or (Test-Path 'server/tmp/.env.local')) {
+  throw '隔离构建目录存在环境配置'
+}
+Remove-Item Env:DATABASE_URL, Env:CLOUD_API_BASE_URL -ErrorAction SilentlyContinue
+Remove-Item Env:LAWVERIFY_REDESIGN_LAYOUT_ONLY, Env:LAWVERIFY_REDESIGN_EDITOR_ONLY, Env:LAWVERIFY_REDESIGN_EXPORT_ONLY, Env:LAWVERIFY_REDESIGN_ASSISTANT_ONLY -ErrorAction SilentlyContinue
+node ./server/node_modules/typescript/bin/tsc -p server/tsconfig.json --outDir $env:LAWVERIFY_REDESIGN_SERVER_DIST
+if ($LASTEXITCODE -ne 0) { throw '服务端编译失败' }
+Push-Location app
+try {
+  node ./node_modules/vite/bin/vite.js build --outDir $env:LAWVERIFY_REDESIGN_FRONTEND_DIST
+  if ($LASTEXITCODE -ne 0) { throw '前端构建失败' }
+} finally {
+  Pop-Location
+}
+npm.cmd --prefix app run test:redesign
+```
+
+验收以退出码 0、前置单测全部通过和 `PASS redesign UI` 为准。页面能打开但后续失败时，按第一条套件断言排查。材料解析超时时，检查 `PARSER_SERVICE_URL`、调试凭据和解析服务的 `/health`。
+
+2026-11-20 使用独立构建和本机回环解析服务在 Windows 桌面复跑，前置 50 项及完整 Electron 均通过，退出码 0。[完整日志](../tmp/lawverify-v12-redesign-native-current.log) · [验收结果](../app/tmp/redesign-qa-1795146699476/result.json)
 
 ## 数据与恢复边界
 

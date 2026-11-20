@@ -16,6 +16,12 @@ import {
   WidthType,
 } from 'docx'
 import type { CertificateExportContext } from './export-context'
+import type { AppState, Certificate } from './types'
+import { requireWordExportSnapshot } from './redesign/workflow'
+import { STATUS_NAMES, type ReviewElement } from './redesign/model'
+import { readReviewAudits } from './redesign/review-audit-store'
+import { formatVerificationCalculation, VERIFICATION_ACTION_LABELS, verificationImpacts, verificationReportMetadata,
+  verifiedCaseMemory, verifiedDocumentDiagnostics } from './redesign/verificationMemory'
 import {
   buildDeclarationData,
   buildEvidenceCatalogRows,
@@ -34,22 +40,22 @@ const APPENDIX_TITLE_SIZE = 28
 // 表格里的内容比正文小一号，避免表格被撑破页面。
 const TABLE_SIZE = 20
 
+type WordExportContext = CertificateExportContext & {
+  reportSections?: Array<{ title: string; lines: string[] }>
+}
+
 // 简单的 HTML 解析器，用于提取富文本格式
-function parseHtmlToTextRuns(html: string): TextRun[] {
+type StyledSegment = { text: string; bold?: boolean; italic?: boolean; underline?: boolean }
+function parseHtmlSegments(html: string): StyledSegment[] {
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
 
-  const textRuns: TextRun[] = []
+  const segments: StyledSegment[] = []
 
   function traverse(node: Node, formatting: { bold?: boolean; italic?: boolean; underline?: boolean } = {}) {
     if (node.nodeType === Node.TEXT_NODE) {
       if (node.textContent) {
-        textRuns.push(new TextRun({
-          text: node.textContent,
-          bold: formatting.bold,
-          italics: formatting.italic,
-          underline: formatting.underline ? {} : undefined
-        }))
+        segments.push({ text: node.textContent, ...formatting })
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement
@@ -68,13 +74,67 @@ function parseHtmlToTextRuns(html: string): TextRun[] {
 
   doc.body.childNodes.forEach(child => traverse(child))
 
-  return textRuns.length > 0 ? textRuns : [new TextRun({ text: '' })]
+  return segments.length > 0 ? segments : [{ text: '' }]
+}
+
+const makeTextRun = (segment: StyledSegment, text = segment.text) => new TextRun({ text, bold: segment.bold, italics: segment.italic, underline: segment.underline ? {} : undefined })
+
+function anchoredParagraph(segments: StyledSegment[], marks: Array<{ id: number; start: number; end: number }>) {
+  const positions = [...new Set(marks.flatMap(mark => [mark.start, mark.end]))].sort((left, right) => left - right)
+  const children: Array<TextRun | CommentRangeStart | CommentRangeEnd> = []
+  let offset = 0
+  let nextPosition = 0
+  for (const segment of segments) {
+    const until = offset + segment.text.length
+    let cursor = offset
+    while (nextPosition < positions.length && positions[nextPosition] <= until) {
+      const position = positions[nextPosition++]
+      if (position > cursor) children.push(makeTextRun(segment, segment.text.slice(cursor - offset, position - offset)))
+      for (const mark of marks.filter(item => item.end === position)) children.push(new CommentRangeEnd(mark.id), new TextRun({ children: [new CommentReference(mark.id)] }))
+      for (const mark of marks.filter(item => item.start === position)) children.push(new CommentRangeStart(mark.id))
+      cursor = position
+    }
+    if (cursor < until) children.push(makeTextRun(segment, segment.text.slice(cursor - offset)))
+    offset = until
+  }
+  return children
 }
 
 function formatDateTime(date: Date) {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
     + `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+async function cleanReportSections(workspace: AppState, certificate: Certificate, elements: ReviewElement[]) {
+  const metadata = verificationReportMetadata(certificate)
+  const metadataLines = metadata ? [
+    `核验规则版本 ${metadata.profileVersion}`,
+    metadata.verifiedAt ? `核验时间 ${formatDateTime(new Date(metadata.verifiedAt))}` : '',
+    metadata.checkedAt > 0 ? `最近法源核对 ${formatDateTime(new Date(metadata.checkedAt))}` : '',
+    metadata.statuteVersions.length ? `法条版本 ${metadata.statuteVersions.join('、')}` : '',
+  ].filter(Boolean) : []
+  const impacts = verificationImpacts(certificate, elements).flatMap(({ source, target, check, outcome, reason }) => [
+    `${check} · ${STATUS_NAMES[outcome]} · ${reason}`,
+    source ? `依赖声明 · ${source.quote}` : '依赖声明已无法定位',
+    `受影响声明 · ${target.quote}`,
+  ])
+  const audits = (certificate.verification?.audit ?? []).flatMap(item => [
+    `${formatDateTime(new Date(item.at))} · ${item.actor} · ${VERIFICATION_ACTION_LABELS[item.action]}`,
+    item.quote ? `原文 · ${item.quote}${item.previousVerdict ? ` · ${STATUS_NAMES[item.previousVerdict]}` : ''}` : '',
+    item.note ?? '',
+    ...(item.sources ?? []).map(source => `出处 · ${[source.name, source.locator].filter(Boolean).join(' · ')}`),
+    item.affected?.length ? `涉及 ${item.affected.length} 项声明` : '',
+  ].filter(Boolean))
+  const account = sessionStorage.getItem('lawverify-login-account') || workspace.user.email
+  const localAudits = await readReviewAudits(account, certificate.id)
+    .then(items => items.map(item => `${formatDateTime(new Date(item.t))} · ${item.account} · ${item.msg}`))
+    .catch(() => ['本机人工操作记录暂无法读取。'])
+  return [
+    { title: '核验时间与版本', lines: metadataLines },
+    { title: '联动影响', lines: impacts },
+    { title: '人工操作与核验记录', lines: [...audits, ...localAudits] },
+  ].filter(section => section.lines.length > 0)
 }
 
 function buildStyles() {
@@ -132,7 +192,7 @@ function buildTable(headers: string[], rows: string[][]) {
   })
 }
 
-function createDocument(context: CertificateExportContext, useWordComments: boolean) {
+function createDocument(context: WordExportContext, useWordComments: boolean) {
   const certificate = context.certificate
   const paragraphs: Array<Paragraph | Table> = []
   const comments: Array<{
@@ -149,24 +209,30 @@ function createDocument(context: CertificateExportContext, useWordComments: bool
   }))
 
   certificate.paragraphs.forEach((paragraph, index) => {
-    const bodyChildren: TextRun[] = paragraph.richText
-      ? parseHtmlToTextRuns(paragraph.richText)
-      : [new TextRun({ text: paragraph.text })]
+    const segments = paragraph.richText && typeof DOMParser !== 'undefined'
+      ? parseHtmlSegments(paragraph.richText)
+      : [{ text: paragraph.text }]
+    const bodyChildren = segments.map(segment => makeTextRun(segment))
 
     const commentText = context.options.bodyAnnotations === false ? '' : buildParagraphComment(context, index)
 
     if (useWordComments && commentText) {
-      // Word 真批注：批注范围覆盖整段，右侧批注栏可见。
-      const commentId = comments.length
-      comments.push({
-        id: commentId,
-        author: 'LawVerify 核验',
-        initials: 'LV',
-        date: context.exportedAt ?? new Date(),
-        children: [new Paragraph({
-          children: [new TextRun({ text: commentText, size: 20 })],
-        })],
-      })
+      const addComment = (text: string) => {
+        const id = comments.length
+        comments.push({ id, author: 'LawVerify 核验', initials: 'LV', date: context.exportedAt ?? new Date(),
+          children: [new Paragraph({ children: [new TextRun({ text, size: 20 })] })] })
+        return id
+      }
+      const exact = segments.map(item => item.text).join('') === paragraph.text
+        ? (context.declarationComments?.get(paragraph.id) ?? []).filter(item => item.end > item.start && item.start >= 0
+          && item.end <= paragraph.text.length && paragraph.text.slice(item.start, item.end) === item.quote)
+        : []
+      if (exact.length) {
+        const marks = exact.map(item => ({ id: addComment(item.text), start: item.start, end: item.end }))
+        paragraphs.push(new Paragraph({ children: anchoredParagraph(segments, marks), spacing: { after: 200, line: 360 } }))
+        return
+      }
+      const commentId = addComment(commentText)
       paragraphs.push(new Paragraph({
         children: [
           new CommentRangeStart(commentId),
@@ -232,6 +298,22 @@ function createDocument(context: CertificateExportContext, useWordComments: bool
       ['段号', '段落首句', '句数', '核验状态', '已挂证据数', '法条引用数', '案例引用数', '批注摘要'],
       rows,
     ))
+    for (const [index, paragraph] of certificate.paragraphs.entries()) {
+      for (const entry of context.declarationComments?.get(paragraph.id) ?? []) {
+        paragraphs.push(new Paragraph({ children: [new TextRun(`第 ${index + 1} 段 · ${entry.text}`)] }))
+      }
+    }
+    for (const diagnostic of context.documentDiagnostics ?? []) {
+      const sources = diagnostic.sources.map(source => [source.name, source.locator].filter(Boolean).join(' · '))
+      paragraphs.push(new Paragraph({ children: [new TextRun(`文书级预警　${diagnostic.reason} ${sources.join('；')}`)] }))
+    }
+    for (const note of context.calculationNotes ?? []) {
+      paragraphs.push(new Paragraph({ children: [new TextRun(note)] }))
+    }
+    for (const { title, lines } of context.reportSections ?? []) {
+      paragraphs.push(new Paragraph({ children: [new TextRun({ text: title, bold: true })], keepNext: true, spacing: { before: 200 } }))
+      for (const line of lines) paragraphs.push(new Paragraph({ children: [new TextRun(line)] }))
+    }
   }
 
   if (context.options.declaration) {
@@ -348,7 +430,52 @@ export async function buildCertificateWordBytes(
   return { bytes: new Uint8Array(await blob.arrayBuffer()), usedComments }
 }
 
-export async function exportCertificateToWord(context: CertificateExportContext) {
+export async function exportCertificateToWord(workspace: AppState, certificateId: string,
+  options: Pick<CertificateExportContext, 'appVersion' | 'options'>) {
+  const { certificate, elements } = await requireWordExportSnapshot(workspace, certificateId)
+  const documentDiagnostics = verifiedDocumentDiagnostics(workspace, certificate)
+  const calculationNotes = verifiedCaseMemory(workspace, certificate.caseId, certificate.id).flatMap(item => {
+    if (!item.calculation) return []
+    const sources = (item.calculation.sources ?? item.sources).map(source => [source.name, source.locator].filter(Boolean).join(' · '))
+    return [`第 ${item.location.paragraphIndex + 1} 段金额复算　${formatVerificationCalculation(item.calculation)}。依据 ${sources.join('；')}`]
+  })
+  const notesByParagraph = new Map<string, string[]>()
+  const reviewedByParagraph = new Map<string, boolean>()
+  const declarationComments = new Map<string, Array<{ start: number; end: number; quote: string; text: string }>>()
+  for (const element of elements) {
+    const notes = notesByParagraph.get(element.paragraphId) ?? []
+    const summary = `${STATUS_NAMES[element.verdict]}：${element.quote}（${element.reason}）`
+    const sources = element.sources.map(source => [source.name, source.loc].filter(Boolean).join(' · '))
+    const text = [summary, ...sources, element.ignored && '律师已忽略此预警', element.note].filter(Boolean).join('；')
+    notes.push([summary, ...sources, element.ignored && '律师已忽略此预警', element.declaration?.review?.note].filter(Boolean).join('；'))
+    notesByParagraph.set(element.paragraphId, notes)
+    if (certificate.verification?.revision && element.declaration) {
+      reviewedByParagraph.set(element.paragraphId, (reviewedByParagraph.get(element.paragraphId) ?? true) && Boolean(element.verified || element.ignored))
+    }
+    const comments = declarationComments.get(element.paragraphId) ?? []
+    comments.push({ start: element.start, end: element.end, quote: element.quote, text })
+    declarationComments.set(element.paragraphId, comments)
+  }
+  const reportSections = options.options.bodyAnnotations === false && options.options.verificationRecord
+    ? await cleanReportSections(workspace, certificate, elements) : undefined
+  const context: WordExportContext = {
+    ...options,
+    declarationComments,
+    documentDiagnostics,
+    calculationNotes,
+    reportSections,
+    options: { ...options.options, verificationRecord: options.options.verificationRecord || documentDiagnostics.length > 0
+      || calculationNotes.length > 0 || elements.some(item => item.verdict === 'warn') },
+    certificate: { ...certificate, paragraphs: certificate.paragraphs.map(paragraph => ({
+      ...paragraph, verified: reviewedByParagraph.get(paragraph.id) ?? paragraph.verified,
+      note: [paragraph.note, ...(notesByParagraph.get(paragraph.id) ?? [])].filter(Boolean).join('\n'),
+    })) },
+    caseFolder: workspace.cases.find(item => item.id === certificate.caseId) ?? null,
+    evidences: workspace.evidences.filter(item => item.caseId === certificate.caseId),
+    roleLabel: certificate.role === 'defendant' ? '被告' : '原告',
+    operator: workspace.user.name || workspace.user.email,
+    exportedAt: new Date(),
+  }
   const { bytes, usedComments } = await buildCertificateWordBytes(context)
   const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

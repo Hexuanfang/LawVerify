@@ -22,6 +22,15 @@ export function draftKey(account: string, certificateId: string, paragraphId: st
   return JSON.stringify([account.trim().toLowerCase(), certificateId, paragraphId])
 }
 
+export function documentDraftKey(account: string, certificateId: string) {
+  return JSON.stringify(['lawverify-document', account.trim().toLowerCase(), certificateId])
+}
+
+export async function hasDocumentDraft(account: string, certificateId: string, paragraphs: { id: string }[]) {
+  if (await readDraft(documentDraftKey(account, certificateId))) return true
+  return (await Promise.all(paragraphs.map(item => readDraft(draftKey(account, certificateId, item.id))))).some(Boolean)
+}
+
 export async function readDraft(key: string): Promise<ParagraphDraft | undefined> {
   const db = await openDatabase()
   return new Promise((resolve, reject) => {
@@ -53,6 +62,24 @@ export async function removeDraft(key: string, revision: string) {
     request.onsuccess = () => {
       // An older network save must never discard a newer local edit.
       if (request.result?.revision === revision) store.delete(key)
+    }
+    transaction.oncomplete = () => resolve()
+    transaction.onabort = () => reject(transaction.error)
+    transaction.onerror = () => reject(transaction.error)
+  })
+}
+
+export async function removeCaseDrafts(account: string, certificateIds: readonly string[]) {
+  if (!certificateIds.length) return
+  const db = await openDatabase()
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('paragraphs', 'readwrite', { durability: 'strict' })
+    const store = transaction.objectStore('paragraphs')
+    for (const id of certificateIds) {
+      store.delete(documentDraftKey(account, id))
+      const prefix = JSON.stringify([account.trim().toLowerCase(), id]).slice(0, -1)
+      // 旧版逐段草稿的键以相同的账号和文书 ID 开头，后面是逗号及段落 ID。
+      store.delete(IDBKeyRange.bound(`${prefix},`, `${prefix}-`, false, true))
     }
     transaction.oncomplete = () => resolve()
     transaction.onabort = () => reject(transaction.error)

@@ -4,7 +4,6 @@ import { Button } from './components/ui/button'
 import { TooltipProvider } from './components/ui/tooltip'
 import { AppProvider, useApp } from './AppContext'
 import { Home, Dock } from './Home'
-import { DirectorySync } from './DirectorySync'
 import './shadcn.css'
 import './fonts.css'
 import './styles/global.css'
@@ -37,9 +36,9 @@ function Shell() {
       )
         return
       if (app.page !== 'ws') return
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'e') {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'e') {
         event.preventDefault()
-        void app.prepareDocument().then(saved => { if (saved) app.setPage('report') })
+        void app.prepareDocument().then(saved => { if (saved) { app.setAssistantRequest(null); app.setPage('report') } })
         return
       }
       if (
@@ -66,22 +65,13 @@ function Shell() {
   useEffect(() => {
     document.documentElement.removeAttribute('data-theme')
   }, [])
-  const switchLegacy = () => {
-    const url = new URL(location.href)
-    url.searchParams.set('ui', 'legacy')
-    location.assign(url.href)
-  }
   if (app.loading) return <StartupScreen />
   return (
     <div className="lawverify-redesign">
       <div className="chrome">
         <span className="title">LawVerify — 文书AI智能证据联动</span>
-        <Button variant="ghost" className="legacy-entry" disabled={app.busy} onClick={switchLegacy}>
-          旧版
-        </Button>
         <span className="ver">本地版 v{__APP_VERSION__}</span>
       </div>
-      <DirectorySync />
       {app.workspace ? (
         <>
           <Suspense fallback={<div className="boot-status" role="status">正在加载页面…</div>}>
@@ -95,7 +85,7 @@ function Shell() {
           <Suspense fallback={<div className="toast show" role="status">正在加载…</div>}>
             {app.uploadCase && <DirectoryLinksModal key={app.uploadCase} />}
             {app.documentCase && <UploadModal key={app.documentCase} />}
-            {app.form && <FormModal />}
+            {app.form && <FormModal key={`${app.form.tab}:${app.form.id ?? ''}`} />}
             {app.drawer && <PreviewDrawer />}
           </Suspense>
         </>

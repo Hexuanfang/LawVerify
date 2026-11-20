@@ -29,11 +29,11 @@
                     "verify:workspace":  "node electron/verify-workspace-sqlite.cjs",
                     "test:stability":  "node --test electron/test-service-supervisor.cjs \u0026\u0026 node electron/run-stability-tests.mjs",
                     "test:desktop-service":  "node electron/run-electron-test.cjs test-desktop-service.cjs",
-                    "test:layout":  "node electron/run-electron-test.cjs test-ide-layout.cjs",
+                    "test:layout":  "node electron/run-electron-test.cjs test-redesign.cjs --layout-only",
+                    "test:word-export": "node electron/run-electron-test.cjs test-redesign.cjs --export-only",
                     "test:cases":  "node electron/run-electron-test.cjs test-case-mutations.cjs",
-                    "test:agent-chat":  "node electron/run-electron-test.cjs test-agent-chat-switch.cjs",
                     "test:account":  "node --test electron/test-account-network.cjs \u0026\u0026 node electron/run-electron-test.cjs test-account-proxy.cjs",
-                    "test:redesign": "node --experimental-strip-types --test src/redesign/model.test.ts src/redesign/libraryRows.test.ts src/redesign/documentBilling.test.ts src/auth-transition.test.ts && node electron/run-electron-test.cjs test-redesign.cjs",
+                    "test:redesign": "node --experimental-strip-types --test src/redesign/model.test.ts src/redesign/libraryRows.test.ts src/redesign/documentBilling.test.ts src/redesign/verificationProgress.test.ts src/redesign/reviewOverview.test.ts src/redesign/verificationMemory.test.ts src/redesign/caseResearchReport.test.ts src/redesign/assistantIntent.test.ts src/auth-transition.test.ts && node electron/run-electron-test.cjs test-redesign.cjs",
                     "lint":  "oxlint",
                     "preview":  "vite preview",
                     "desktop":  "electron electron/main.cjs"
@@ -87,7 +87,6 @@
                             "wait-on":  "^9.1.0"
                         },
     "build":  {
-                  "asarUnpack": [".desktop/server/python/**", ".desktop/server/python-runtime/**", ".desktop/server/mineru-home/**"],
                   "appId":  "com.zhijing.lawverify",
                   "productName":  "LawVerify",
                   "compression":  "maximum",
@@ -99,14 +98,27 @@
                   "directories":  {
                                       "output":  "release"
                                   },
+                  "extraResources": [
+                                { "from": ".desktop/parser", "to": "parser" }
+                            ],
                   "files":  [
                                 "dist/**/*",
                                 "electron/**/*",
                                 ".desktop/server/.env.local",
-                                ".desktop/**/*",
+                                ".desktop/server/**/*",
+                                "!electron/parser-resources.cjs",
                                 "package.json"
                             ],
                   "win":  {
+                              "files": [
+                                  "dist/**/*", "electron/**/*", ".desktop/server/.env.local", ".desktop/server/**/*", "package.json",
+                                  "!electron/test-*", "!electron/redesign-*-checks.cjs",
+                                  "!electron/run-*", "!electron/*builder*.cjs", "!electron/build-*",
+                                  "!electron/prepare-*", "!electron/verify-*", "!electron/export-*",
+                                  "!electron/parser-resources.cjs", "!electron/*.ps1",
+                                  "!node_modules/{@tailwindcss,@radix-ui,radix-ui,lucide-react,tailwindcss,tailwind-merge,lightningcss,lightningcss-*,jiti,clsx,cn,class-variance-authority}/**/*",
+                                  "!node_modules/{pdf-parse,pdfjs-dist,@napi-rs/canvas,@napi-rs/canvas-*}/**/*"
+                              ],
                               "icon":  "build/icon.ico",
                               "signExecutable":  false,
                               "signtoolOptions":  {

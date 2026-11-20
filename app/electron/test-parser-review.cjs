@@ -8,7 +8,7 @@ const project = path.resolve(__dirname, '../..')
 const directory = fs.mkdtempSync(path.join(project, 'tmp/parser-review-ui-'))
 app.setPath('userData', path.join(directory, 'profile'))
 app.disableHardwareAcceleration()
-let server, window, closeWorkers
+let closeParser, server, window
 ipcMain.handle('parser-qa-account', () => ({ status: 200, body: JSON.stringify({ success: true,
   data: { user: { email: 'parser-ui@test.invalid', name: '测试律师' }, organization: { id: 'qa', role: 'member' } } }) }))
 const preload = path.join(directory, 'preload.cjs')
@@ -16,18 +16,17 @@ fs.writeFileSync(preload, "const {contextBridge,ipcRenderer}=require('electron')
 
 app.whenReady().then(async () => {
   try {
-    const build = path.join(project, 'server/.cache/mineru-build')
+    const build = process.env.LAWVERIFY_REDESIGN_SERVER_DIST ?? path.join(project, 'server/dist')
     const { env } = await import(pathToFileURL(path.join(build, 'config/env.js')).href)
+    const { useParserWorkerFixture } = await import(pathToFileURL(path.join(project, 'server/scripts/parser-test-fixtures.mjs')).href)
     Object.assign(env, { WORKSPACE_DATA_DIR: path.join(directory, 'data'), APP_DATA_ROOT: directory,
-      APP_RUNTIME_ROOT: path.join(project, 'server'), STORAGE_LOCAL_ROOT: 'storage',
+      STORAGE_LOCAL_ROOT: 'storage',
       FRONTEND_DIST_DIR: path.join(project, 'app/dist'), AI_GATEWAY_MODE: 'direct', KNOWLEDGE_RAG_MODE: 'local',
-      LAWVERIFY_PYTHON: path.join(project, 'server/python/.runtime/python.exe'),
-      LAWVERIFY_MINERU_HOME: path.join(project, 'server/python/.models'), PARSER_DEVICE: 'cpu',
       LLM_BASE_URL: '', LLM_API_KEY: '', LLM_MODEL: '' })
-    const { createParserFixtures } = await import(pathToFileURL(path.join(project, 'server/scripts/parser-test-fixtures.mjs')).href)
-    const samples = createParserFixtures(env.LAWVERIFY_PYTHON)
+    useParserWorkerFixture(env, directory)
+    closeParser = (await import(pathToFileURL(path.join(build, 'infrastructure/document-jobs.js')).href)).closeDocumentParser
     fs.mkdirSync(path.join(directory, 'storage'), { recursive: true })
-    fs.copyFileSync(path.join(samples, 'text.pdf'), path.join(directory, 'storage/source.pdf'))
+    fs.copyFileSync(path.join(project, 'server/eval/v2/assets/native-contract.pdf'), path.join(directory, 'storage/source.pdf'))
     const store = await import(pathToFileURL(path.join(build, 'store.js')).href)
     const parsing = await import(pathToFileURL(path.join(build, 'evidence-parsing.js')).href)
     const account = 'parser-ui@test.invalid'
@@ -38,14 +37,11 @@ app.whenReady().then(async () => {
       state.evidences = [{ id: 'qa-evidence', caseId: 'qa-case', type: 'pdf', name: '待审核合同', number: 'E01',
         fileName: 'source.pdf', storageKey: 'source.pdf', contentHash: 'qa', ocrText: '', uploadedAt: '2026-11-16' }]
       await store.writeWorkspace(state)
-      await parsing.ensureEvidenceParsed('qa-evidence')
-      const ready = await store.readWorkspace()
-      ready.evidences[0].parsing.status = 'review_required'
-      ready.evidences[0].parsing.warnings = ['请对照原件核对金额']
-      await store.writeWorkspace(ready)
+      const evidence = await parsing.ensureEvidenceParsed('qa-evidence')
+      assert.equal(evidence?.parsing?.status, 'review_required', evidence?.parsing?.error)
     })
+    await closeParser()
     const backend = await import(pathToFileURL(path.join(build, 'app.js')).href)
-    closeWorkers = backend.closeParsingWorkers
     server = backend.createApp().app.listen(0, '127.0.0.1')
     await new Promise(resolve => server.once('listening', resolve))
     const baseUrl = `http://127.0.0.1:${server.address().port}`
@@ -69,7 +65,13 @@ app.whenReady().then(async () => {
     await wait("document.querySelector('.case-card')")
     await evaluate("document.querySelector('.case-card').click()")
     await wait("document.querySelector('.mat-it')")
-    assert.match(await evaluate("document.querySelector('.mat-it').textContent"), /待人工审核/)
+    assert.equal(await evaluate("Boolean(document.querySelector('.mat-it svg[data-status=review_required]'))"), true, '待人工审核使用状态图标')
+    await evaluate("document.querySelector('.mat-it').focus()")
+    await wait("document.querySelector('[role=tooltip]')?.textContent.includes('待人工审核')")
+    await evaluate("document.querySelector('.mat-it').blur()")
+    await wait("!document.querySelector('[role=tooltip]')")
+    await evaluate("document.querySelector('.mat-it svg[data-status=review_required]').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }))")
+    await wait("document.querySelector('[role=tooltip]')?.textContent.includes('待人工审核')")
     await evaluate("document.querySelector('.mat-it').click()")
     await wait("document.querySelector('textarea[aria-label=\"待审核解析正文\"]')")
     assert.equal(await evaluate("document.querySelectorAll('.new-material-manage textarea').length"), 1, '解析审核只提供一个正文编辑入口')
@@ -78,6 +80,7 @@ app.whenReady().then(async () => {
     await evaluate(`(() => {const element=document.querySelector('textarea[aria-label="待审核解析正文"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(element,'人工审核补正文：金额1000元，尚未还款。');element.dispatchEvent(new Event('input',{bubbles:true}));})()`)
     await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='确认正文并继续理解').click()")
     await wait("document.body.textContent.includes('正文已经人工确认')")
+    await wait("document.querySelector('.mat-it svg[data-status=ready]')")
     await store.runWithWorkspaceAccount(account, async () => {
       const state = await store.readWorkspace()
       assert.equal(state.evidences[0].parsing.status, 'ready')
@@ -86,7 +89,6 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(directory, 'review-confirmed.png'), (await window.webContents.capturePage()).toPNG())
     fs.writeFileSync(path.join(directory, 'result.json'), JSON.stringify({ passed: true, directory }))
     console.log(`人工审核界面通过 ${directory}`)
-    await closeWorkers()
     window.destroy()
     server.close(() => app.exit(0))
   } catch (error) {
@@ -96,8 +98,8 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(directory, 'failure.png'), (await window.webContents.capturePage()).toPNG())
     }
     console.error(error)
-    if (closeWorkers) await closeWorkers()
     window?.destroy()
+    await closeParser?.()
     server?.close()
     app.exit(1)
   }

@@ -1,4 +1,5 @@
 import type { CaseFolder, Certificate, Evidence } from './types'
+import type { DocumentDiagnostic } from '../../server/src/intelligence/verification/protocol'
 
 /** 导出时可选的附录与批注开关 */
 export interface CertificateExportOptions {
@@ -23,6 +24,9 @@ export const DEFAULT_EXPORT_OPTIONS: CertificateExportOptions = {
 
 export interface CertificateExportContext {
   certificate: Certificate
+  declarationComments?: ReadonlyMap<string, Array<{ start: number; end: number; quote: string; text: string }>>
+  documentDiagnostics?: DocumentDiagnostic[]
+  calculationNotes?: string[]
   caseFolder: { id: string; name: string; status: CaseFolder['status'] } | null
   evidences: Array<Pick<Evidence, 'id' | 'number' | 'sourceNumber' | 'name' | 'fileName' | 'type' | 'pages' | 'relativePath'>>
   /** 代理角色：原告 / 被告 */

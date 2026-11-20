@@ -1,4 +1,5 @@
-import { ArrowRight, BookOpen, BriefcaseBusiness, ChevronDown, FileText, FolderOpen, Layers3, Plus, Scale, ShieldCheck } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowRight, BookOpen, BriefcaseBusiness, FileText, House, Pencil, Plus, Scale, Trash2 } from 'lucide-react'
 import { Button } from './components/ui/button'
 import {
   HoverCard,
@@ -6,7 +7,8 @@ import {
   HoverCardTrigger,
 } from './components/ui/hover-card'
 import { useApp, type LibTab } from './AppContext'
-import { counts } from './model'
+import { CaseDeleteDialog, type CaseDeleteTarget } from './CaseDeleteDialog'
+import { groupReview } from './reviewOverview'
 
 export function Brand({
   title = 'LawVerify',
@@ -28,133 +30,117 @@ export function Brand({
   )
 }
 
-export function Home() {
-  const app = useApp()
-  const steps = [
-    ['选案件、链接目录', '链接本地案件材料文件夹，自动同步合同、流水、聊天记录与判决书。'],
-    [
-      '选文书，点「AI 智能核验」',
-      '起诉状 / 答辩状 / 证据清单 / 质证意见 / 代理词 / 上诉状。',
-    ],
-    ['点高亮，看联动依据', '橙=原材料 · 蓝=法条 · 青=案例；红灯红底。'],
-    ['确认、修改、批注', '红灯必须人工处理；改声明可局部重核；操作留痕。'],
-    ['导出带批注 Word', '审阅版（红黄批注）或 清洁版 + 核验报告。⌘E'],
-  ]
-  const continueLast = () => {
-    let previous: { caseId?: string; docId?: string } = {}
-    try {
-      previous = JSON.parse(
-        localStorage.getItem(`lawverify-new-last:${app.workspace?.user.id}`) ||
-          '{}',
-      )
-    } catch {
-      /* 无有效历史时使用首个案件。 */
-    }
-    const target =
-      app.projects.find((item) => item.id === previous.caseId) ??
-      app.projects[0]
-    if (target) app.enter(target.id, previous.docId)
-    else app.setForm({ tab: 'proj' })
-  }
-  const documents = app.projects.reduce((sum, project) => sum + project.docs.length, 0)
-  const materials = app.projects.reduce((sum, project) => sum + project.mats.length, 0)
+export function BrandHome({ onHome }: { onHome: () => void }) {
   return (
-    <div className="page active" id="pg-home">
-      <div className="home">
-        <div className="home-in fade">
-          <header className="home-header">
-            <div className="home-identity">
-              <Brand size={34} />
-              <span className="home-product">文书证据核验工作台</span>
-            </div>
-            <Button className="btn home-create" onClick={() => app.setForm({ tab: 'proj' })}>
-              <Plus size={16} />新建核验案件
-            </Button>
-          </header>
-          <section className="home-welcome" aria-labelledby="home-heading">
-            <div>
-              <span className="home-eyebrow">案件工作空间</span>
-              <h1 id="home-heading">每一句主张，<em>有据可查。</em></h1>
-              <p>从文书到证据，让每一处事实、法条与案例的依据清晰可循。</p>
-            </div>
-            <div className="home-overview" aria-label="工作区概览">
-              {[
-                { label: '案件', value: app.projects.length, Icon: BriefcaseBusiness },
-                { label: '文书', value: documents, Icon: FileText },
-                { label: '材料', value: materials, Icon: Layers3 },
-              ].map(({ label, value, Icon }) => (
-                <div className="home-metric" key={label}>
-                  <span><Icon size={15} />{label}</span>
-                  <strong>{value}<small>{label === '案件' ? '个案件' : '份' + label}</small></strong>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="home-resume" aria-label="开始核验">
-            <div className="home-resume-icon"><ShieldCheck size={26} /></div>
-            <div className="home-resume-copy">
-              <h2>{app.projects.length ? '接着上次的工作，继续核验' : '从第一个案件，开始有据可查的核验'}</h2>
-              <p>{app.projects.length ? '回到案件，核对文书主张与原始材料，处理待审阅内容。' : '新建案件，链接材料目录并导入待核验文书，建立案件级证据关联。'}</p>
-            </div>
-            <Button className="btn home-resume-button" onClick={continueLast}>
-              {app.projects.length ? '继续上次核验' : '新建核验案件'}<ArrowRight size={16} />
-            </Button>
-          </section>
-          <section className="home-cases" aria-labelledby="home-cases-heading">
-            <div className="home-section-heading">
-              <div><h2 id="home-cases-heading">我的案件</h2><span>{app.projects.length} 个案件</span></div>
-              <span className="home-section-hint">选择案件，进入核验工作台</span>
-            </div>
-            <div className="case-grid">
-              {app.projects.map((project) => {
-                const total = counts(Object.values(project.els).flat())
-                return (
-                  <button type="button" key={project.id} className="case-card" onClick={() => app.enter(project.id)}>
-                    <div className="home-case-top">
-                      <span className="home-case-icon"><FolderOpen size={20} /></span>
-                      <span className="home-case-open">进入案件<ArrowRight size={14} /></span>
-                    </div>
-                    <div className="case-name">{project.name}</div>
-                    <div className="home-case-court">{project.court || '尚未填写法院信息'}</div>
-                    <div className="case-meta">
-                      <span><FileText size={13} />{project.docs.length} 份文书</span>
-                      <span><Layers3 size={13} />{project.mats.length} 份材料</span>
-                    </div>
-                    <div className="home-case-status" aria-label="核验状态汇总">
-                      {total.all ? <>
-                        <span><i className="color-pass" />通过 {total.pass}</span>
-                        <span><i className="color-warn" />预警 {total.warn}</span>
-                        <span><i className="color-fail" />不通过 / 缺源 {total.fail}</span>
-                      </> : <span>暂无核验记录</span>}
-                    </div>
-                    <div className="case-foot"><span>更新 {project.date}</span><span>查看详情 →</span></div>
-                  </button>
-                )
-              })}
-              <button type="button" className="case-card hint-new" onClick={() => app.setForm({ tab: 'proj' })}>
-                <span className="home-new-icon"><Plus size={23} /></span>
-                <b>新建核验案件</b>
-                <span>归集文书与材料，开始新的核验</span>
-              </button>
-            </div>
-          </section>
-          <details className="home-guide">
-            <summary><BookOpen size={17} /><b>第一次使用 LawVerify？</b><span>查看核验流程</span><ChevronDown size={16} /></summary>
-            <div className="home-guide-steps">
-              {steps.map(([title, text], index) => (
-                <div className="gstep" key={title}>
-                  <div className="gn">{index + 1}</div>
-                  <div><b>{title}</b><span>{text}</span></div>
-                </div>
-              ))}
-            </div>
-          </details>
-          <footer className="home-footer"><ShieldCheck size={14} />支持 PDF、Word 与图片材料<span>·</span>AI 核验结果需由律师审阅确认</footer>
-        </div>
-      </div>
+    <div className="brand-home">
+      <Brand />
+      <span className="brand-home-separator" aria-hidden="true">|</span>
+      <Button variant="ghost" size="icon" className="home-icon-button" aria-label="首页" title="首页" onClick={onHome}>
+        <House size={18} aria-hidden="true" />
+      </Button>
     </div>
   )
 }
+
+const steps = [
+  ['新建案件，选择任务', '选择 AI 核验已有文书或 AI 起草新文书。'],
+  ['备齐卷内材料', '链接本地材料目录，再导入待核验文书或设置代理立场。'],
+  ['处理待办，导出 Word', '对照原件、法条和类案核查文书，审阅后生成交付文件。'],
+]
+
+const samples = [
+  { name: '王某诉李某 · 民间借贷纠纷', quote: '被告于 2023 年 4 月 1 日支付利息 30,000 元。', source: '招商银行流水 · 2023 年 4 月 11 日收到 35,000 元。', status: '日期与金额冲突', action: '对照流水核实付款日期和利息金额后重核。' },
+  { name: '买卖合同纠纷', quote: '被告法定代表人亲自签收并组织验收。', source: '送货单与验收单 · 签收人为库管员刘某。', status: '签收人待复核', action: '核实签收人的身份及权限，并按原件修改文书。' },
+]
+
+export function Home() {
+  const app = useApp()
+  const { projects } = app
+  const [pendingDelete, setPendingDelete] = useState<CaseDeleteTarget | null>(null)
+  const pendingByCase = useMemo(() => new Map(projects.map(project => {
+    const { required, pending } = groupReview(Object.values(project.els).flat())
+    return [project.id, required.length + pending.length]
+  })), [projects])
+  const create = () => app.setForm({ tab: 'proj' })
+  let previous = { caseId: app.caseId, docId: app.docId }
+  try {
+    if (!previous.caseId) {
+      const saved = localStorage.getItem(`lawverify-new-last:${app.workspace?.user.id}`)
+      if (saved) previous = JSON.parse(saved) ?? previous
+    }
+  } catch {
+    // 历史记录不可用时仍可从案件列表进入。
+  }
+  const last = projects.find(project => project.id === previous.caseId)
+  return (
+    <div className="page active" id="pg-home">
+      <main className="home">
+        <div className="home-in fade mvp-home-page">
+          <header className="home-header">
+            <Brand size={30} />
+            <span>律师工作台</span>
+          </header>
+          <section className="home-intro">
+            <div>
+              <h1 id="home-heading">文书核验与起草</h1>
+              <p>逐句核验证据联动，按代理立场起草，跨文书复用案件记忆。</p>
+              <div className="home-intro-actions">
+                <Button className="btn btn-pri home-create" onClick={create}><Plus size={16} />新建案件</Button>
+                {last && <Button variant="ghost" onClick={() => app.enter(last.id, previous.docId)}>继续上次工作 <ArrowRight size={14} /></Button>}
+              </div>
+            </div>
+            <section className="home-steps" aria-labelledby="home-steps-title">
+              <h2 id="home-steps-title">如何开始</h2>
+              <ol>{steps.map(([title, description]) => <li key={title}><b>{title}</b><p>{description}</p></li>)}</ol>
+            </section>
+          </section>
+          <section aria-labelledby="home-cases-heading">
+            <div className="home-case-heading">
+              <h2 id="home-cases-heading">我的案件</h2><span>{projects.length} 件</span>
+            </div>
+            {projects.length ? (
+              <ul className="mvp-case-list">
+                {projects.map(project => {
+                  const todo = pendingByCase.get(project.id) ?? 0
+                  return <li key={project.id}>
+                    <span className="home-case-icon"><FileText size={17} aria-hidden="true" /></span>
+                    <div className="home-case-info">
+                      <div className="home-case-title">
+                        <button type="button" className="case-card case-name" title={project.name} onClick={() => app.enter(project.id)}>{project.name}</button>
+                        <Button type="button" variant="outline" size="sm" className="case-edit" title="编辑案件信息"
+                          aria-label={`编辑案件：${project.name}`} onClick={() => app.setForm({ tab: 'proj', id: project.id })}>
+                          <Pencil size={12} aria-hidden="true" />编辑
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" className="case-delete" title="删除案件"
+                          aria-label={`删除案件：${project.name}`} onClick={event => setPendingDelete({
+                            id: project.id, name: project.name, docs: project.docs, trigger: event.currentTarget,
+                          })}>
+                          <Trash2 size={12} aria-hidden="true" />删除
+                        </Button>
+                      </div>
+                      <small>{project.mats.length} 份材料 · {project.docs.length} 份文书</small>
+                    </div>
+                    {todo > 0 && <span className="home-case-pending">{todo} 项待处理</span>}
+                    <span className="home-case-open" aria-hidden="true"><span>进入工作台</span><ArrowRight size={15} /></span>
+                  </li>
+                })}
+              </ul>
+            ) : <p className="home-case-empty">暂无案件。点击「新建案件」开始。</p>}
+          </section>
+          <section className="home-samples" aria-labelledby="home-samples-heading">
+            <div className="home-case-heading"><h2 id="home-samples-heading">示例案件</h2><span>内置演示</span></div>
+            <div className="home-sample-list">{samples.map(sample => <details className="home-sample" key={sample.name}>
+              <summary><FileText size={16} aria-hidden="true" /><b>{sample.name}</b><span>体验示例</span></summary>
+              <div><b>{sample.status}</b><p>文书声明 · {sample.quote}</p><p>原材料 · {sample.source}</p><p>{sample.action}</p></div>
+            </details>)}</div>
+          </section>
+        </div>
+      </main>
+      <CaseDeleteDialog target={pendingDelete} onClose={() => setPendingDelete(null)} />
+    </div>
+  )
+}
+
 export function Dock() {
   const app = useApp()
   if (['proc', 'ws', 'report'].includes(app.page)) return null

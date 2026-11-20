@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 
-module.exports = async function checkEssential({ evaluate, wait, clickText, fill, screenshot, window, readWorkspace, writeWorkspace, runWithWorkspaceAccount, account, setAccountStatus }) {
+module.exports = async function checkEssential({ evaluate, wait, clickText, fill, screenshot, window, readWorkspace, writeWorkspace, runWithWorkspaceAccount, account, setAccountStatus, linkageMaterialFingerprint }) {
   const saved = async fn => runWithWorkspaceAccount(account, async () => fn(await readWorkspace()))
   const reload = async () => { await evaluate('location.reload()'); await wait("document.querySelector('#pg-home .case-name')") }
   const enter = async name => {
@@ -17,10 +17,17 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
     await clickText('[role=option]', text)
   }
   const uploadFile = async (label, name, content) => evaluate(`(() => {const input=document.querySelector('input[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');const dt=new DataTransfer();dt.items.add(new File([${JSON.stringify(content)}],${JSON.stringify(name)},{type:'text/plain'}));input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+  const selectLoanStatement = async () => {
+    const highlight = "Array.from(document.querySelectorAll('.whole-document-content [data-el]')).find(item => item.textContent.startsWith('借款已交付。'))"
+    await wait(highlight)
+    await evaluate(`${highlight}.click()`)
+    await wait("document.querySelector('.rc-q')?.textContent.startsWith('借款已交付。')")
+  }
   await saved(async state => {
     state.cases.push({ id: 'essential-case', name: '必要工作流测试', description: '', createdAt: '2026-11-15', status: 'in_review' })
-    state.evidences.push({ id: 'essential-ev', caseId: 'essential-case', name: '回归证据', fileName: '回归证据.txt', number: '证据2', type: 'text', ocrText: '借款已交付。尚未还款。', uploadedAt: '2026-11-15' })
-    state.certificates.push({ id: 'essential-doc', caseId: 'essential-case', title: '审阅测试文书', role: 'plaintiff', focus: '', createdAt: '2026-11-15', paragraphIds: ['essential-heading', 'essential-multi'], paragraphs: [
+    const evidence = { id: 'essential-ev', caseId: 'essential-case', name: '回归证据', fileName: '回归证据.txt', number: '证据2', type: 'text', ocrText: '借款已交付。尚未还款。', uploadedAt: '2026-11-15' }
+    state.evidences.push(evidence)
+    state.certificates.push({ id: 'essential-doc', caseId: 'essential-case', title: '审阅测试文书', role: 'plaintiff', focus: '', createdAt: '2026-11-15', linkageInputKey: linkageMaterialFingerprint([evidence], []), paragraphIds: ['essential-heading', 'essential-multi'], paragraphs: [
       { id: 'essential-heading', text: '审阅测试', richText: '<h2>审阅测试</h2>', verified: false },
       { id: 'essential-multi', text: '借款已交付。尚未还款。', richText: '<p>借款已交付。尚未还款。</p>', verified: false, links: [
         { evidenceId: 'essential-ev', locator: '第一句', quote: '借款已交付。', sentenceIndex: 0, sentenceText: '借款已交付。', relation: 'support' },
@@ -33,14 +40,15 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   })
   await reload(); await enter('必要工作流测试')
   assert.equal(await evaluate("Array.from(document.querySelectorAll('.case-review-bar button')).find(item=>item.textContent==='标记案件完成').disabled"), true)
-  await evaluate("document.querySelector('.mk').click()")
-  await clickText('.ops button', '确认通过')
+  await selectLoanStatement()
+  await clickText('.ops button', '确认整段')
   await wait("document.querySelector('.essential-confirm-list')")
   assert.equal(await evaluate("document.querySelectorAll('.essential-confirm-list li').length"), 2)
   await clickText('.fm-ft button', '取消')
   await saved(state => assert.equal(state.certificates.find(item => item.id === 'essential-doc').paragraphs[1].verified, false))
-  await clickText('.ops button', '确认通过'); await clickText('.fm-ft button', '已核对，确认整段')
+  await clickText('.ops button', '确认整段'); await clickText('.fm-ft button', '已核对，确认整段')
   await wait("!document.querySelector('.essential-confirm-list')")
+  await wait("document.querySelector('.audit')?.textContent.includes('律师确认整段全部声明')")
   await clickText('.case-review-bar button', '审阅清单')
   await wait("document.querySelector('.essential-review-dialog')")
   await evaluate("Array.from(document.querySelectorAll('.essential-review-dialog .essential-reference-item button')).find(item=>item.textContent==='已核对，确认本段').click()")
@@ -54,14 +62,14 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   await fill('.evidence-manage input', '已校正材料')
   await fill('.evidence-manage textarea', '借款已经交付。尚未还款。')
   await clickText('.evidence-manage-actions button', '保存修改')
-  await wait("document.querySelector('.mat-nm').textContent === '已校正材料'")
+  await wait("document.querySelector('.mat-nm').textContent === '证据2 · 已校正材料'")
   await saved(state => {
     assert.equal(state.evidences.find(item => item.id === 'essential-ev').ocrText, '借款已经交付。尚未还款。')
     assert.equal(state.certificates.find(item => item.id === 'essential-doc').paragraphs[1].verified, false)
     assert.equal(state.cases.find(item => item.id === 'essential-case').status, 'in_review')
   })
   await screenshot('material-manage'); await closeSheet()
-  await evaluate("document.querySelector('.mk').click()")
+  await selectLoanStatement()
   await clickText('.ops button', '管理引用'); await wait("document.querySelector('.essential-reference-dialog')")
   await fill('[aria-label="引用定位 材料 1"]', '第3页')
   await fill('[aria-label="引用原文 材料 1"]', '已校正引文')
@@ -72,7 +80,7 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   await clickText('.essential-reference-item button', '移除引用')
   await clickText('.fm-ft button', '保存引用'); await wait("!document.querySelector('.essential-reference-dialog')")
   await saved(state => { const p = state.certificates.find(item => item.id === 'essential-doc').paragraphs[1]; assert.equal(p.links.length, 0); assert.equal(p.link, undefined) })
-  await evaluate("document.querySelector('.mk').click()")
+  await selectLoanStatement()
   await clickText('.ops button', '管理引用'); await wait("document.querySelector('.essential-reference-dialog')")
   await choose('引用类型', '法条条文'); await choose('选择引用出处', '回归法条 第一条')
   await clickText('.essential-reference-dialog button', '添加到待保存引用')
@@ -96,13 +104,13 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   await wait("!document.querySelector('[data-slot=sheet-content]')")
   await saved(state => assert.ok(!state.evidences.some(item => item.id === 'essential-ev')))
 
-  await clickText('.topbar button', '首页'); await clickText('.home-header button', '新建核验案件')
+  await clickText('.topbar button', '首页'); await clickText('.home-intro-actions button', '新建案件')
   await wait("document.querySelector('#field-name')")
-  await fill('#field-name', '独立上传测试'); await clickText('.fm-ft button', '保存')
-  await wait("document.querySelector('.new-directory')")
-  await clickText('.new-directory button', '链接目录')
-  await wait("document.querySelector('[data-directory-files]') && !document.querySelector('.new-directory button:disabled')")
-  await clickText('.new-directory button', '完成')
+  await fill('#field-name', '独立上传测试'); await clickText('.fm-ft button', '下一步：添加文件')
+  await wait("document.querySelector('.case-files-material')")
+  await clickText('.case-files-material button', '链接目录')
+  await wait("document.querySelector('[data-directory-files]') && document.querySelector('.new-upload')?.getAttribute('aria-busy') === 'false'")
+  await clickText('.upload-actions button', '进入工作台')
   await wait("document.querySelector('#pg-ws .empty-doc')")
   await saved(state => { const c = state.cases.find(item => item.name === '独立上传测试'); assert.ok(state.evidences.some(item => item.caseId === c.id)); assert.ok(!state.certificates.some(item => item.caseId === c.id)) })
   await clickText('.add-doc', '导入待核验文书'); await wait("document.querySelector('.new-upload')")
@@ -110,21 +118,20 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   await clickText('.upload-actions button', '仅导入文书'); await wait("document.querySelector('.doc-paper') && !document.querySelector('.new-upload')")
   await saved(state => { const c = state.cases.find(item => item.name === '独立上传测试'); assert.ok(state.certificates.some(item => item.caseId === c.id)) })
 
-  await clickText('.topbar button', '首页'); await clickText('.home-header button', '新建核验案件')
+  await clickText('.topbar button', '首页'); await clickText('.home-intro-actions button', '新建案件')
   await wait("document.querySelector('#field-name')")
-  await fill('#field-name', '仅文书导入测试'); await clickText('.fm-ft button', '保存'); await wait("document.querySelector('.new-directory')")
-  await clickText('.new-directory button', '导入待核验文书'); await wait("document.querySelector('.new-upload')")
+  await fill('#field-name', '仅文书导入测试'); await clickText('.fm-ft button', '下一步：添加文件')
+  await wait("document.querySelector('.case-files-document')")
   await uploadFile('上传已撰写文书', '无材料文书.txt', '先导入文书，稍后再链接证据目录。')
   await clickText('.upload-actions button', '仅导入文书'); await wait("document.querySelector('#pg-ws') && !document.querySelector('.new-upload')")
   await saved(state => { const c = state.cases.find(item => item.name === '仅文书导入测试'); assert.ok(state.certificates.some(item => item.caseId === c.id)); assert.ok(!state.evidences.some(item => item.caseId === c.id)) })
   await evaluate("location.search='?ui=legacy'")
-  await wait("document.querySelector('.ide-shell')")
-  await screenshot('legacy-smoke')
-  await evaluate("location.search='?ui=new'"); await wait("document.querySelector('#pg-home')")
+  await wait("document.querySelector('#pg-home')")
+  assert.equal(await evaluate("Boolean(document.querySelector('.ide-shell, .legacy-entry'))"), false)
   await evaluate("document.querySelector('.dock-ava').click()")
   await wait("document.querySelector('.acct-card')")
   await clickText('.acct-card button', '退出登录'); await clickText('.fm-ft button', '确认退出')
-  await wait("document.querySelector('.login-card')")
+  await wait("document.querySelector('.lv-card')")
   assert.equal(await evaluate("sessionStorage.getItem('lawverify-auth-session')"), null)
   assert.equal(await evaluate("sessionStorage.getItem('lawverify-login-account')"), null)
   setAccountStatus(0)
@@ -134,7 +141,7 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   assert.equal(await evaluate("Boolean(sessionStorage.getItem('lawverify-auth-session'))"), true, '断网不应清空会话')
   setAccountStatus(401)
   await evaluate("dispatchEvent(new Event('focus'))")
-  await wait("document.querySelector('.login-card .inline-error')")
-  assert.match(await evaluate("document.querySelector('.inline-error').textContent"), /其他设备|失效/)
+  await wait("document.querySelector('.lv-error')")
+  assert.match(await evaluate("document.querySelector('.lv-error').textContent"), /其他设备|失效/)
   assert.equal(await evaluate("localStorage.getItem('lawverify-cloud-token')"), null)
 }

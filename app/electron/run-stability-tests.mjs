@@ -11,14 +11,11 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const temporary = mkdtempSync(path.join(os.tmpdir(), 'lawverify-stability-'))
 const docx = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('Word worker verification')] }] }))
 const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>LawVerify 稳定性回归</title>
-<style>body{margin:20px;font-family:sans-serif}.test-grid{display:grid;grid-template-columns:300px 1fr;gap:20px}
-#list{height:400px;display:flex}#editor{min-height:200px}.pdf-preview{height:350px}</style></head>
-<body><h1>稳定性回归</h1><div class="test-grid"><div id="list"></div><div id="editor"></div></div>
+<style>body{margin:20px;font-family:sans-serif}.pdf-preview{height:350px}</style></head>
+<body><h1>稳定性回归</h1>
 <div id="boundary"></div><div id="pdf"></div><script type="module">
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import {ParagraphRichEditor} from '/src/App.tsx';
-import {VirtualList} from '/src/VirtualList.tsx';
 import {PdfPreview} from '/src/PdfPreview.tsx';
 import {StabilityBoundary} from '/src/StabilityBoundary.tsx';
 import {draftKey,readDraft,writeDraft,removeDraft} from '/src/draft-store.ts';
@@ -27,21 +24,8 @@ import {readBoundedSource,boundedFetch} from '/src/bounded-fetch.ts';
 window.testFailures=[];
 window.addEventListener('unhandledrejection',event=>window.testFailures.push(String(event.reason)));
 const roots={};
-for(const id of ['editor','list','boundary','pdf']) roots[id]=createRoot(document.getElementById(id));
-const props={paragraph:{id:'paragraph',text:'Initial.',richText:'<p>Initial.</p>',verified:false,links:[],references:[]},
-account:'stability@test.invalid',certificateId:'certificate',editable:true,active:true,
-activeSentenceIndex:null,inlineReferences:[],onActivate(){},onActivateSentence(){},onRegisterEditor(editor){window.testEditor=editor},
-onEditorStateChange(){},onCommit:async patch=>{
-await new Promise(resolve=>setTimeout(resolve,200));window.commits.push(patch);return !window.failSave;
-}};
-window.commits=[];window.failSave=false;
-window.mountEditor=()=>roots.editor.render(React.createElement(ParagraphRichEditor,props));
-window.mountEditor();
-const items=Array.from({length:10000},(_,id)=>({id:String(id)}));
-roots.list.render(React.createElement(VirtualList,{items,itemKey:item=>item.id,estimateHeight:()=>60,
-renderItem:item=>React.createElement('div',{'data-row':item.id,style:{height:'60px'}},'材料 '+item.id)}));
+for(const id of ['boundary','pdf']) roots[id]=createRoot(document.getElementById(id));
 window.stabilityTests={draftKey,readDraft,writeDraft,removeDraft,importWordContent,readBoundedSource,boundedFetch,
-unmountEditor:()=>roots.editor.render(null),
 mountPdf:()=>roots.pdf.render(React.createElement(PdfPreview,{sourceUrl:'/__fixture.pdf',name:'PDF 回归'})),
 unmountPdf:()=>roots.pdf.render(null),
 throwBoundary:()=>{const Broken=()=>{throw new Error('Synthetic boundary test')};
@@ -75,10 +59,7 @@ const server = await createServer({
   server: { host: '127.0.0.1', port: 8787, strictPort: true, hmr: false, watch: null },
   optimizeDeps: {
     noDiscovery: true,
-    include: ['react', 'react-dom/client', 'qrcode', 'docx',
-      '@tiptap/react', '@tiptap/starter-kit', '@tiptap/core', '@tiptap/extension-text-align',
-      '@tiptap/extension-underline', '@tiptap/pm/model', '@tiptap/pm/state', '@tiptap/pm/view',
-      'pdfjs-dist', 'docx-preview', 'use-sync-external-store/shim', 'use-sync-external-store/shim/with-selector'],
+    include: ['react', 'react-dom/client', 'pdfjs-dist'],
   },
   plugins: [{
     name: 'stability-fixtures',

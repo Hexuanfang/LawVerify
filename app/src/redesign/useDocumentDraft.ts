@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { Certificate } from '../types'
-import { draftKey, readDraft, removeDraft, writeDraft, type ParagraphDraft } from '../draft-store'
+import { documentDraftKey, draftKey, readDraft, removeDraft, writeDraft, type ParagraphDraft } from '../draft-store'
 import { contentSnapshot, documentBlocks, documentHtml, type DocumentBlock } from './documentContent'
 
 type LegacyDraft = Pick<ParagraphDraft, 'key' | 'revision'>
@@ -10,7 +10,7 @@ type Recovery = { draft: ParagraphDraft; legacy: LegacyDraft[] }
 export function useDocumentDraft(certificate: Certificate,
   commit: (blocks: DocumentBlock[], expected: DocumentBlock[]) => Promise<DocumentBlock[]>) {
   const account = useRef(sessionStorage.getItem('lawverify-login-account') || '')
-  const key = JSON.stringify(['lawverify-document', account.current.trim().toLowerCase(), certificate.id])
+  const key = documentDraftKey(account.current, certificate.id)
   const base = useRef(contentSnapshot(certificate.paragraphs))
   const [initialHtml, setInitialHtml] = useState(() => documentHtml(certificate.paragraphs))
   const pending = useRef<ParagraphDraft | null>(null)

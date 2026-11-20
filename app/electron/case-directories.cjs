@@ -124,12 +124,12 @@ function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
     const metadata = await fs.stat(target)
     if (!metadata.isFile() || metadata.size > MAX_FILE_BYTES) throw new Error('材料格式或大小不受支持。')
     const metadataOnly = payload.hash?.startsWith('stat:')
-    if (metadataOnly && fingerprint(metadata) !== payload.hash) throw new Error('材料已变化，正在重新同步。')
+    if (metadataOnly && fingerprint(metadata) !== payload.hash) throw new Error('材料已变化，请重新同步。')
     const bytes = await fs.readFile(target)
     const after = await fs.stat(target)
     if (fingerprint(metadata) !== fingerprint(after)
       || !metadataOnly && createHash('sha256').update(bytes).digest('hex') !== payload.hash) {
-      throw new Error('材料已变化，正在重新同步。')
+      throw new Error('材料已变化，请重新同步。')
     }
     return new Uint8Array(bytes)
   })

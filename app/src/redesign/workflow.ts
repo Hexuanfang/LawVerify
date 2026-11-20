@@ -1,15 +1,47 @@
 import type { AppState, CertificateParagraph } from '../types'
-import { paragraphElements, statementRanges } from './model.ts'
+import { needsVerification, paragraphElements, statementRanges, type Verdict } from './model.ts'
+import { hasDocumentDraft } from '../draft-store.ts'
+
+export function blocksWordExport(verdict: Verdict) {
+  return verdict === 'fail' || verdict === 'miss' || verdict === 'pending'
+}
+
+export function wordExportReadiness(workspace: AppState, certificateId: string) {
+  const certificate = workspace.certificates.find(item => item.id === certificateId)
+  const elements = certificate?.paragraphs.flatMap(paragraph => paragraphElements(paragraph, workspace, certificateId)) ?? []
+  const blocking = elements.filter(item => blocksWordExport(item.verdict)).length
+  const reason = !certificate?.paragraphs.some(paragraph => paragraph.text.trim()) ? '没有可导出的正文。'
+    : needsVerification(workspace, certificateId) ? '当前正文或材料尚未完成核验，请先返回文书运行 AI 核验。'
+      : !elements.length ? '当前文书没有可用的核验结果。'
+        : blocking ? `还有 ${blocking} 项不通过、缺源或待核验，请处理后再导出。` : ''
+  return { certificate, elements, blocking, allowed: !reason, reason }
+}
+
+export async function requireWordExportSnapshot(workspace: AppState, certificateId: string) {
+  const { certificate, elements, allowed, reason } = wordExportReadiness(workspace, certificateId)
+  if (!certificate || !allowed) throw new Error(reason)
+  const account = sessionStorage.getItem('lawverify-login-account') || workspace.user.email
+  if (await hasDocumentDraft(account, certificateId, certificate.paragraphs)) {
+    throw new Error('文书有尚未保存的草稿，请返回工作台保存并重新核验。')
+  }
+  return { certificate, elements }
+}
 
 export function reviewReadiness(workspace: AppState, caseId: string, certificateId?: string) {
   const documents = workspace.certificates.filter(item => item.caseId === caseId && (!certificateId || item.id === certificateId))
-  const paragraphs = documents.flatMap(item => item.paragraphs).filter(paragraph => paragraph.text.trim())
-  const unreviewed = paragraphs.filter(item => !item.verified).length
-  const red = documents.flatMap(doc => doc.paragraphs.flatMap(paragraph => paragraphElements(paragraph, workspace, doc.id)))
-    .filter(item => item.verdict === 'fail' || item.verdict === 'miss').length
+  const paragraphs = documents.flatMap(doc => doc.paragraphs.filter(paragraph => paragraph.text.trim()).map(paragraph => {
+    const elements = paragraphElements(paragraph, workspace, doc.id)
+    const reviewed = doc.verification?.revision && elements.some(item => item.declaration)
+      ? elements.every(item => item.verified || item.ignored) : paragraph.verified
+    return { elements, reviewed }
+  }))
+  const unreviewed = paragraphs.filter(item => !item.reviewed).length
+  const elements = paragraphs.flatMap(item => item.elements)
+  const red = elements.filter(item => item.verdict === 'fail' || item.verdict === 'miss').length
   const empty = !documents.length || documents.some(doc => !doc.paragraphs.some(paragraph => paragraph.text.trim()))
   const pendingParsing = workspace.evidences.some(item => item.caseId === caseId && item.parsing && item.parsing.status !== 'ready')
-  return { total: paragraphs.length, unreviewed, red, ready: !empty && !unreviewed && !red && !pendingParsing }
+  return { total: paragraphs.length, unreviewed, red, ready: !empty && !unreviewed && !elements.some(item => blocksWordExport(item.verdict))
+    && !pendingParsing && !documents.some(item => item.verification?.dirty) }
 }
 
 export function reanchorParagraph(original: CertificateParagraph, text: string, richText: string): Partial<CertificateParagraph> {

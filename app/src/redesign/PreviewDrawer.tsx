@@ -56,12 +56,14 @@ export function PreviewDrawer() {
       item.id === source?.targetId ||
       item.articles.some((article) => article.id === source?.targetId),
   )
-  const article =
-    law?.articles.find((item) => item.id === source?.targetId) ||
-    law?.articles[0]
+  const article = law?.articles.find((item) => item.id === source?.targetId)
   const knowledgeCase = app.workspace?.knowledgeCases.find(
     (item) => item.id === source?.targetId || item.excerpts?.some(excerpt => excerpt.id === source?.targetId),
   )
+  const caseVerification = source?.st === 'l3'
+    ? app.elements.find(element => element.sources.includes(source))?.caseVerification
+    : undefined
+  const judgmentUrl = caseVerification?.documents?.find(item => item.id === source?.targetId)?.url
   const url = evidence ? getEvidenceSourceUrl(evidence.id) : ''
   return (
     <Sheet
@@ -78,7 +80,7 @@ export function PreviewDrawer() {
               ? 'L1 案件原材料'
               : source?.st === 'l2'
                 ? 'L2 法条 · 版本信息'
-                : 'L3 案例 · 全文'}{' '}
+                : caseVerification ? 'L3 案例 · 裁判原文摘录' : 'L3 案例 · 索引与摘要'}{' '}
             · {source?.loc}
           </SheetDescription>
         </SheetHeader>
@@ -129,11 +131,26 @@ export function PreviewDrawer() {
                   ｜ {law.effectiveDate} 施行
                 </div>
                 <div className="st-t">{law.title}</div>
-                <div className="st-n">{law.issuer}</div>
-                <div className="st-a">{article?.articleNumber}</div>
-                <div className="st-x hl">
-                  {article?.plainText || article?.content}
+                <div className="st-n">{[law.issuer, law.version].filter(Boolean).join(' · ')}</div>
+                {article ? <>
+                  <div className="st-a">{article.articleNumber}</div>
+                  <div className="st-x hl">{article.plainText || article.content || source?.quote}</div>
+                </> : <div className="st-x">{source?.quote || '可按具体条号检索原文。'}</div>}
+                {law.sourceUrl && /^https?:\/\//i.test(law.sourceUrl) &&
+                  <a className="source-file-actions" href={law.sourceUrl} target="_blank" rel="noreferrer">打开法规来源 ↗</a>}
+              </div>
+            ) : caseVerification ? (
+              <div className="pv-paper casepv">
+                <div className="st-t">{caseVerification.name || source?.name}</div>
+                <div className="four">
+                  <div><b>案号</b><span>{caseVerification.caseNumber}</span></div>
+                  <div><b>审理法院</b><span>{caseVerification.court || '待核对'}</span></div>
+                  <div><b>裁判日期</b><span>{caseVerification.judgmentDate || '待核对'}</span></div>
+                  <div><b>原文位置</b><span>{source?.loc || '待核对'}</span></div>
                 </div>
+                <div className="csq">{source?.quote}</div>
+                {judgmentUrl?.startsWith('https://') &&
+                  <a className="source-file-actions" href={judgmentUrl} target="_blank" rel="noreferrer">打开裁判原文 ↗</a>}
               </div>
             ) : knowledgeCase ? (
               <div className="pv-paper casepv">

@@ -1,38 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
-import { VoiceInputButton } from '../AssistantControls'
+import { api, type AssistantDraftPreview } from '../api'
 import { useApp } from './AppContext'
 import { Button } from './components/ui/button'
-import { Textarea } from './components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { runDocumentAction } from './documentBilling'
+import { rewriteAnchor, type RewriteAnchor } from './rewriteAnchor'
 import './document-assistant.css'
 
 type GeneratedDraft = { title: string; paragraphs: string[] }
 
-export function DocumentAssistant() {
+export function useDocumentAssistant(quote?: string) {
   const app = useApp()
   const caseId = app.project!.id
   const evidence = app.workspace!.evidences.filter(item => item.caseId === caseId)
+  const position = app.workspace!.cases.find(item => item.id === caseId)?.agent?.position
+  const draftRole = position?.confirmedAt && (position.role === 'plaintiff' || position.role === 'defendant') ? position.role : undefined
   const account = sessionStorage.getItem('lawverify-login-account')
   const session = sessionStorage.getItem('lawverify-auth-session')
   const token = localStorage.getItem('lawverify-cloud-token')
   const [mode, setMode] = useState<'generate' | 'rewrite'>('generate')
-  const [prompt, setPrompt] = useState('')
-  const [model, setModel] = useState('default')
-  const [models, setModels] = useState<Array<{ id: string; label: string }>>([])
-  const [selected, setSelected] = useState<string[]>(() => evidence.map(item => item.id))
   const [running, setRunning] = useState(false)
-  const [voiceBusy, setVoiceBusy] = useState(false)
-  const voiceDone = useRef<(() => void) | null>(null)
   const [draft, setDraft] = useState<GeneratedDraft | null>(null)
+  const [draftPreview, setDraftPreview] = useState<(AssistantDraftPreview & { targetId?: string }) | null>(null)
+  const [rewritePreview, setRewritePreview] = useState<{ target: RewriteAnchor; text: string; version: string }>()
+  const [recheckId, setRecheckId] = useState<string>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [unsaved, setUnsaved] = useState(false)
   const controller = useRef<AbortController | null>(null)
   const live = useRef(true)
   const pending = useRef<GeneratedDraft>({ title: '', paragraphs: [] })
   const active = useRef(false)
+  const rewriteTarget = rewriteAnchor(app.certificate, quote)
   const current = () => live.current &&
     account === sessionStorage.getItem('lawverify-login-account') &&
     session === sessionStorage.getItem('lawverify-auth-session') &&
@@ -40,67 +37,77 @@ export function DocumentAssistant() {
 
   useEffect(() => {
     live.current = true
-    let mounted = true
-    void api.assistantCapabilities().then(result => {
-      if (mounted) setModels(result.models)
-    }).catch(cause => {
-      if (mounted) setError(cause instanceof Error ? cause.message : '模型列表暂不可用')
-    })
-    return () => { mounted = false; live.current = false; controller.current?.abort(); voiceDone.current?.() }
+    return () => { live.current = false; controller.current?.abort() }
   }, [])
 
-  const savePartial = async () => {
-    const paragraphs = pending.current.paragraphs.filter(text => text.trim())
-    if (!paragraphs.length || !current()) return ''
-    const result = await api.importCertificate({
-      caseId,
-      title: `${pending.current.title || app.project!.name}（中断草稿）`,
-      sourceFileName: '生成中断草稿',
-      content: paragraphs.join('\n\n'),
-      paragraphs: paragraphs.map(text => ({ text })),
-    })
-    if (!current()) return ''
-    setUnsaved(false)
-    return result.certificate.id
+  const discardDraft = () => {
+    if (draftPreview) {
+      void api.discardAssistantCandidate(draftPreview.candidateId).catch(() => {})
+      void app.auditAssistantAction(draftPreview.targetId, '律师放弃 AI 起草候选')
+    }
+    setDraftPreview(null)
+    setDraft(null)
+    setNotice('已放弃候选。')
   }
-  const retryDraft = async () => {
-    let documentId = ''
-    if (await app.run(async () => { documentId = await savePartial() }, '已保存中断草稿')) {
-      if (documentId && current()) app.setCaseIdForUpload(caseId, documentId)
+  const adoptDraft = async () => {
+    if (!draftPreview || active.current || app.busy || !current()) return
+    active.current = true
+    try {
+      if (!await app.prepareDocument() || !current()) return
+      let documentId = ''
+      const ok = await app.run(async () => {
+        const result = await api.adoptAssistantCandidate(draftPreview.candidateId, { caseId, certificateId: draftPreview.targetId })
+        documentId = result.certificateId
+      }, '已保存草稿，新增声明待核验')
+      if (ok && documentId && current()) {
+        setDraftPreview(null)
+        setDraft(null)
+        setNotice('草稿已保存，新增声明待核验。')
+        app.setCaseIdForUpload(caseId, documentId)
+      }
+    } finally {
+      active.current = false
     }
   }
-  const start = async () => {
+  const start = async (mode: 'generate' | 'rewrite', prompt: string) => {
     if (active.current || app.busy) return
-    const evidenceIds = selected.filter(id => evidence.some(item => item.id === id))
+    const evidenceIds = evidence.map(item => item.id)
+    const instruction = [prompt.trim(), quote ? `当前文书选段：${quote}` : ''].filter(Boolean).join('\n\n')
     setError('')
     setNotice('')
-    if (mode === 'generate' && !evidenceIds.length) { setError('请勾选本次起草使用的材料'); return }
-    if (mode === 'rewrite' && (!app.certificate || !prompt.trim())) { setError('请先选择文书并填写改写要求'); return }
+    if (mode === 'generate' && !draftRole) { setError('请先在「案件记忆」中确认原告或被告代理立场。'); return }
+    if (mode === 'generate' && !evidenceIds.length) { setError('请先为案件链接原材料。'); return }
+    if (mode === 'rewrite' && (!rewriteTarget || !prompt.trim())) { setError('请从当前文书选择可唯一定位的选段，并填写改写要求。'); return }
     active.current = true
+    setRunning(true)
     try {
       if (!(await app.prepareDocument()) || !current()) return
       let certificate = app.certificate
       const operationKey = `pleading_full:${certificate?.id || caseId}:${crypto.randomUUID()}`
       const abort = new AbortController()
       controller.current = abort
+      setMode(mode)
       pending.current = { title: mode === 'rewrite' ? certificate!.title : `${app.project!.name}法律文书`, paragraphs: [] }
+      if (draftPreview) void api.discardAssistantCandidate(draftPreview.candidateId).catch(() => {})
       setDraft({ ...pending.current })
-      setUnsaved(false)
-      setRunning(true)
+      setDraftPreview(null)
+      setRewritePreview(undefined)
       let completed = false
-      let documentId = ''
-      const saved = await app.run(async () => {
+      await app.run(async () => {
         try {
           if (mode === 'rewrite') {
             certificate = (await api.getWorkspace()).workspace.certificates.find(item => item.id === certificate?.id && item.caseId === caseId)
             if (!certificate) throw new Error('当前文书已不存在，请重新选择文书。')
+            const currentTarget = rewriteAnchor(certificate, quote)
+            if (!rewriteTarget || !currentTarget || currentTarget.id !== rewriteTarget.id || currentTarget.original.text !== rewriteTarget.original.text)
+              throw new Error('正文选区已变化或出现重复，请重新选择可唯一定位的文字。')
           }
           await runDocumentAction({ cloudBilling: app.workspace?.aiBillingMode === 'cloud', token, operationKey, isCurrent: current }, {
             charge: () => api.consumeCloudPointAction({
               actionType: 'pleading_full', idempotencyKey: operationKey, workspaceId: caseId,
               resourceType: mode === 'rewrite' ? 'certificate' : 'case',
               resourceId: mode === 'rewrite' ? certificate!.id : caseId,
-              note: mode === 'rewrite' ? `整文改写：${certificate!.title}` : `整文生成：${app.project!.name}`,
+              note: mode === 'rewrite' ? `选区改写：${certificate!.title}` : `整文生成：${app.project!.name}`,
             }, token!),
             refund: (entryId, key, note) => api.refundCloudPointAction({ sourceEntryId: entryId, refundOperationKey: key, note }, token!),
             refresh: () => window.dispatchEvent(new Event('lawverify-points-changed')),
@@ -118,43 +125,43 @@ export function DocumentAssistant() {
                 pending.current.paragraphs[event.index] = event.text
                 setDraft({ ...pending.current, paragraphs: [...pending.current.paragraphs] })
               },
-              onDone: (result: { certificate: { id: string }; agentReply?: string }) => {
-                completed = true
-                if (!current()) return
-                documentId = result.certificate.id
-                setNotice(result.agentReply || '文书已保存，可继续编辑与核验')
-              },
             }
             if (mode === 'rewrite') {
               const linked = certificate!.paragraphs.flatMap(paragraph =>
                 (paragraph.links?.length ? paragraph.links : paragraph.link ? [paragraph.link] : []).map(link => link.evidenceId))
-              await api.rewriteCertificateStream({ certificateId: certificate!.id, evidenceIds: evidenceIds.length ? evidenceIds : [...new Set(linked)], prompt: prompt.trim(), model: model === 'default' ? undefined : model }, handlers, abort.signal)
+              await api.rewriteCertificateStream({ certificateId: certificate!.id, evidenceIds: evidenceIds.length ? evidenceIds : [...new Set(linked)],
+                selection: { paragraphId: rewriteTarget!.paragraphId, start: rewriteTarget!.start, quote: rewriteTarget!.quote },
+                prompt: prompt.trim() }, { ...handlers, onDone: result => {
+                  if (!current()) return
+                  if (!rewriteTarget || !result.rewritePreview || !result.rewriteVersion || result.certificate.id !== rewriteTarget.certificateId)
+                    throw new Error('没有收到经校验的选区候选，原文未修改。')
+                  completed = true
+                  setRewritePreview({ target: rewriteTarget, text: result.rewritePreview, version: result.rewriteVersion })
+                  setDraft({ title: '选区改写候选', paragraphs: [result.rewritePreview] })
+                  setNotice('候选尚未写入文书。')
+                  void app.auditAssistantAction(rewriteTarget.certificateId, 'AI 生成选区改写候选', rewriteTarget)
+                } }, abort.signal)
             } else {
-              const folder = app.workspace!.cases.find(item => item.id === caseId)
-              await api.generateCertificateStream({ caseId, evidenceIds, prompt: prompt.trim() || undefined,
-                focus: prompt.trim() || '请结合本案证据起草法律文书', role: folder?.agent?.position?.role === 'defendant' ? 'defendant' : 'plaintiff', model: model === 'default' ? undefined : model }, handlers, abort.signal)
+              if (!draftRole) throw new Error('请先确认代理立场。')
+              const targetId = certificate?.id
+              await api.previewAssistantDraft({ caseId, certificateId: targetId, evidenceIds, prompt: instruction || undefined,
+                focus: prompt.trim() || '请结合本案证据起草法律文书', role: draftRole },
+              { ...handlers, onDone: result => {
+                if (!current()) return
+                if (!result.candidateId || !result.certificate.paragraphs.length) throw new Error('没有收到可采纳的文书候选。')
+                completed = true
+                setDraftPreview({ ...result, targetId })
+                setDraft({ title: result.certificate.title, paragraphs: result.certificate.paragraphs.map(item => item.text) })
+                setNotice('起草候选已生成，请核对正文及出处后采纳。')
+                void app.auditAssistantAction(targetId, 'AI 生成起草候选')
+              } }, abort.signal)
             }
           })
         } catch (cause) {
-          if (!current()) throw cause
-          if (!completed && abort.signal.aborted) {
-            try {
-              documentId = await savePartial()
-              setNotice(documentId ? '已停止，生成内容已保存为中断草稿' : '已停止本次生成')
-            } catch (saveError) {
-              setUnsaved(true)
-              throw saveError
-            }
-          } else {
-            if (pending.current.paragraphs.some(text => text?.trim())) setUnsaved(true)
-            throw cause
-          }
+          if (!completed && abort.signal.aborted) return
+          throw cause
         }
       })
-      if (current() && saved) {
-        if (documentId) app.setCaseIdForUpload(caseId, documentId)
-        if (completed) setPrompt('')
-      }
     } catch (cause) {
       if (current()) setError(cause instanceof Error ? cause.message : '文书处理失败')
     } finally {
@@ -163,55 +170,70 @@ export function DocumentAssistant() {
       if (live.current) setRunning(false)
     }
   }
-  const onVoiceBusy = (value: boolean) => {
-    if (!value) {
-      voiceDone.current?.()
-      voiceDone.current = null
-      if (live.current) setVoiceBusy(false)
-      return
+  const adoptRewrite = async () => {
+    if (!rewritePreview || !rewriteTarget || rewritePreview.target.id !== rewriteTarget.id || rewritePreview.target.quote !== rewriteTarget.quote || active.current || app.busy || !current()) return
+    active.current = true
+    try {
+      if (await app.prepareDocument() && current()) {
+        const status = await app.applyAssistantRewrite(rewritePreview.target, rewritePreview.text, rewritePreview.version)
+        if (!status || !current()) return
+        setRewritePreview(undefined)
+        setDraft(null)
+        setRecheckId(status === 'pending' ? rewritePreview.target.certificateId : undefined)
+        setNotice(status === 'complete' ? '已采纳选区改写，局部重核已执行，请查看核验结果。' : '已采纳选区改写，改写内容待核验。')
+      }
+    } finally {
+      active.current = false
     }
-    setVoiceBusy(true)
-    void app.run(() => new Promise<void>(resolve => { voiceDone.current = resolve }))
   }
-  const blocked = running || voiceBusy || app.busy
-  return <section className="document-assistant" aria-label="文书起草与改写">
-    <div className="document-assistant-mode" role="group" aria-label="文书操作">
-      <Button variant={mode === 'generate' ? 'default' : 'outline'} disabled={blocked} onClick={() => setMode('generate')}>起草文书</Button>
-      <Button variant={mode === 'rewrite' ? 'default' : 'outline'} disabled={blocked || !app.certificate} onClick={() => setMode('rewrite')}>改写当前文书</Button>
-    </div>
-    <label className="document-assistant-label">使用模型</label>
-    <Select value={model} onValueChange={setModel} disabled={blocked}>
-      <SelectTrigger aria-label="文书生成模型"><SelectValue /></SelectTrigger>
-      <SelectContent><SelectItem value="default">默认模型</SelectItem>{models.map(item => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent>
-    </Select>
-    <details className="document-evidence-selection" open>
-      <summary>本次使用的材料 · 已选 {selected.filter(id => evidence.some(item => item.id === id)).length}/{evidence.length}</summary>
-      <div className="document-evidence-actions">
-        <Button variant="ghost" disabled={blocked} onClick={() => setSelected(evidence.map(item => item.id))}>全选</Button>
-        <Button variant="ghost" disabled={blocked} onClick={() => setSelected([])}>清空</Button>
-      </div>
-      {evidence.map(item => <label className="document-evidence-option" key={item.id}>
-        <input type="checkbox" checked={selected.includes(item.id)} disabled={blocked} onChange={event => setSelected(currentIds => event.target.checked ? [...currentIds, item.id] : currentIds.filter(id => id !== item.id))} />
-        <span>{item.number} {item.name || item.fileName}</span>
-      </label>)}
-      {!evidence.length && <p>请先链接案件材料目录</p>}
-    </details>
-    <label htmlFor="document-ai-prompt" className="document-assistant-label">{mode === 'generate' ? '文书类型与起草要求' : '改写要求'}</label>
-    <Textarea id="document-ai-prompt" value={prompt} maxLength={6000} disabled={blocked} onChange={event => setPrompt(event.target.value)} placeholder={mode === 'generate' ? '例如，起草民事起诉状，明确诉讼请求和事实理由。' : '说明需要调整的内容、论证或表达。'} />
-    <VoiceInputButton disabled={app.busy || running} onBusy={onVoiceBusy}
-      onError={text => { if (current()) setError(text) }}
-      onText={text => { if (current()) setPrompt(value => [value, text].filter(Boolean).join('\n').slice(0, 6000)) }} />
-    <div className="document-assistant-actions">
-      {running ? <Button variant="outline" onClick={() => controller.current?.abort()}>停止生成</Button>
-        : <Button disabled={app.busy || unsaved || (mode === 'generate' ? !selected.length : !app.certificate || !prompt.trim())} onClick={() => void start()}>{mode === 'generate' ? '开始起草' : '开始改写'}</Button>}
-      {unsaved && <Button variant="outline" disabled={app.busy} onClick={() => void retryDraft()}>保存已生成草稿</Button>}
-    </div>
+  const retryRecheck = async () => {
+    if (!recheckId || active.current || app.busy || !current()) return
+    active.current = true
+    try {
+      if (await app.run(() => api.retryAssistantRewriteRecheck(recheckId)) && current()) {
+        setRecheckId(undefined)
+        setNotice('局部重核已执行，请查看核验结果。')
+      }
+    } finally {
+      active.current = false
+    }
+  }
+  const blocked = running || app.busy
+  const result = (error || notice || draft || recheckId) && <section className="document-assistant" aria-label="文书起草与改写">
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
+    {recheckId && <Button variant="outline" disabled={blocked} onClick={() => void retryRecheck()}>重试局部重核</Button>}
     {draft && <div className="document-generated-preview" aria-live="polite" aria-busy={running}>
       <h3>{draft.title}</h3>
       {draft.paragraphs.filter(Boolean).map((text, index) => <p key={index}>{text}</p>)}
       {running && !draft.paragraphs.length && <p>正在准备文书…</p>}
+      {mode === 'generate' && draftPreview && <>
+        {!!draftPreview.draft.items.length && <details>
+          <summary>声明与出处 · {draftPreview.draft.items.length} 条待核</summary>
+          <ul>{draftPreview.draft.items.map((item, index) => <li key={index}>
+            <p>{item.quote}</p>
+            {item.sources.length ? <ul>{item.sources.map(source => <li key={`${source.tier}:${source.id}`}>
+              {source.name}{source.locator && ` · ${source.locator}`}
+            </li>)}</ul> : <small>暂无已核出处</small>}
+          </li>)}</ul>
+        </details>}
+        <div className="document-assistant-actions">
+          <Button disabled={blocked || !draftRole} onClick={() => void adoptDraft()}>采纳并保存草稿</Button>
+          <Button variant="outline" disabled={blocked} onClick={discardDraft}>放弃候选</Button>
+        </div>
+      </>}
+      {mode === 'rewrite' && rewritePreview && <div className="document-assistant-actions">
+        <Button disabled={blocked || rewriteTarget?.id !== rewritePreview.target.id || rewritePreview.text === rewritePreview.target.quote}
+          onClick={() => void adoptRewrite()}>采纳并替换选区</Button>
+        <Button variant="outline" disabled={blocked} onClick={() => {
+          const target = rewritePreview.target
+          void app.auditAssistantAction(target.certificateId, '律师放弃 AI 改写候选', target)
+          setRewritePreview(undefined)
+          setDraft(null)
+          setNotice('已放弃候选，原文未修改。')
+        }}>放弃候选</Button>
+      </div>}
     </div>}
   </section>
+  return { start, running, result, hasResult: Boolean(result), paragraphCount: draft?.paragraphs.length ?? 0 }
 }

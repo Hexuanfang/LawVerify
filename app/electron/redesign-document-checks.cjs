@@ -4,6 +4,9 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
   const open = async () => {
     if (!await evaluate("Boolean(document.querySelector('#pg-ws'))")) await enter('必要工作流测试')
     await wait("document.querySelector('.whole-document-content')")
+    if (await evaluate("document.querySelector('.workspace-edit-toggle').getAttribute('aria-pressed') === 'false'")) {
+      await clickText('.workspace-document-heading button', '在线编辑')
+    }
   }
   const selectBlock = async (index, position = 'all') => {
     await evaluate(`(() => {
@@ -220,11 +223,11 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
 
   await open(); await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
   await replaceBlock(0, '导出前保存正文。')
-  await clickText('.topbar button', '导出 Word')
+  await evaluate("document.querySelector('.workspace-report-button').click()")
   await wait("document.querySelector('#pg-report')")
   await saved(state => assert.ok(state.certificates.find(item => item.id === 'essential-doc').paragraphs.some(p => p.text.includes('导出前保存正文。'))))
   await clickText('.topbar button', '← 返回工作台')
-  await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
+  await wait("document.querySelector('.whole-document-content[contenteditable=false]')")
   assert.match(await evaluate("document.querySelector('.whole-document-content').textContent"), /导出前保存正文/)
   assert.equal(await evaluate("document.querySelector('.document-save-button').disabled"), true)
 

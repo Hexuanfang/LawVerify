@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { readFileSync, cpSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
@@ -10,10 +11,13 @@ const appPackage = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
 ) as { version?: string }
 const appVersion = appPackage.version ?? '0.0.0'
+const { loadReleaseEndpoints } = createRequire(import.meta.url)('./electron/release-endpoints.cjs') as {
+  loadReleaseEndpoints: () => { loginBaseUrl: string }
+}
 
 // https://vite.dev/config/
 // env: .env.local → VITE_ACCOUNT_CENTER_URL / VITE_CLOUD_API_BASE_URL
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   plugins: [tailwindcss(), react(), {
     name: 'pdf-preview-assets',
@@ -37,6 +41,7 @@ export default defineConfig({
   }],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __RELEASE_LOGIN_BASE_URL__: JSON.stringify(command === 'build' ? loadReleaseEndpoints().loginBaseUrl : ''),
   },
   server: {
     // Allow LAN browsers to access the hot-reload development server.
@@ -44,5 +49,5 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
-})
+}))
 

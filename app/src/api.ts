@@ -1,12 +1,15 @@
 import { cloudErrorMessage } from './cloud-errors'
 import { boundedFetch, createStreamFetch } from './bounded-fetch'
 import { resolveEvidenceMimeType } from './evidence-mime'
+import type { DeclarationEditAction, DeclarationReferenceEdit, DeclarationReviewAction } from '../../server/src/intelligence/verification/protocol'
 import type {
   AppState,
   Evidence,
   CasePositionDraft,
   CertificateParagraph,
+  DocKey,
   EvidenceType,
+  LegalFinding,
   LoginPayload,
   PaymentProvider,
   PaymentProviderStatus,
@@ -43,13 +46,10 @@ const API_BASE_URL = (
   || (import.meta.env.DEV ? `http://${DEV_SERVICE_HOST}:8787` : '')
 ).replace(/\/$/, '')
 
-// 云端接口地址：与官网同源部署但独立取值，
-// 这里固定用 lawverify.zhijing.fun。
-// 官网页面地址（注册、账单等）由 App.tsx 的 ACCOUNT_CENTER_BASE_URL 负责。
-const CLOUD_API_BASE_URL = (
-  (import.meta.env.DEV ? import.meta.env.VITE_CLOUD_API_BASE_URL?.trim() : '')
-  || (import.meta.env.DEV ? 'http://127.0.0.1:8788' : 'https://lawverify.zhijing.fun')
-).replace(/\/$/, '')
+// 正式构建使用发布配置中的登录地址，开发构建读取本地配置。
+const CLOUD_API_BASE_URL = (import.meta.env.DEV
+  ? import.meta.env.VITE_CLOUD_API_BASE_URL?.trim() || 'http://127.0.0.1:8788'
+  : __RELEASE_LOGIN_BASE_URL__).replace(/\/$/, '')
 const CLOUD_TOKEN_STORAGE_KEY = 'lawverify-cloud-token'
 const LOGIN_ACCOUNT_STORAGE_KEY = 'lawverify-login-account'
 
@@ -199,6 +199,8 @@ interface CertificateStreamParagraphEvent {
 interface CertificateStreamDonePayload extends WorkspaceResponse {
   certificate: { id: string; title: string; focus: string; paragraphs: Array<{ id: string }> }
   agentReply?: string
+  rewritePreview?: string
+  rewriteVersion?: string
 }
 
 type CertificateStreamHandlers<T = CertificateStreamDonePayload> = {
@@ -206,6 +208,14 @@ type CertificateStreamHandlers<T = CertificateStreamDonePayload> = {
   onParagraph?: (event: CertificateStreamParagraphEvent) => void
   onProgress?: (event: { text: string }) => void
   onDone: (payload: T) => void
+}
+
+export interface AssistantDraftPreview {
+  candidateId: string
+  certificate: Pick<import('./types').Certificate, 'id' | 'title' | 'paragraphs'>
+  draft: { type: 'draft-doc'; docType: string; items: Array<{ type: string; quote: string;
+    loc: import('../../server/src/intelligence/verification/protocol').DeclarationLocation;
+    sources: import('../../server/src/intelligence/verification/protocol').DeclarationSource[] }> }
 }
 
 let analyticsToken = ''
@@ -251,7 +261,7 @@ async function baseRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await boundedFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-  }, path === '/api/documents/parse' ? 16 * 60 * 1000 : undefined).catch((error) => {
+  }, path === '/api/documents/parse' || path === '/api/documents/import' ? 16 * 60 * 1000 : undefined).catch((error) => {
     if (init?.signal?.aborted) throw error
     throw new Error('本地材料服务暂不可用或请求超时。材料会保留，请确认操作结果后再重试。')
   })
@@ -667,7 +677,7 @@ export const api = {
     return result
   },
   verifyLegalText(text: string, online = false) {
-    return requestV1<{ findings: import('./LegalReview').LegalFinding[]; truncated: boolean; timedOut?: boolean }>(
+    return requestV1<{ findings: LegalFinding[]; truncated: boolean; timedOut?: boolean }>(
       '/api/v1/verification/legal', { method: 'POST', body: JSON.stringify({ text, online }) })
   },
   searchWeightedCases(payload: { keyword?: string; courtName?: string; judgeName?: string; courtWeight?: number; judgeWeight?: number }) {
@@ -990,6 +1000,21 @@ export const api = {
       method: 'POST', body: form, signal,
     })
   },
+  importDocumentFile(caseId: string, file: File, signal?: AbortSignal, docKey?: DocKey) {
+    const body = new FormData()
+    body.set('caseId', caseId)
+    body.set('file', file)
+    if (docKey) body.set('docKey', docKey)
+    return request<WorkspaceResponse & { certificate: { id: string } }>('/api/documents/import', { method: 'POST', body, signal })
+  },
+  classifyCertificate(id: string, docKey?: DocKey) {
+    return request<WorkspaceResponse>(`/api/v1/certificates/${encodeURIComponent(id)}/document-type`, {
+      method: 'PATCH', body: JSON.stringify({ docKey: docKey ?? null }),
+    })
+  },
+  documentFileResponse(id: string) {
+    return fetchWithWorkspaceAccount(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}/download`)
+  },
   transcribeAssistantAudio(audio: Blob, signal?: AbortSignal) {
     const form = new FormData()
     form.set('file', audio, audio.type === 'audio/mp4' ? 'speech.m4a' : 'speech.webm')
@@ -1048,13 +1073,14 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
-  uploadEvidenceSourceFiles(files: Array<File & { webkitRelativePath?: string }>) {
-    return this.uploadEvidenceSourceFilesWithProgress(files)
+  uploadEvidenceSourceFiles(files: Array<File & { webkitRelativePath?: string }>, caseId?: string) {
+    return this.uploadEvidenceSourceFilesWithProgress(files, undefined, caseId)
   },
   // 上传走 XHR：fetch 没有上传进度事件，几百兆材料上传时用户看不到进度会以为卡死。
   uploadEvidenceSourceFilesWithProgress(
     files: Array<File & { webkitRelativePath?: string }>,
     onProgress?: (loaded: number, total: number) => void,
+    caseId?: string,
   ): Promise<EvidenceSourceUploadResponse> {
     const formData = new FormData()
     const manifest = files.map((file) => ({
@@ -1067,6 +1093,7 @@ export const api = {
       formData.append('files', file, file.name)
     })
     formData.append('manifest', JSON.stringify(manifest))
+    if (caseId) formData.append('caseId', caseId)
 
     return uploadFormDataWithProgress<EvidenceSourceUploadResponse>('/api/evidences/assets/upload', formData, onProgress)
   },
@@ -1171,6 +1198,7 @@ export const api = {
     })
   },
   generateCertificate(payload: {
+    docKey?: DocKey
     model?: string
     caseId: string
     evidenceIds: string[]
@@ -1190,6 +1218,7 @@ export const api = {
     )
   },
   generateCertificateStream(payload: {
+    docKey?: DocKey
     model?: string
     caseId: string
     evidenceIds: string[]
@@ -1202,6 +1231,28 @@ export const api = {
       body: JSON.stringify(payload),
       signal,
     }, handlers)
+  },
+  previewAssistantDraft(payload: {
+    docKey?: DocKey; model?: string; caseId: string; certificateId?: string; evidenceIds: string[];
+    role: 'plaintiff' | 'defendant'; focus: string; prompt?: string
+  }, handlers: CertificateStreamHandlers<AssistantDraftPreview>, signal?: AbortSignal) {
+    return streamRequest('/api/v1/assistant/draft/stream', { method: 'POST', body: JSON.stringify(payload), signal }, handlers)
+  },
+  adoptAssistantCandidate(candidateId: string, target: { caseId: string; certificateId?: string }) {
+    return requestV1<{ certificateId: string; paragraphId?: string; elementId?: string }>(`/api/v1/assistant/candidates/${encodeURIComponent(candidateId)}/adopt`, {
+      method: 'POST', body: JSON.stringify({ ...target, confirmed: true }),
+    })
+  },
+  discardAssistantCandidate(candidateId: string) {
+    return requestV1<{ ok: boolean }>(`/api/v1/assistant/candidates/${encodeURIComponent(candidateId)}`, { method: 'DELETE' })
+  },
+  executeAssistantSkill<T extends import('../../server/src/assistant/analysis').AnalysisOutput | import('../../server/src/assistant/retrieval').RetrievalResult>(
+    skill: string, payload: { caseId: string; certificateId?: string; query?: string; factDate?: string }, signal?: AbortSignal,
+  ) {
+    return requestV1<T>(`/api/v1/assistant/skills/${encodeURIComponent(skill)}`, { method: 'POST', body: JSON.stringify(payload), signal })
+  },
+  checkAssistantCaseReport(payload: { caseId: string; certificateId?: string; version?: string; report: Record<string, unknown> }) {
+    return requestV1<{ ok: boolean }>('/api/v1/assistant/case-report/check', { method: 'POST', body: JSON.stringify({ ...payload, confirmed: true }) })
   },
   rewriteCertificate(payload: {
     model?: string
@@ -1229,6 +1280,7 @@ export const api = {
     certificateId: string
     evidenceIds: string[]
     prompt: string
+    selection: import('../../server/src/intelligence/verification/rewrite-selection').RewriteSelection
   }, handlers: CertificateStreamHandlers, signal?: AbortSignal) {
     return streamRequest(`/api/certificates/${payload.certificateId}/rewrite/stream`, {
       method: 'POST',
@@ -1236,11 +1288,14 @@ export const api = {
         model: payload.model,
         evidenceIds: payload.evidenceIds,
         prompt: payload.prompt,
+        selection: payload.selection,
       }),
       signal,
     }, handlers)
   },
   importCertificate(payload: {
+    docKey?: DocKey
+    aiOrigin?: 'draft' | 'rewrite'
     caseId: string
     title: string
     content: string
@@ -1269,17 +1324,34 @@ export const api = {
     certificateId: string,
     paragraphId: string,
     patch: Partial<CertificateParagraph>,
-    expected?: { text: string; richText?: string },
+    expected?: { text: string; richText?: string; links?: CertificateParagraph['links']; references?: CertificateParagraph['references'] },
+    assistantRewrite?: { start: number; quote: string; candidate: string; version: string; confirmed: true },
+    declarationReferences?: DeclarationReferenceEdit,
   ) {
-    return request<WorkspaceResponse>(
+    return request<WorkspaceResponse & { assistantRecheck?: 'complete' | 'pending' }>(
       `/api/certificates/${certificateId}/paragraphs/${paragraphId}`,
       {
         method: 'PATCH',
-          body: JSON.stringify({ ...patch, ...(Array.isArray(patch.links) ? { link: patch.links[0] ?? null } : {}), ...(expected ? { expectedContent: expected } : {}) }),
+        body: JSON.stringify({ ...patch, ...(Array.isArray(patch.links) ? { link: patch.links[0] ?? null } : {}), expectedContent: expected, assistantRewrite, declarationReferences }),
       },
     )
   },
-  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void, signal?: AbortSignal) {
+  retryAssistantRewriteRecheck(certificateId: string) {
+    return requestV1<{ assistantRecheck: 'complete' }>(`/api/v1/assistant/documents/${encodeURIComponent(certificateId)}/recheck`, { method: 'POST' })
+  },
+  reviewDeclaration(certificateId: string, paragraphId: string, action: DeclarationReviewAction) {
+    return request<WorkspaceResponse>(`/api/certificates/${certificateId}/paragraphs/${paragraphId}`, {
+      method: 'PATCH', body: JSON.stringify({ declarationReview: action }),
+    })
+  },
+  editDeclaration(certificateId: string, paragraphId: string, patch: Partial<CertificateParagraph>, expected: Pick<CertificateParagraph, 'text' | 'richText' | 'links' | 'references'>,
+    action: DeclarationEditAction) {
+    return request<WorkspaceResponse>(`/api/certificates/${certificateId}/paragraphs/${paragraphId}`, {
+      method: 'PATCH', body: JSON.stringify({ ...patch, ...(Array.isArray(patch.links) ? { link: patch.links[0] ?? null } : {}),
+        expectedContent: expected, declarationEdit: action }),
+    })
+  },
+  async autoLinkCertificate(certificateId: string, onProgress?: (text: string) => void, signal?: AbortSignal, scope?: 'dirty') {
     type LinkageDelta = {
       certificate: AppState['certificates'][number]
       evidenceInsights: AppState['evidenceInsights']
@@ -1295,7 +1367,7 @@ export const api = {
     }
     type LinkageOutcome = Omit<LinkageResult, 'linkage'> & { linkage: LinkageDelta }
     let result: LinkageResult | undefined
-    await streamRequest<LinkageResult>(`/api/certificates/${certificateId}/auto-link/stream`, {
+    await streamRequest<LinkageResult>(`/api/certificates/${certificateId}/auto-link/stream${scope === 'dirty' ? '?scope=dirty' : ''}`, {
       method: 'POST',
       signal,
     }, {

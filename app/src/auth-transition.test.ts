@@ -34,7 +34,7 @@ test('登录响应直接交接到首页，事件即时触发且不持久化工�
   let received = 0
   const listener = () => { received++ }
   events.addEventListener(AUTH_CHANGED, listener)
-  assert.equal(handoffLoginWorkspace('A@test.invalid', 'qa-session-a', data), true)
+  handoffLoginWorkspace('A@test.invalid', 'qa-session-a', data)
   assert.equal(received, 1)
   assert.equal(getLoginWorkspace(), data)
   assert.equal(getLoginWorkspace(), data, '初始化重复读取也应拿到相同快照')
@@ -61,8 +61,9 @@ test('响应账号不符、退出登录或交接超时后读取真实工作区',
   now += 60_001
   assert.equal(getLoginWorkspace(), null)
 })
-test('旧版登录继续使用原有工作区流程', () => {
+test('旧版链接登录后也交接到新版工作区', () => {
   location.search = '?ui=legacy'
-  assert.equal(handoffLoginWorkspace('a@test.invalid', 'qa-session-a', workspace('a@test.invalid')), false)
-  assert.equal(getLoginWorkspace(), null)
+  const data = workspace('a@test.invalid')
+  handoffLoginWorkspace('a@test.invalid', 'qa-session-a', data)
+  assert.equal(getLoginWorkspace(), data)
 })

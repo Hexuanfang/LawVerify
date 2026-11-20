@@ -6,6 +6,7 @@ import { Textarea } from './components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog'
 import { useApp } from './AppContext'
+import { statementRanges } from './model'
 
 export function ReferenceEditor() {
   const app = useApp()
@@ -20,6 +21,8 @@ export function ReferenceEditor() {
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const workspace = app.workspace!
+  const bindings = app.certificate?.verification?.manualReferences
+  const visible = (id?: string) => !id || !bindings?.[id] || bindings[id] === target.id || !target.declaration
   const options = kind === 'evidence'
     ? workspace.evidences.filter(item => item.caseId === app.project?.id).map(item => ({ id: item.id, label: item.name, locator: '', quote: item.ocrText, warning: undefined }))
     : kind === 'statute'
@@ -31,19 +34,23 @@ export function ReferenceEditor() {
   const add = () => {
     const source = options.find(item => item.id === sourceId)
     if (!source || !locator.trim() || !quote.trim()) { setError('请选择出处并填写定位和原文引文。'); return }
-    const anchor = { sentenceIndex: target.sentenceIndex, sentenceText: target.quote }
+    const sentence = target.sentenceIndex === undefined ? undefined : statementRanges(paragraph.text)[target.sentenceIndex]
+    if (target.sentenceIndex !== undefined && (!sentence || target.start < sentence.start || target.end > sentence.end)) {
+      setError('当前声明无法精确定位，请重新打开后再挂靠出处。'); return
+    }
+    const anchor = { sentenceIndex: target.sentenceIndex, sentenceText: sentence?.text ?? target.quote }
     if (kind === 'evidence') {
-      if (links.some(item => item.evidenceId === sourceId && item.locator === locator && item.sentenceIndex === target.sentenceIndex)) { setError('该引用已存在。'); return }
-      setLinks(current => [...current, { id: crypto.randomUUID(), evidenceId: sourceId, locator, quote, relation: 'context', ...anchor }])
+      if (links.some(item => visible(item.id) && item.evidenceId === sourceId && item.locator === locator && item.sentenceIndex === target.sentenceIndex)) { setError('该引用已存在。'); return }
+      setLinks(current => [...current, { id: crypto.randomUUID(), evidenceId: sourceId, locator, quote, relation: 'context', note: '人工挂靠出处', ...anchor }])
     } else {
-      if (references.some(item => item.targetId === sourceId && item.sentenceIndex === target.sentenceIndex)) { setError('该引用已存在。'); return }
+      if (references.some(item => visible(item.id) && item.targetId === sourceId && item.sentenceIndex === target.sentenceIndex)) { setError('该引用已存在。'); return }
       setReferences(current => [...current, { id: crypto.randomUUID(), type: kind === 'statute' ? 'statute' : 'case', targetId: sourceId,
-        sourceTitle: source.label, label: source.label, locator, quote, warning: source.warning, ...anchor }])
+        sourceTitle: source.label, label: source.label, locator, quote, warning: source.warning, reason: '人工挂靠出处', ...anchor }])
     }
     setError(''); setSourceId(''); setLocator(''); setQuote('')
   }
   const save = async () => {
-    if ([...links, ...references].some(item => !item.locator.trim() || !item.quote.trim())) { setError('请补齐所有引用的定位与引文，或移除无效引用。'); return }
+    if ([...links, ...references].some(item => visible(item.id) && (!item.locator.trim() || !item.quote.trim()))) { setError('请补齐引用的定位与引文，或移除无效引用。'); return }
     await app.saveReferences(target, { links, link: links[0], references })
   }
   const fields = (item: EvidenceLink | ParagraphReference, index: number, isLink: boolean) => {
@@ -70,10 +77,10 @@ export function ReferenceEditor() {
   }
   return <Dialog open onOpenChange={open => { if (!open && !app.busy) app.setReferenceTarget(null) }}>
     <DialogContent className="fm-box new-form essential-reference-dialog" onInteractOutside={event => event.preventDefault()}>
-      <DialogHeader><DialogTitle>管理引用</DialogTitle><DialogDescription>现有列表覆盖本段全部声明；新增引用绑定当前选中声明。定位和引文必须来自真实出处，保存后重新审阅。</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>管理引用</DialogTitle><DialogDescription>新增引用挂靠当前声明。请填写真实出处的定位与引文，保存后重新核验。</DialogDescription></DialogHeader>
       <blockquote>{target.quote}</blockquote>
-      <div className="essential-reference-list">{links.map((item, index) => fields(item, index, true))}{references.map((item, index) => fields(item, index, false))}
-        {!links.length && !references.length && <p>本段暂无引用，可在下方添加。</p>}</div>
+      <div className="essential-reference-list">{links.map((item, index) => visible(item.id) && fields(item, index, true))}{references.map((item, index) => visible(item.id) && fields(item, index, false))}
+        {![...links, ...references].some(item => visible(item.id)) && <p>当前声明暂无引用，可在下方添加。</p>}</div>
       <h3>添加出处</h3>
       <Select value={kind} onValueChange={value => { setKind(value); setSourceId(''); setLocator(''); setQuote('') }}><SelectTrigger aria-label="引用类型"><SelectValue /></SelectTrigger><SelectContent>
         <SelectItem value="evidence">案件材料</SelectItem><SelectItem value="statute">法条条文</SelectItem><SelectItem value="case">案例片段</SelectItem></SelectContent></Select>

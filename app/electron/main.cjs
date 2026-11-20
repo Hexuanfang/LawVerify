@@ -120,7 +120,7 @@ function primeAuthInputFocus(window) {
           return element.isContentEditable
         }
 
-        const loginCard = document.querySelector('.login-card')
+        const loginCard = document.querySelector('[data-lawverify-auth-entry]')
         if (!loginCard) {
           return false
         }
@@ -416,7 +416,7 @@ async function handleStartAppUpdate(_event, payload) {
     const channel = payload?.channel === 'test' ? 'test' : 'stable'
     const query = new URLSearchParams({ platform: process.platform, arch: process.arch, channel })
     const response = await session.fromPartition('persist:lawverify-account').fetch(
-      `${ACCOUNT_BASE_URL}/api/web/releases/latest?${query}`, { signal: AbortSignal.timeout(30000), cache: 'no-store' },
+      `${OFFICIAL_PLATFORM_BASE_URL}/api/web/releases/latest?${query}`, { signal: AbortSignal.timeout(30000), cache: 'no-store' },
     )
     if (!response.ok) throw new Error('无法核实最新更新，请检查网络后重试。')
     const envelope = await response.json()
@@ -524,6 +524,7 @@ function applyDesktopServerEnv(port) {
   process.env.CORS_ORIGIN = `http://127.0.0.1:${port},http://localhost:${port}`
   process.env.JSON_LIMIT = process.env.JSON_LIMIT || '100mb'
   process.env.APP_RUNTIME_ROOT = runtimeRoot
+  process.env.PARSER_BUNDLE_ROOT = path.join(process.resourcesPath, 'parser')
   process.env.APP_DATA_ROOT = path.join(userDataDir, 'runtime')
   process.env.WORKSPACE_DATA_DIR = path.join(userDataDir, 'data')
   process.env.STORAGE_LOCAL_ROOT = path.join(userDataDir, 'storage')
@@ -532,7 +533,7 @@ function applyDesktopServerEnv(port) {
   process.env.AUTO_RUN_MIGRATIONS = 'false'
 
   if (!isDev && isLocalHostOrigin(process.env.CLOUD_API_BASE_URL)) {
-    process.env.CLOUD_API_BASE_URL = OFFICIAL_PLATFORM_BASE_URL
+    process.env.CLOUD_API_BASE_URL = ACCOUNT_BASE_URL
   }
 }
 

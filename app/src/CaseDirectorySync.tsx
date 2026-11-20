@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import { api } from './api'
 import { resolveEvidenceMimeType } from './evidence-mime'
 import type { AppState } from './types'
@@ -75,7 +74,7 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
     const pending = batch
     batch = []
     batchBytes = 0
-    const { assets } = await api.uploadEvidenceSourceFiles(pending.map((entry) => entry.file))
+    const { assets } = await api.uploadEvidenceSourceFiles(pending.map((entry) => entry.file), caseId)
     if (!stillAuthorized()) return current
     await api.syncDirectoryEvidences({
       caseId, processInBackground: true,
@@ -132,46 +131,4 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
     return (await api.retryCaseAgent(caseId)).workspace
   }
   return (await api.getWorkspace()).workspace
-}
-
-export function CaseDirectorySync({ account, caseId, enabled, onWorkspace, onError }: {
-  account: string
-  caseId: string
-  enabled: boolean
-  onWorkspace: (workspace: AppState) => void
-  onError: (message: string) => void
-}) {
-  const handlers = useRef({ onWorkspace, onError })
-  useEffect(() => { handlers.current = { onWorkspace, onError } }, [onWorkspace, onError])
-  useEffect(() => {
-    if (!enabled || !window.lawVerifyDesktop?.scanCaseDirectories) return
-    let active = true
-    let running = false
-    const scan = async () => {
-      if (running || !active || document.visibilityState === 'hidden') return
-      running = true
-      try {
-        const directories = await window.lawVerifyDesktop!.scanCaseDirectories!({ account, caseId })
-        for (const directory of directories) {
-          if (!active) break
-          const workspace = await syncDesktopDirectory(account, caseId, directory, () => active)
-          if (active) handlers.current.onWorkspace(workspace)
-        }
-      } catch (error) {
-        if (active) handlers.current.onError(error instanceof Error ? error.message : '目录同步失败，请检查原件。')
-      } finally { running = false }
-    }
-    void scan()
-    const timer = window.setInterval(() => void scan(), 60000)
-    const visible = () => { if (document.visibilityState === 'visible') void scan() }
-    window.addEventListener('focus', scan)
-    document.addEventListener('visibilitychange', visible)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-      window.removeEventListener('focus', scan)
-      document.removeEventListener('visibilitychange', visible)
-    }
-  }, [account, caseId, enabled])
-  return null
 }

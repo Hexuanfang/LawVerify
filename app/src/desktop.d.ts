@@ -2,6 +2,7 @@ export {}
 
 declare global {
   const __APP_VERSION__: string
+  const __RELEASE_LOGIN_BASE_URL__: string
 
   interface LawVerifyDesktopUpdateRequest {
     version: string

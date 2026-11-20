@@ -7,7 +7,10 @@ import {
   buildParagraphComment,
   buildVerificationRecordRows,
 } from '../../app/src/export-declaration.ts'
-import { buildCertificateWordBytes } from '../../app/src/export-word.ts'
+import { buildCertificateWordBytes, exportCertificateToWord } from '../../app/src/export-word.ts'
+import { paragraphElements } from '../../app/src/redesign/model.ts'
+import { verifyEvidenceDeclarations } from '../src/intelligence/verification/evidence.ts'
+import { extractDeclarations } from '../src/intelligence/verification/extract.ts'
 
 /** 最小 zip 读取器：只按中央目录取出需要的条目，避免引入额外依赖。 */
 function readZipEntries(bytes) {
@@ -88,6 +91,205 @@ const baseContext = {
   operator: 'lawyer-a',
   options: { evidenceCatalog: true, verificationRecord: true, declaration: true, useWordComments: true },
 }
+
+test('ADV-08 的前审反转走实际 Word 下载入口时阻断两种模式，缺源结果在桌面显示 L0', async () => {
+  const caseId = 'case-1'
+  const id = 'adv-08'
+  const locator = '判项第一项'
+  const quote = '被告向原告赔偿1000元。'
+  const judgment = { id: 'judgment', caseId, name: '一审判决书', fileName: '一审判决书.pdf', type: 'pdf', ocrText: quote }
+  const paragraph = { id: 'p', text: '原审驳回我方赔偿请求。', verified: true,
+    link: { evidenceId: judgment.id, locator, quote } }
+  const document = { ...baseContext.certificate, id, docKey: 'ss', linkageInputKey: 'adv-key', paragraphs: [paragraph] }
+  const declarations = extractDeclarations(document).declarations.filter(item => item.type === 'E-ERR')
+  assert.equal(declarations.length, 1)
+  const stateFor = withOriginal => {
+    const evidences = withOriginal ? [judgment] : []
+    const results = verifyEvidenceDeclarations(document, declarations, { evidences,
+      evidenceFragments: withOriginal ? [{ evidenceId: judgment.id, locator, text: quote }] : [], evidenceInsights: [] })
+    return { evidences, certificates: [{ ...document, verification: { version: 1, profileVersion: 'qa', inputKey: 'adv-key',
+      docKey: 'ss', classificationRequired: false, declarations: results } }] }
+  }
+  const absent = paragraphElements(paragraph, stateFor(false), id).find(item => item.type === 'E-ERR')
+  assert.equal(absent.verdict, 'miss')
+  assert.equal(absent.src, 'l0')
+  assert.deepEqual(absent.sources, [])
+
+  const state = stateFor(true)
+  const result = paragraphElements(paragraph, state, id).find(item => item.type === 'E-ERR')
+  assert.equal(result.verdict, 'fail')
+  assert.equal(result.src, 'l1')
+  for (const useWordComments of [true, false]) {
+    await assert.rejects(exportCertificateToWord(state, id, { appVersion: baseContext.appVersion,
+      options: { ...baseContext.options, useWordComments } }), /1 项不通过/u)
+  }
+})
+
+test('审阅版按同段不同声明范围写原生 Word 批注，不包住相邻原文', async () => {
+  const body = baseContext.certificate.paragraphs[0].text
+  const spans = ['2023年5月', '120万元'].map(quote => ({ start: body.indexOf(quote), end: body.indexOf(quote) + quote.length, quote, text: `核对：${quote}` }))
+  const { bytes } = await buildCertificateWordBytes({ ...baseContext, declarationComments: new Map([['p-1', spans]]) })
+  const files = readZipEntries(bytes)
+  const document = files.get('word/document.xml')
+  const contents = [...document.matchAll(/<w:commentRangeStart w:id="(\d+)"\/><w:r><w:t[^>]*>([^<]+)<\/w:t><\/w:r><w:commentRangeEnd w:id="\1"\/>/gu)].map(match => match[2]).filter(value => body.includes(value))
+  assert.deepEqual(contents, ['2023年5月', '120万元'])
+  assert.match(files.get('word/comments.xml'), /核对：120万元/)
+})
+
+test('实际 Word 下载入口拒绝红灯、缺源、待核验、旧快照和空稿', async () => {
+  const certificate = { ...baseContext.certificate, linkageInputKey: 'qa' }
+  const body = { ...certificate.paragraphs[0], references: [], links: [{ ...certificate.paragraphs[0].links[0], relation: 'support' }] }
+  const workspace = { user: { email: 'qa@test.invalid' }, cases: [baseContext.caseFolder],
+    evidences: baseContext.evidences.map(item => ({ ...item, caseId: certificate.caseId })), certificates: [] }
+  for (const review of [true, false]) {
+    for (const patch of [
+      { paragraphs: [{ ...body, links: [{ ...body.links[0], relation: 'contradict' }] }] },
+      { paragraphs: [{ ...body, links: [] }] },
+      { paragraphs: [{ ...body, verified: false }] },
+      { paragraphs: [] },
+      { paragraphs: [body], linkageStale: true },
+      { paragraphs: [body], linkageInputKey: undefined },
+    ]) {
+      workspace.certificates = [{ ...certificate, ...patch }]
+      await assert.rejects(exportCertificateToWord(workspace, certificate.id, {
+        appVersion: baseContext.appVersion, options: { ...baseContext.options, useWordComments: review, bodyAnnotations: review },
+      }), /核验|正文/)
+    }
+  }
+})
+
+test('两个 Word 都拒绝本机脏稿，清稿和已判定黄灯均生成实际 DOCX', async context => {
+  const certificate = { ...baseContext.certificate, linkageInputKey: 'qa' }
+  const body = { ...certificate.paragraphs[0], references: [], links: [{ ...certificate.paragraphs[0].links[0], relation: 'support' }] }
+  const workspace = { user: { email: 'qa@test.invalid' }, cases: [baseContext.caseFolder],
+    evidences: baseContext.evidences.map(item => ({ ...item, caseId: certificate.caseId })), certificates: [] }
+  const downloaded = []
+  const blobs = []
+  const drafts = new Map()
+  const localAudits = []
+  const globals = {
+    sessionStorage: { getItem: () => workspace.user.email },
+    document: { body: { appendChild() {}, removeChild() {} }, createElement: () => ({ click() { downloaded.push(this.download) } }) },
+    indexedDB: { open() {
+      const request = { result: { transaction() {
+        const transaction = { objectStore: () => ({
+          get: key => ({ result: drafts.get(key) }),
+          index: () => ({ getAll: ([account, certificateId]) => ({
+            result: localAudits.filter(item => item.account === account && item.certificateId === certificateId),
+          }) }),
+        }) }
+        queueMicrotask(() => transaction.oncomplete())
+        return transaction
+      } } }
+      queueMicrotask(() => request.onsuccess())
+      return request
+    } },
+  }
+  for (const [key, value] of Object.entries(globals)) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, key)
+    Object.defineProperty(globalThis, key, { value, configurable: true })
+    context.after(() => previous ? Object.defineProperty(globalThis, key, previous) : Reflect.deleteProperty(globalThis, key))
+  }
+  context.mock.method(URL, 'createObjectURL', blob => { blobs.push(blob); return 'blob:qa-word' })
+  const key = JSON.stringify(['lawverify-document', workspace.user.email, certificate.id])
+  for (const review of [true, false]) {
+    const options = { appVersion: baseContext.appVersion,
+      options: { ...baseContext.options, verificationRecord: false, useWordComments: review, bodyAnnotations: review } }
+    workspace.certificates = [{ ...certificate, paragraphs: [body] }]
+    drafts.set(key, { text: '尚未保存' })
+    const priorDownloads = downloaded.length
+    await assert.rejects(exportCertificateToWord(workspace, certificate.id, options), /尚未保存/)
+    assert.equal(downloaded.length, priorDownloads)
+    drafts.delete(key)
+    await exportCertificateToWord(workspace, certificate.id, options)
+    workspace.certificates[0].paragraphs = [{ ...body, links: [{ ...body.links[0], relation: 'context' }] }]
+    await exportCertificateToWord(workspace, certificate.id, options)
+    const entries = readZipEntries(await blobs.at(-1).arrayBuffer())
+    assert.match(entries.get('word/document.xml'), /段落核验记录/)
+    assert.match(entries.get('word/document.xml'), /黄·待核对/)
+    assert.equal(/<w:comment\b/u.test(entries.get('word/comments.xml') ?? ''), review)
+    assert.equal(/<w:commentRangeStart\b/u.test(entries.get('word/document.xml')), review)
+
+    const diagnose = { code: 'A3', verdict: 'warn', reason: '卷内材料未列入证据清单。',
+      sources: [{ tier: 'l1', id: 'e-2', name: '付款凭证', locator: '第 2 页' }] }
+    workspace.certificates = [{ ...certificate, docKey: 'zj', paragraphs: [body], verification: {
+      version: 1, profileVersion: 'qa', docKey: 'zj', inputKey: 'qa', classificationRequired: false, documentDiagnostics: [diagnose], declarations: [],
+    } }]
+    await exportCertificateToWord(workspace, certificate.id, options)
+    const withDiagnostic = readZipEntries(await blobs.at(-1).arrayBuffer())
+    assert.match(withDiagnostic.get('word/document.xml'), /文书级预警/u)
+    assert.match(withDiagnostic.get('word/document.xml'), /卷内材料未列入证据清单.*付款凭证[^<]*第 2 页/u)
+    assert.doesNotMatch(withDiagnostic.get('word/comments.xml') ?? '', /卷内材料未列入证据清单/u)
+
+    const tradeText = '被告仅支付货款200,000元，尚欠376,000元。'
+    const statement = '货款总额576,000元，累计已付货款200,000元。'
+    const tradeParagraph = { ...body, text: tradeText, richText: `<p>${tradeText}</p>`, verified: true,
+      links: [{ evidenceId: 'e-2', locator: '第 2 页', quote: statement, relation: 'support' }] }
+    const tradeDocument = { ...certificate, docKey: 'qs', paragraphs: [tradeParagraph] }
+    const declarations = verifyEvidenceDeclarations(tradeDocument, extractDeclarations(tradeDocument).declarations, {
+      evidences: workspace.evidences, evidenceFragments: [{ evidenceId: 'e-2', locator: '第 2 页', text: statement }], evidenceInsights: [],
+    })
+    workspace.certificates = [{ ...tradeDocument, verification: {
+      version: 1, profileVersion: 'qa', docKey: 'qs', inputKey: 'qa', classificationRequired: false, declarations,
+    } }]
+    await exportCertificateToWord(workspace, certificate.id, options)
+    const withCalculation = readZipEntries(await blobs.at(-1).arrayBuffer())
+    assert.match(withCalculation.get('word/document.xml'), /第 1 段金额复算.*376000\.00 元。依据 付款凭证 · 第 2 页/u)
+  }
+  assert.equal(downloaded.length, 8)
+
+  await context.test('清洁版附页记录核验版本、声明联动以及当前文书的人工和助手操作', async () => {
+    const fact = { ...body, id: 'fact', text: '双方订立购销合同。' }
+    const statute = { ...body, id: 'statute', text: '相关依据为民法典第五百七十七条。' }
+    const at = '2026-11-20T10:30:45.000Z'
+    const declarations = [fact, statute].map((paragraph, paragraphIndex) => ({
+      id: paragraph.id,
+      quote: paragraph.text,
+      type: paragraphIndex ? 'E-LAW' : 'E-FACT',
+      reason: '已核对原文',
+      location: { paragraphId: paragraph.id, paragraphIndex, start: 0, end: paragraph.text.length, sentenceIndex: 0 },
+      verdict: 'pass',
+      checks: {},
+      sources: paragraphIndex
+        ? [{ tier: 'l2', id: 's-1', name: '中华人民共和国民法典', version: '2021-01', locator: '第五百七十七条' }]
+        : [{ tier: 'l1', id: 'e-1', name: '购销合同', locator: '第 2 页', quote: fact.text }],
+    }))
+    declarations[1].dependencies = [{ id: 'fact', check: 'B4' }]
+    declarations[1].checks = { B4: { outcome: 'pass', reason: '法律依据对应已核实的合同事实' } }
+    declarations[1].statuteVerification = { checkedAt: at }
+    workspace.certificates = [{ ...certificate, paragraphs: [fact, statute], verification: {
+      version: 1, profileVersion: 'qa-profile-v12', inputKey: 'qa', classificationRequired: false,
+      verifiedAt: at, declarations, audit: [
+        { id: '1', at, actor: '律师甲', action: 'adopt', quote: '实际采纳的助手引用', note: '关联处已复核', affected: ['statute'],
+          sources: [{ tier: 'l2', id: 's-1', name: '中华人民共和国民法典', locator: '第五百七十七条' }] },
+      ],
+    } }]
+    localAudits.push(
+      { id: 'l-1', account: workspace.user.email, certificateId: certificate.id, t: at, msg: '律师在本机确认段落' },
+      { id: 'l-2', account: workspace.user.email, certificateId: 'other-document', t: at, msg: '其他文书的操作记录' },
+      { id: 'l-3', account: 'other@test.invalid', certificateId: certificate.id, t: at, msg: '其他账号的操作记录' },
+    )
+
+    for (const review of [false, true]) {
+      await exportCertificateToWord(workspace, certificate.id, { appVersion: baseContext.appVersion,
+        options: { ...baseContext.options, useWordComments: review, bodyAnnotations: review } })
+      const files = readZipEntries(await blobs.at(-1).arrayBuffer())
+      const xml = files.get('word/document.xml')
+      if (review) {
+        assert.doesNotMatch(xml, /qa-profile-v12|实际采纳的助手引用|律师在本机确认段落/u)
+        continue
+      }
+      const appendix = xml.slice(xml.indexOf('段落核验记录'))
+      for (const value of ['qa-profile-v12', '核验时间', '最近法源核对', '中华人民共和国民法典 2021-01', '联动影响',
+        '法律依据对应已核实的合同事实', '依赖声明 · 双方订立购销合同。', '受影响声明 · 相关依据为民法典第五百七十七条。',
+        '律师甲', '实际采纳的助手引用', '涉及 1 项声明', '律师在本机确认段落']) {
+        assert.ok(appendix.includes(value), `附页缺少 ${value}`)
+      }
+      assert.doesNotMatch(xml, /其他文书的操作记录|其他账号的操作记录/u)
+      assert.doesNotMatch(xml, /w:commentRangeStart/u)
+    }
+  })
+})
 
 test('编号对照行：目录编号与引用编号并列，缺失引用编号不臆造', () => {
   const rows = buildEvidenceCatalogRows(baseContext)

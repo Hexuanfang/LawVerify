@@ -20,9 +20,8 @@ import {
   DialogTitle,
 } from './components/ui/dialog'
 import { useApp, type LibTab } from './AppContext'
-import { Brand } from './Home'
-import { api } from '../api'
-import { resumeCaseDirectorySync, stopCaseDirectorySync } from '../CaseDirectorySync'
+import { CaseDeleteDialog, type CaseDeleteTarget } from './CaseDeleteDialog'
+import { BrandHome } from './Home'
 import { counts } from './model'
 
 const AccountServices = lazy(() => import('./AccountServices').then(module => ({ default: module.AccountServices })))
@@ -38,6 +37,7 @@ export function Library() {
   const app = useApp()
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [pendingCaseDelete, setPendingCaseDelete] = useState<CaseDeleteTarget | null>(null)
   const [pendingDelete, setPendingDelete] = useState<{
     id: string
     title: string
@@ -72,25 +72,6 @@ export function Library() {
     } catch (cause) {
       app.setError(cause instanceof Error ? cause.message : '刷新失败')
     }
-  }
-  const remove = async () => {
-    if (!pendingDelete) return
-    if (tab !== 'proj') {
-      app.toast('资料库删除接口待接入，当前记录仍保留。')
-      return
-    }
-    if (await app.run(async () => {
-      const account = sessionStorage.getItem('lawverify-login-account') || ''
-      await stopCaseDirectorySync(account, pendingDelete.id)
-      try {
-        await api.deleteCase(pendingDelete.id)
-      } catch (cause) {
-        resumeCaseDirectorySync(account, pendingDelete.id)
-        throw cause
-      }
-      await window.lawVerifyDesktop?.clearCaseDirectories?.({ account, caseId: pendingDelete.id })
-    }, '已删除案件'))
-      setPendingDelete(null)
   }
   const renderRow = (item: LibraryRow) => {
     if (tab === 'acct') return null
@@ -142,7 +123,14 @@ export function Library() {
           </Button>
           <Button
             className="op bye"
-            onClick={() => setPendingDelete(item)}
+            onClick={event => {
+              if (tab === 'proj') {
+                const project = app.projects.find(project => project.id === item.id)
+                if (project) setPendingCaseDelete({
+                  id: project.id, name: project.name, docs: project.docs, trigger: event.currentTarget,
+                })
+              } else setPendingDelete(item)
+            }}
           >
             删除
           </Button>
@@ -153,14 +141,7 @@ export function Library() {
   return (
     <div className="page active" id="pg-lib">
       <div className="topbar">
-        <Button
-          className="btn-txt"
-          variant="ghost"
-          onClick={() => app.setPage('home')}
-        >
-          ← 首页
-        </Button>
-        <Brand />
+        <BrandHome onHome={() => app.setPage('home')} />
         <Tabs
           value={tab}
           onValueChange={(value) => {
@@ -321,6 +302,7 @@ export function Library() {
             <Button className="btn btn-pri" disabled={app.busy} onClick={app.logout}>确认退出</Button></div>
         </DialogContent>
       </Dialog>
+      <CaseDeleteDialog target={pendingCaseDelete} onClose={() => setPendingCaseDelete(null)} />
       <Dialog
         open={Boolean(pendingDelete)}
         onOpenChange={(open) => {
@@ -330,13 +312,10 @@ export function Library() {
         <DialogContent className="fm-box new-form">
           <DialogHeader>
             <DialogTitle>
-              删除{tab === 'proj' ? '案件' : tab === 'law' ? '法条' : '案例'}？
+              删除{tab === 'law' ? '法条' : '案例'}？
             </DialogTitle>
             <DialogDescription>
-              将删除「{pendingDelete?.title}」
-              {tab === 'proj'
-                ? '及其关联文书和材料，删除后无法在页面恢复。'
-                : '，请确认后继续。'}
+              将删除「{pendingDelete?.title}」，请确认后继续。
             </DialogDescription>
           </DialogHeader>
           <div className="fm-ft">
@@ -349,7 +328,7 @@ export function Library() {
             <Button
               className="btn btn-pri"
               disabled={app.busy}
-              onClick={() => void remove()}
+              onClick={() => app.toast('资料库删除接口待接入，当前记录仍保留。')}
             >
               确认删除
             </Button>

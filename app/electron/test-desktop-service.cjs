@@ -1,11 +1,10 @@
 const { app, BrowserWindow, utilityProcess } = require('electron')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { ServiceSupervisor } = require('./service-supervisor.cjs')
 
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lawverify-service-test-'))
+const directory = fs.mkdtempSync(path.resolve(__dirname, '../../tmp/lawverify-service-test-'))
 app.setPath('userData', directory)
 let supervisor
 app.whenReady().then(async () => {
@@ -13,6 +12,7 @@ app.whenReady().then(async () => {
   const env = {
     ...process.env, NODE_ENV: 'production', PORT: String(port), LAWVERIFY_DESKTOP: '1',
     APP_RUNTIME_ROOT: path.resolve(__dirname, '../.desktop/server'),
+    PARSER_BUNDLE_ROOT: path.resolve(__dirname, '../.desktop/parser'),
     APP_DATA_ROOT: directory, WORKSPACE_DATA_DIR: path.join(directory, 'data'),
     STORAGE_LOCAL_ROOT: path.join(directory, 'storage'),
     FRONTEND_DIST_DIR: path.resolve(__dirname, '../dist'),

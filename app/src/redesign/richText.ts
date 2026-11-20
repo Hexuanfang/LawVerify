@@ -3,6 +3,7 @@ export function replaceRichText(
   html: string | undefined,
   original: string,
   replacement: string,
+  edit?: { start: number; end: number; replacement: string },
 ) {
   if (!html) {
     const node = document.createElement('p')
@@ -13,35 +14,30 @@ export function replaceRichText(
   const canonical = richTextIndex(dom.body)
   const index = canonical.text.includes(original) ? canonical : richTextIndex(dom.body, false)
   const content = index.text
-  // 只改动共同前后缀之间的文字，保留未编辑部分的加粗、下划线和段落格式。
-  let prefix = 0
-  while (
-    prefix < original.length &&
-    prefix < replacement.length &&
-    original[prefix] === replacement[prefix]
-  )
-    prefix++
-  let suffix = 0
-  while (
-    suffix < original.length - prefix &&
-    suffix < replacement.length - prefix &&
-    original[original.length - 1 - suffix] ===
-      replacement[replacement.length - 1 - suffix]
-  )
-    suffix++
   const base = content.indexOf(original)
-  if (base < 0)
-    throw new Error('文书正文与富文本内容不一致，请刷新后核对再修改。')
-  const start = base + prefix,
-    end = base + original.length - suffix
-  const from = index.pointAt(start)
-  const to = index.pointAt(end)
+  if (base < 0 || (edit && content.indexOf(original, base + 1) >= 0))
+    throw new Error('无法在富文本中唯一定位文书正文，请刷新后核对再修改。')
+
+  // 声明编辑已有精确范围。重复文字的共同前后缀可能对应另一次出现。
+  const change = edit ?? changedTextRange(original, replacement)
+  const from = index.pointAt(base + change.start)
+  const to = index.pointAt(base + change.end)
   const range = dom.createRange()
   range.setStart(from.node, from.offset)
   range.setEnd(to.node, to.offset)
   range.deleteContents()
-  range.insertNode(
-    dom.createTextNode(replacement.slice(prefix, replacement.length - suffix)),
-  )
+  if (change.replacement) range.insertNode(dom.createTextNode(change.replacement))
   return dom.body.innerHTML
+}
+
+function changedTextRange(original: string, replacement: string) {
+  let start = 0
+  while (start < original.length && start < replacement.length && original[start] === replacement[start]) start++
+  let end = original.length
+  let replacementEnd = replacement.length
+  while (end > start && replacementEnd > start && original[end - 1] === replacement[replacementEnd - 1]) {
+    end--
+    replacementEnd--
+  }
+  return { start, end, replacement: replacement.slice(start, replacementEnd) }
 }

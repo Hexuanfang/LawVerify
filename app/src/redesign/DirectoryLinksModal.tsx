@@ -6,10 +6,10 @@ import { useApp } from './AppContext'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog'
 
-export function DirectoryLinksModal() {
+export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embeddedCaseId?: string; disabled?: boolean }) {
   const app = useApp()
   const { setError } = app
-  const caseId = app.uploadCase!
+  const caseId = embeddedCaseId ?? app.uploadCase!
   const project = app.projects.find(item => item.id === caseId)
   const account = sessionStorage.getItem('lawverify-login-account') || ''
   const session = sessionStorage.getItem('lawverify-auth-session')
@@ -23,7 +23,6 @@ export function DirectoryLinksModal() {
     desktop?.linkCaseDirectory && desktop.scanCaseDirectories &&
     desktop.readCaseDirectoryFile && desktop.clearCaseDirectories,
   )
-  const paused = app.workspace?.cases.find(item => item.id === caseId)?.agent?.autoAnalyze === false
   const authorized = () => live.current &&
     account === sessionStorage.getItem('lawverify-login-account') &&
     session === sessionStorage.getItem('lawverify-auth-session')
@@ -50,17 +49,13 @@ export function DirectoryLinksModal() {
         resumeCaseDirectorySync(account, caseId)
         setDirectories(current => [...current.filter(directory => directory.id !== item.id), item])
         await syncDesktopDirectory(account, caseId, item, authorized, (completed, total) => {
-          if (authorized()) setProgress(`${item.name} · 已同步 ${completed}/${total} 个文件`)
+          if (authorized()) setProgress(`${item.name} · 已${link ? '导入' : '同步'} ${completed}/${total} 个文件`)
         })
       }
       if (authorized()) setDirectories(await desktop!.scanCaseDirectories!({ account, caseId }))
     })
     if (authorized()) setProgress('')
   }
-  const toggle = () => app.run(async () => {
-    await api.retryCaseAgent(caseId, paused)
-    if (paused) resumeCaseDirectorySync(account, caseId)
-  }, paused ? '已恢复目录同步与自动梳理' : '已暂停目录同步与自动梳理')
   const clear = async () => {
     const saved = await app.run(async () => {
       await stopCaseDirectorySync(account, caseId)
@@ -78,16 +73,9 @@ export function DirectoryLinksModal() {
     if (app.page === 'home' && project) app.enter(project.id)
   }
   if (!project) return null
-  return <Dialog open onOpenChange={open => { if (!open && !app.busy) close() }}>
-    <DialogContent className="fm-box new-directory" showCloseButton={false}
-      onInteractOutside={event => { if (app.busy) event.preventDefault() }}
-      onEscapeKeyDown={event => { if (app.busy) event.preventDefault() }}>
-      <DialogHeader>
-        <DialogTitle>本地文件夹联动 · {project.name}</DialogTitle>
-        <DialogDescription>链接本机材料目录，自动同步新增、修改和删除。窗口可见时每 60 秒检查一次，返回窗口时也会检查。</DialogDescription>
-      </DialogHeader>
-      {supported ? <>
-        <div className="directory-status" role="status">{loading ? '正在读取已链接目录…' : progress || (paused ? '目录同步与自动梳理已暂停' : '目录同步已开启')}</div>
+  const busy = app.busy || disabled
+  const contents = supported ? <>
+        <div className="directory-status" role="status">{loading ? '正在读取已链接目录…' : progress || (directories.length ? '目录已链接' : '尚未链接本地材料目录')}</div>
         <div className="directory-list">
           {directories.map(item => (
             <div className="directory-row" key={item.id}>
@@ -98,31 +86,38 @@ export function DirectoryLinksModal() {
               </div>
             </div>
           ))}
-          {!loading && !directories.length && <p>尚未链接本地材料目录</p>}
+          {!embeddedCaseId && !loading && !directories.length && <p>尚未链接本地材料目录</p>}
         </div>
         <div className="directory-actions">
-          <Button className="btn btn-pri" disabled={app.busy || loading} onClick={() => void sync(true)}>
+          <Button className="btn btn-pri" disabled={busy || loading} onClick={() => void sync(true)}>
             <Link2 size={15} />链接目录
           </Button>
-          <Button className="btn btn-gh" disabled={app.busy || loading || !directories.length || paused} onClick={() => void sync(false)}>
+          {(!embeddedCaseId || directories.length > 0) && <><Button className="btn btn-gh" disabled={busy || loading || !directories.length} onClick={() => void sync(false)}>
             <RefreshCw size={15} />立即同步
           </Button>
-          <Button className="btn btn-gh" disabled={app.busy || loading || !directories.length} onClick={() => void toggle()}>
-            {paused ? '恢复同步' : '暂停同步'}
-          </Button>
-          <Button className="btn btn-gh" disabled={app.busy || loading} onClick={() => setConfirmClear(true)}>
+          <Button className="btn btn-gh" disabled={busy || loading} onClick={() => setConfirmClear(true)}>
             解除链接
-          </Button>
+          </Button></>}
         </div>
         {confirmClear && <div className="directory-confirm" role="alert">
           <p>解除此案件的全部文件夹链接，并清除系统内对应的目录证据记录。本地原文件、单独导入的文书和其他材料会保留。</p>
-          <Button className="btn btn-gh" disabled={app.busy} onClick={() => setConfirmClear(false)}>取消解除</Button>
-          <Button className="btn btn-pri" disabled={app.busy} onClick={() => void clear()}>确认解除并清除记录</Button>
+          <Button className="btn btn-gh" disabled={busy} onClick={() => setConfirmClear(false)}>取消解除</Button>
+          <Button className="btn btn-pri" disabled={busy} onClick={() => void clear()}>确认解除并清除记录</Button>
         </div>}
-      </> : <p role="status">本地文件夹持续同步需要使用 LawVerify 桌面客户端。</p>}
+      </> : <p role="status">链接和同步本地文件夹需要使用 LawVerify 桌面客户端。</p>
+  if (embeddedCaseId) return <div className="directory-content">{contents}</div>
+  return <Dialog open onOpenChange={open => { if (!open && !busy) close() }}>
+    <DialogContent className="fm-box new-directory" showCloseButton={false}
+      onInteractOutside={event => { if (busy) event.preventDefault() }}
+      onEscapeKeyDown={event => { if (busy) event.preventDefault() }}>
+      <DialogHeader>
+        <DialogTitle>本地文件夹联动 · {project.name}</DialogTitle>
+        <DialogDescription>首次链接会导入目录内的材料。文件新增、修改或删除后，点击「立即同步」更新案件材料。</DialogDescription>
+      </DialogHeader>
+      {contents}
       <div className="fm-ft">
-        <Button className="btn btn-gh" disabled={app.busy} onClick={() => { close(); app.setDocumentCase(caseId) }}>导入待核验文书</Button>
-        <Button className="btn btn-pri" disabled={app.busy} onClick={close}>完成</Button>
+        <Button className="btn btn-gh" disabled={busy} onClick={() => { close(); app.setDocumentCase(caseId) }}>导入待核验文书</Button>
+        <Button className="btn btn-pri" disabled={busy} onClick={close}>完成</Button>
       </div>
     </DialogContent>
   </Dialog>

@@ -1,67 +1,33 @@
 import { api } from '../api'
 import { importWordContent } from '../word-import'
 import { DEFAULT_EXPORT_OPTIONS } from '../export-context'
-import type { AppState, Certificate } from '../types'
-import { paragraphElements, STATUS_NAMES } from './model'
+import type { AppState, DocKey } from '../types'
+import { supportsDocumentFile, downloadDocumentFile } from './documentFile'
+import { requireWordExportSnapshot } from './workflow'
 
-export function readDocument(file: File) {
-  return importWordContent(file)
+export function readDocument(file: File, signal?: AbortSignal) {
+  return importWordContent(file, signal)
 }
-export async function importDocument(caseId: string, file: File) {
-  const content = await readDocument(file)
-  if (!content.text.trim()) throw new Error(`${file.name} 未读取到正文。`)
-  return api.importCertificate({
-    caseId,
-    title: file.name.replace(/\.[^.]+$/, ''),
-    sourceFileName: file.name,
-    content: content.text,
-    paragraphs: content.html
-      ? Array.from(
-          new DOMParser().parseFromString(content.html, 'text/html').body
-            .children,
-        )
-          .filter((element) => element.textContent?.trim())
-          .map((element) => ({
-            text: element.textContent!.trim(),
-            richText: element.outerHTML,
-          }))
-      : undefined,
-  })
+export async function importDocument(caseId: string, file: File, signal?: AbortSignal, onProgress?: (message: string) => void, docKey?: DocKey) {
+  if (!supportsDocumentFile(file.name)) throw new Error('文书仅支持 Word（.doc、.docx）或 TXT。')
+  if (file.size > 20 * 1024 * 1024) throw new Error('文书超过 20 MB，请拆分后导入。')
+  onProgress?.('正在解析文书')
+  return api.importDocumentFile(caseId, file, signal, docKey)
 }
 
 export async function exportDocument(
   workspace: AppState,
-  certificate: Certificate,
-  review: boolean,
+  certificateId: string,
+  mode: 'review' | 'clean' | 'original',
 ) {
-  const annotated = {
-    ...certificate,
-    paragraphs: certificate.paragraphs.map((paragraph) => {
-      const elements = paragraphElements(paragraph, workspace, certificate.id)
-      const summary = elements
-        .map(
-          (element) =>
-            `${STATUS_NAMES[element.verdict]}：${element.quote}（${element.reason}）`,
-        )
-        .join('\n')
-      return {
-        ...paragraph,
-        note: [paragraph.note, summary].filter(Boolean).join('\n'),
-      }
-    }),
+  if (mode === 'original') {
+    await requireWordExportSnapshot(workspace, certificateId)
+    return downloadDocumentFile(certificateId)
   }
+  const review = mode === 'review'
   const { exportCertificateToWord } = await import('../export-word')
-  return exportCertificateToWord({
-    certificate: annotated,
-    caseFolder:
-      workspace.cases.find((item) => item.id === certificate.caseId) ?? null,
-    evidences: workspace.evidences.filter(
-      (evidence) => evidence.caseId === certificate.caseId,
-    ),
-    roleLabel: certificate.role === 'defendant' ? '被告' : '原告',
+  return exportCertificateToWord(workspace, certificateId, {
     appVersion: __APP_VERSION__,
-    operator: workspace.user.name || workspace.user.email,
-    exportedAt: new Date(),
     options: {
       ...DEFAULT_EXPORT_OPTIONS,
       evidenceCatalog: review,

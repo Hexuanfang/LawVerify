@@ -130,7 +130,6 @@ function AccountServicesContent() {
     openingBilling.current = true
     setBillingBusy(true)
     try {
-      // 与旧版 App.tsx 的账户中心配置保持相同口径。
       const host = window.location.hostname && !['localhost', '127.0.0.1'].includes(window.location.hostname)
         ? window.location.hostname : '127.0.0.1'
       const base = (import.meta.env.VITE_ACCOUNT_CENTER_URL?.trim()

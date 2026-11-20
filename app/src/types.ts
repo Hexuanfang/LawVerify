@@ -166,6 +166,12 @@ export interface EvidenceLink {
 
 export type ParagraphReferenceType = 'case' | 'statute'
 
+export type LegalFinding = {
+  from: number; to: number; text: string; kind: 'statute' | 'case'
+  status: 'repealed' | 'amended' | 'verified' | 'unverified' | 'invalid_format'
+  message: string; sourceUrl?: string; checkedAt?: string
+}
+
 export interface ParagraphReference {
   id?: string
   type: ParagraphReferenceType
@@ -181,7 +187,11 @@ export interface ParagraphReference {
   warning?: 'statute-repealed' | 'statute-amended' | 'statute-content-missing'
 }
 
+export type { DocKey } from '../../server/src/intelligence/verification/protocol'
+
 export interface CertificateParagraph {
+  aiOrigin?: import('../../server/src/intelligence/verification/protocol').Declaration['aiOrigin']
+  evidenceCell?: import('../../server/src/intelligence/verification/protocol').EvidenceCell
   id: string
   text: string
   richText?: string
@@ -333,6 +343,18 @@ export interface DraftMemory {
 }
 
 export interface Certificate {
+  docKey?: import('../../server/src/intelligence/verification/protocol').DocKey
+  verification?: import('../../server/src/intelligence/verification/protocol').VerificationResult
+  officeFile?: {
+    id: string
+    fileName: string
+    format: 'doc' | 'docx' | 'txt'
+    version: number
+    sha256: string
+    contentHash: string
+    updatedAt: string
+    sessionId?: string
+  }
   id: string
   caseId: string
   title: string
@@ -372,10 +394,20 @@ export interface WorkspaceSearchResponse {
   externalCaseSearch: { query: string; available: boolean }
 }
 
+export interface CaseBasicInfo {
+  plaintiff?: string
+  defendant?: string
+  ourSide?: 'plaintiff' | 'defendant' | null
+  cause?: string
+  court?: string
+  caseNumber?: string
+}
+
 export interface CaseFolder {
   id: string
   name: string
   description: string
+  basicInfo?: CaseBasicInfo
   createdAt: string
   status: 'draft' | 'in_review' | 'ready'
   agent?: CaseAgentState

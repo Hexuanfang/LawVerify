@@ -7,9 +7,10 @@ import { documentExtensions } from './documentExtensions'
 import { DocumentToolbar } from './DocumentToolbar'
 import { useDocumentDraft } from './useDocumentDraft'
 import { refreshReviewHighlights, reviewHighlights } from './reviewHighlights'
+import { wordExportReadiness } from './workflow'
 import './document-editor.css'
 
-export function DocumentEditor() {
+export function DocumentEditor({ editing }: { editing: boolean }) {
   const app = useApp()
   const certificate = app.certificate!
   const draft = useDocumentDraft(certificate, app.saveDocument)
@@ -21,7 +22,7 @@ export function DocumentEditor() {
     editable: false,
     parseOptions: { preserveWhitespace: 'full' },
     editorProps: {
-      attributes: { class: 'whole-document-content', 'aria-label': '文书正文，可直接编辑', spellcheck: 'false' },
+      attributes: { class: 'whole-document-content', 'aria-label': '文书正文', spellcheck: 'false', tabindex: '0' },
       handleDOMEvents: { click: (_view, event) => {
         const mark = (event.target as HTMLElement).closest<HTMLElement>('[data-el]')
         app.select(mark?.dataset.el || '')
@@ -35,7 +36,10 @@ export function DocumentEditor() {
     },
   })
   const loadedHtml = useRef(draft.initialHtml)
-  const editable = draft.ready && !draft.saving && !draft.recovery && !app.busy
+  const ready = draft.ready && !draft.saving && !draft.recovery && !app.busy
+  const editable = editing && ready
+  const exportable = ready && !draft.dirty && !draft.conflict && app.workspace
+    && wordExportReadiness(app.workspace, certificate.id).allowed
   useEffect(() => { editor?.setEditable(Boolean(editable), false) }, [editor, editable])
   useEffect(() => {
     if (!editor || loadedHtml.current === draft.initialHtml) return
@@ -74,6 +78,7 @@ export function DocumentEditor() {
       {editor && <DocumentToolbar editor={editor} disabled={!editable} />}
       <Button className="document-save-button" disabled={!draft.dirty || !editable || draft.conflict}
         onClick={() => void save.current()}><Save size={14} />{draft.saving ? '正在保存…' : '保存文书'}</Button>
+      <Button variant="outline" disabled={!exportable} onClick={() => void app.exportWord('original')}>导出原格式</Button>
     </div>
     <div className="document-editor-notices">
       {draft.recovery && <div className="document-editor-notice">发现未提交的文书草稿。

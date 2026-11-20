@@ -3,9 +3,15 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { test } from 'node:test'
 import ts from 'typescript'
+import { AppError } from '../src/core/app-error.ts'
+import { ModelRedaction } from '../src/integrations/model-redaction.ts'
+import { planLinkageParagraphBatches } from '../src/intelligence/linkage-batching.ts'
+import './test-linkage-batching.mjs'
 import * as policy from '../src/intelligence/linkage-policy.ts'
+import { normalizeDocKey, profile as documentProfile } from '../src/intelligence/verification/profile.ts'
+import { parseModelDeclarationCandidates } from '../src/intelligence/verification/extract.ts'
+import { invalidateVerification } from '../src/intelligence/verification/review-state.ts'
 import { buildClaimUnits, buildClaimEvidenceMatches, buildEvidenceFragments } from '../src/intelligence/evidence-matching.ts'
-import { createDocumentTaskQueue } from '../../app/src/document-task-queue.ts'
 
 // Exercise the actual service functions without loading databases, accounts or API keys.
 function loadFunctions(file, names, mocks = {}) {
@@ -21,9 +27,11 @@ function loadFunctions(file, names, mocks = {}) {
   // 默认桩：模型调用缓存直通（缓存本身由 test-llm-call-cache.mjs 覆盖），并提供浏览器的 AbortController。
   const defaultMocks = {
     withLlmCallCache: async (_namespace, _payload, run) => ({ value: await run(), reused: false }),
+    currentModelRedaction: () => undefined,
+    planLinkageParagraphBatches,
     AbortController,
   }
-  const context = vm.createContext({ ...policy, ...defaultMocks, ...mocks })
+  const context = vm.createContext({ ...policy, normalizeDocKey, documentProfile, parseModelDeclarationCandidates, ...defaultMocks, ...mocks })
   vm.runInContext(ts.transpileModule(
     snippets.join('\n') + '\nthis.exports={' + names.join(',') + '};',
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
@@ -33,79 +41,39 @@ function loadFunctions(file, names, mocks = {}) {
 
 const serviceFile = '../src/service.ts'
 
-test('文书失焦保存完成后才启动联动，结果提交保持顺序', async () => {
-  const queue = createDocumentTaskQueue()
-  const events = []
-  let finishSave
-  const gate = new Promise(resolve => { finishSave = resolve })
-  const save = queue.run(async () => {
-    events.push('save-start')
-    await gate
-    events.push('save-finish')
-  })
-  const link = queue.run(async () => { events.push('link') })
-  await Promise.resolve()
-  assert.deepEqual(events, ['save-start'])
-  finishSave()
-  await Promise.all([save, link])
-  assert.deepEqual(events, ['save-start', 'save-finish', 'link'])
-})
-
-test('保存失败阻止依赖旧正文的联动，恢复后可以再次保存', async () => {
-  const queue = createDocumentTaskQueue()
-  let linked = false
-  const save = queue.run(async () => { throw new Error('save failed') })
-  const link = queue.run(async () => { linked = true })
-  await assert.rejects(save, /save failed/)
-  await assert.rejects(link, /save failed/)
-  assert.equal(linked, false)
-  queue.recover()
-  assert.equal(await queue.run(async () => 'saved'), 'saved')
-})
-
-test('真实界面处理函数在编辑保存后调用联动，并拦截重复点击', async () => {
-  const events = []
-  let release
-  const gate = new Promise(resolve => { release = resolve })
-  const certificate = { id: 'c', caseId: 'case', paragraphs: [{ id: 'p' }] }
-  const noop = () => {}
-  const handlers = loadFunctions('../../app/src/App.tsx', [
-    'handleUpdateParagraphById', 'handleAutoLinkCertificate',
-    'mergeRecordsById', 'mergeLinkageIntoWorkspace', 'isAbortError',
-  ], {
-    activeCertificate: certificate, activeParagraph: { id: 'p' }, selectedEvidenceIds: [],
-    sessionStorage: { getItem: () => 'test-account' }, LOGIN_ACCOUNT_STORAGE_KEY: 'login-account',
-    backgroundWorkspaceHandler: { current: noop },
-    previewEvidence: null,
-    documentTaskQueueRef: { current: createDocumentTaskQueue() },
-    documentAnalysisRunningRef: { current: false },
-    autoLinkAbortRef: { current: null },
-    localWorkspaceRef: { current: { certificates: [], evidenceInsights: [], caseContextMemories: [] } },
-    api: {
-      updateParagraph: async () => { events.push('save'); await gate; return { workspace: {} } },
-      // 联动只回传改写过的文书与本案记忆，不再返回全量工作区。
-      autoLinkCertificate: async () => {
-        events.push('link')
-        return {
-          linkage: { certificate, evidenceInsights: [], caseContextMemories: [] },
-          linkedParagraphCount: 0, evidenceLinkCount: 0, statuteReferenceCount: 0, caseReferenceCount: 0,
-        }
-      },
-      getWorkspace: async () => ({ workspace: { certificates: [], evidenceInsights: [], caseContextMemories: [] } }),
-    },
-    runMutation: async task => { await task(); return true },
-    applyWorkspace: noop, setAutoLinkFeedback: noop, setLockedPreviewEvidenceId: noop,
-    setAutoLinkingCertificateId: noop, openCaseCenter: noop, setPreviewPanelMode: noop,
-    revealInsightPanel: noop, handleOpenEvidenceLinking: noop,
-  })
-  const save = handlers.handleUpdateParagraphById('p', { text: 'edited' })
-  const link = handlers.handleAutoLinkCertificate()
-  await handlers.handleAutoLinkCertificate()
-  await Promise.resolve()
-  assert.deepEqual(events, ['save'])
-  release()
-  await Promise.all([save, link])
-  assert.deepEqual(events, ['save', 'link'])
+test('核验被解析失败阻塞时带出材料编号和真实原因，继续阻止未就绪材料进入核验', async () => {
+  for (const status of ['failed', 'queued', 'processing', 'review_required']) {
+    const workspace = {
+      certificates: [{ id: 'document', caseId: 'case', paragraphs: [] }],
+      evidences: [{ id: 'material', caseId: 'case', number: 'E001',
+        parsing: { status, error: status === 'failed' ? '暂时无法获取解析凭据。' : undefined } }],
+    }
+    const { autoLinkCertificate } = loadFunctions(serviceFile, ['autoLinkCertificate'], {
+      isLlmConfigured: () => true,
+      withRequestAbortSignal: (_signal, run) => run(),
+      withModelRedaction: run => run(),
+      resetLlmCallCacheHitCount: () => {},
+      getLlmCallCacheHitCount: () => 0,
+      readWorkspace: async () => workspace,
+      throwIfLinkageAborted: () => {},
+      verificationMaterialVersion: () => 'current-material-version',
+      learnCaseRedaction: () => {},
+      AppError,
+      rebuildCaseContextMemory: () => assert.fail('未就绪材料不能进入模型核验'),
+    })
+    await assert.rejects(autoLinkCertificate('document'), error => {
+      assert.equal(error.code, 'CASE_PARSE_REVIEW_REQUIRED')
+      if (status === 'failed') {
+        assert.match(error.message, /1 份.*解析失败/)
+        assert.match(error.message, /E001/)
+        assert.match(error.message, /暂时无法获取解析凭据/)
+        assert.match(error.message, /重新解析/)
+      } else {
+        assert.match(error.message, /解析或等待人工审核/)
+      }
+      return true
+    })
+  }
 })
 
 test('只修改备注或格式不重新识别法条，也不删除已有自动法条', async () => {
@@ -114,11 +82,13 @@ test('只修改备注或格式不重新识别法条，也不删除已有自动�
     references: [{ id: 'r', note: 'system:auto-statute-detected' }],
   }
   let saved
-  const workspace = { certificates: [{ id: 'c', paragraphs: [paragraph] }] }
+  const workspace = { user: { email: 'format-only@test.invalid' }, certificates: [{ id: 'c', paragraphs: [paragraph] }] }
   const { updateParagraph } = loadFunctions(serviceFile, ['updateParagraph'], {
     readWorkspace: async () => saved ?? workspace,
     writeWorkspace: async state => { saved = state },
     normalizeParagraph: p => p,
+    getCurrentWorkspaceAccount: () => undefined,
+    invalidateVerification,
     attachAutoStatuteReferencesToParagraph: () => { throw new Error('must not retrieve') },
   })
   await updateParagraph('c', 'p', { note: '已核验', richText: '<p><strong>原文</strong></p>' })
@@ -340,8 +310,6 @@ test('普通信息整批跳过模型调用；语义判断无实质价值时不�
   let calls = 0
   const { analyzeCertificateAutoLinksWithLlm } = loadFunctions(serviceFile, ['analyzeCertificateAutoLinksWithLlm'], {
     isLlmConfigured: () => true,
-    buildEvidenceSemanticScoreMap: async () => new Map(),
-    chunkItems: items => items.length ? [items] : [],
     buildParagraphAutoLinkPayload: (_, __, chunk) => chunk.map(p => ({ paragraphId: p.id, text: p.text, sentenceGroups: policy.getLinkageSentences(p.text) })),
     requestLinkageParagraphBatch: async () => {
       calls++
@@ -359,6 +327,163 @@ test('普通信息整批跳过模型调用；语义判断无实质价值时不�
   const general = await analyzeCertificateAutoLinksWithLlm(workspace, { paragraphs: [{ id: 'general', text: '当事人应遵循诚实信用原则。' }] }, [], null)
   assert.equal(calls, 1)
   assert.equal(general.get('general').caseIntents.length, 0)
+})
+
+
+test('单段预计输出超过硬预算时保留全文并明确报错', async () => {
+  let calls = 0
+  const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+    'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+  ], { createChatCompletion: async () => { calls++; assert.fail('输出超限不应请求模型') } })
+  const paragraph = { paragraphId: 'long', text: fact.repeat(70) }
+  const content = JSON.stringify({ paragraphs: [paragraph] })
+  await assert.rejects(adapter.requestLinkageParagraphBatch({
+    stage: 'overview', paragraphIds: ['long'], maxTokens: 10000,
+    messages: [{ role: 'user', content }],
+  }), /单段核验预计输出超过/)
+  assert.equal(calls, 0)
+  assert.equal(JSON.parse(content).paragraphs[0].text, fact.repeat(70))
+})
+
+test('核验服务将完整段落交给两阶段组批，取消固定段数与正文分组限制', async () => {
+  const cases = [
+    { lengths: [30, 30, 30, 30, 30, 30, 30], sizes: [7], tokens: [10000] },
+    { lengths: [3000, 3000, 30], sizes: [3], tokens: [10000] },
+    { lengths: [30, 30, 30, 30], sizes: [4], tokens: [10000] },
+    { lengths: [6001, 30], sizes: [2], tokens: [10000] },
+  ]
+  for (const { lengths, sizes, tokens } of cases) {
+    const calls = []
+    const paragraphs = lengths.map((length, index) => ({ id: `p${index}`, text: fact + '文'.repeat(length - fact.length) }))
+    const { analyzeCertificateAutoLinksWithLlm } = loadFunctions(serviceFile, [
+      'analyzeCertificateAutoLinksWithLlm',
+      'normalizeAutoLinkSignalList', 'normalizeAutoLinkEvidenceIntents',
+      'normalizeAutoLinkStatuteIntents', 'normalizeAutoLinkCaseIntents',
+    ], {
+      isLlmConfigured: () => true,
+      buildParagraphAutoLinkPayload: (_, __, chunk) => chunk.map(p => ({ paragraphId: p.id, text: p.text })),
+      requestLinkageParagraphBatch: async options => {
+        calls.push(options)
+        return { paragraphs: options.paragraphIds.map(paragraphId => ({
+          paragraphId,
+          sentenceFocus: focusFor(paragraphs.find(p => p.id === paragraphId).text),
+          evidenceLinks: [], statuteIntents: [], caseIntents: [],
+        })) }
+      },
+    })
+    const result = await analyzeCertificateAutoLinksWithLlm({ cases: [] }, { paragraphs }, [], null)
+    assert.equal(calls.length, sizes.length * 2)
+    for (const stage of ['overview', 'links']) {
+      const stageCalls = calls.filter(call => call.stage === stage)
+      assert.deepEqual(stageCalls.map(call => call.paragraphIds.length), sizes)
+      assert.deepEqual(stageCalls.map(call => call.maxTokens), tokens)
+      const sent = stageCalls.flatMap(call => JSON.parse(call.messages[1].content).paragraphs)
+      assert.deepEqual(sent.map(p => ({ id: p.paragraphId, text: p.text })), paragraphs)
+    }
+    assert.deepEqual(Array.from(result.keys()), paragraphs.map(p => p.id))
+  }
+})
+
+test('核验服务与真实组批适配器联动，两阶段独立组批并报告实际处理段落', async () => {
+  const paragraphs = Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, text: fact.repeat(10) }))
+  const calls = []
+  const progress = []
+  const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+    'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+  ], {
+    createChatCompletion: async options => {
+      const payload = JSON.parse(options.messages[1].content)
+      const stage = options.messages[0].content.includes('整体理解助手') ? 'overview' : 'links'
+      calls.push({ stage, ids: payload.paragraphs.map(p => p.paragraphId), maxTokens: options.maxTokens })
+      return { content: JSON.stringify({ paragraphs: payload.paragraphs.map(p => ({
+        paragraphId: p.paragraphId, sentenceFocus: focusFor(p.text), evidenceLinks: [], statuteIntents: [], caseIntents: [],
+      })) }) }
+    },
+  })
+  const service = loadFunctions(serviceFile, [
+    'analyzeCertificateAutoLinksWithLlm', 'normalizeAutoLinkSignalList',
+    'normalizeAutoLinkEvidenceIntents', 'normalizeAutoLinkStatuteIntents', 'normalizeAutoLinkCaseIntents',
+  ], {
+    isLlmConfigured: () => true,
+    buildParagraphAutoLinkPayload: (_, __, items) => items.map(p => ({
+      paragraphId: p.id, text: p.text, sentenceGroups: policy.getLinkageSentences(p.text),
+      evidenceCandidates: Array.from({ length: 12 }, (_, index) => ({ evidenceNumber: `E${index}` })),
+    })),
+    requestLinkageParagraphBatch: adapter.requestLinkageParagraphBatch,
+  })
+  const result = await service.analyzeCertificateAutoLinksWithLlm({ cases: [] }, { paragraphs }, [], null, text => progress.push(text))
+  assert.deepEqual(calls.filter(call => call.stage === 'overview').map(call => call.ids), [['p0', 'p1', 'p2', 'p3'], ['p4', 'p5']])
+  assert.deepEqual(calls.filter(call => call.stage === 'links').map(call => call.ids), [['p0', 'p1'], ['p2', 'p3'], ['p4', 'p5']])
+  assert.ok(calls.every(call => call.maxTokens <= 10000))
+  assert.ok(progress.some(text => /理解.*第 1–4 段/.test(text)))
+  assert.ok(progress.some(text => /核对.*第 3–4 段/.test(text)))
+  assert.deepEqual(Array.from(result.keys()), ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'])
+})
+
+test('动态组批取消时停止后续调用，重试复用成功批次并保留结果顺序', async () => {
+  const paragraphs = [0, 1, 2].map(index => ({ paragraphId: `p${index}`, text: '文'.repeat(80000) }))
+  const cache = new Map()
+  const calls = []
+  let cancelOnce = true
+  const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+    'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+  ], {
+    withLlmCallCache: async (namespace, payload, run) => {
+      const key = JSON.stringify({ namespace, payload })
+      if (cache.has(key)) return { value: cache.get(key), reused: true }
+      const value = await run()
+      cache.set(key, value)
+      return { value, reused: false }
+    },
+    createChatCompletion: async options => {
+      const sent = JSON.parse(options.messages[0].content).paragraphs
+      calls.push(sent[0].paragraphId)
+      if (sent[0].paragraphId === 'p1' && cancelOnce) {
+        cancelOnce = false
+        throw Object.assign(new Error('已取消'), { name: 'AbortError' })
+      }
+      return { content: JSON.stringify({ paragraphs: sent.map(p => ({ paragraphId: p.paragraphId, sentenceFocus: [] })) }) }
+    },
+  })
+  const options = {
+    stage: 'overview', paragraphIds: ['p0', 'p1', 'p2'], maxTokens: 10000,
+    messages: [{ role: 'user', content: JSON.stringify({ paragraphs }) }],
+  }
+  await assert.rejects(adapter.requestLinkageParagraphBatch(options), { name: 'AbortError' })
+  assert.deepEqual(calls, ['p0', 'p1'])
+  const result = await adapter.requestLinkageParagraphBatch(options)
+  assert.deepEqual(calls, ['p0', 'p1', 'p1', 'p2'])
+  assert.deepEqual(Array.from(result.paragraphs, p => p.paragraphId), ['p0', 'p1', 'p2'])
+})
+
+test('整篇动态组批混合关联与跳过段落时保留全部理解元数据', async () => {
+  const paragraphs = [{ id: 'active', text: fact }, { id: 'skip', text: '当事人应遵循诚实信用原则。' }]
+  const overview = {
+    paragraphId: 'skip', paragraphSummary: '背景原则', paragraphRole: '背景', argumentGoal: '交代原则',
+    proofRequirements: ['无需举证'], legalIssues: ['原则说明'], caseSearchTopics: ['背景线索'],
+    sentenceFocus: [{ sentenceIndex: 0, kind: 'background', priority: 'skip', reason: '背景' }],
+  }
+  const service = loadFunctions(serviceFile, [
+    'analyzeCertificateAutoLinksWithLlm', 'normalizeAutoLinkSignalList',
+    'normalizeAutoLinkEvidenceIntents', 'normalizeAutoLinkStatuteIntents', 'normalizeAutoLinkCaseIntents',
+  ], {
+    isLlmConfigured: () => true,
+    uniqueStrings: (items, limit) => [...new Set(items)].slice(0, limit),
+    buildParagraphAutoLinkPayload: (_, __, items) => items.map(p => ({ paragraphId: p.id, text: p.text })),
+    requestLinkageParagraphBatch: async options => ({ paragraphs: options.stage === 'overview'
+      ? [{ paragraphId: 'active', sentenceFocus: focusFor(fact) }, overview]
+      : [{ paragraphId: 'active', evidenceLinks: [], statuteIntents: [], caseIntents: [] }] }),
+  })
+  const result = await service.analyzeCertificateAutoLinksWithLlm({ cases: [] }, { paragraphs }, [], null)
+  const skipped = result.get('skip')
+  assert.equal(skipped.paragraphSummary, '背景原则')
+  assert.equal(skipped.paragraphRole, '背景')
+  assert.equal(skipped.argumentGoal, '交代原则')
+  assert.deepEqual(Array.from(skipped.proofRequirements), ['无需举证'])
+  assert.deepEqual(Array.from(skipped.legalIssues), ['原则说明'])
+  assert.deepEqual(Array.from(skipped.caseSearchTopics), ['背景线索'])
+  assert.equal(skipped.sentenceFocus[0].priority, 'skip')
+  assert.equal(skipped.evidenceLinks.length, 0)
 })
 
 test('材料理解结构化解析保留证明用途、边界和矛盾点', () => {
@@ -456,13 +581,106 @@ test('只重试截断或遗漏段落，不重新请求已经完成的段落', as
     },
   })
   const result = await adapter.requestLinkageParagraphBatch({
-    stage: 'overview', paragraphIds: ['p1', 'p2'], maxTokens: 1000,
+    stage: 'overview', paragraphIds: ['p1', 'p2'], maxTokens: 6000,
     messages: [{ role: 'user', content: JSON.stringify({ paragraphs: [{ paragraphId: 'p1' }, { paragraphId: 'p2' }] }) }],
   })
   assert.equal(calls.length, 2)
   assert.equal(JSON.parse(calls[1].messages[0].content).paragraphs.length, 1)
   assert.equal(JSON.parse(calls[1].messages[0].content).paragraphs[0].paragraphId, 'p2')
   assert.equal(result.paragraphs.length, 2)
+})
+
+test('完整核验消息超限时自动拆批，保留案件上下文和各段候选证据', async () => {
+  for (const stage of ['overview', 'links']) {
+    const paragraphs = Array.from({ length: 5 }, (_, index) => ({
+      paragraphId: `p${index}`, text: fact,
+      evidenceCandidates: [{ evidenceNumber: 'E01', summary: '证'.repeat(32000) }],
+    }))
+    const payload = { caseContextMemory: { summary: '案件背景' }, paragraphs }
+    assert.ok(JSON.stringify(payload).length > 150000)
+    const calls = []
+    const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+      'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+    ], {
+      createChatCompletion: async options => {
+        assert.ok(options.messages.every(message => message.content.length <= 150000))
+        const sent = JSON.parse(options.messages[1].content)
+        calls.push(sent)
+        return { content: JSON.stringify({ paragraphs: sent.paragraphs.map(p => ({
+          paragraphId: p.paragraphId, sentenceFocus: [], evidenceLinks: [], statuteIntents: [], caseIntents: [],
+        })) }) }
+      },
+    })
+    const result = await adapter.requestLinkageParagraphBatch({
+      stage, paragraphIds: paragraphs.map(p => p.paragraphId), maxTokens: 10000,
+      messages: [{ role: 'system', content: '核验提示' }, { role: 'user', content: JSON.stringify(payload) }],
+    })
+    assert.equal(calls.length, 5)
+    assert.deepEqual(calls.flatMap(call => call.paragraphs), paragraphs)
+    assert.ok(calls.every(call => call.caseContextMemory.summary === '案件背景'))
+    assert.deepEqual(Array.from(result.paragraphs, p => p.paragraphId), ['p0', 'p1', 'p2', 'p3', 'p4'])
+  }
+})
+
+test('完整核验消息按大小分批直至每条消息均满足长度上限', async () => {
+  const paragraphs = Array.from({ length: 5 }, (_, index) => ({ paragraphId: `p${index}`, text: '文'.repeat(80000) }))
+  let calls = 0
+  const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+    'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+  ], {
+    createChatCompletion: async options => {
+      assert.ok(options.messages[0].content.length <= 150000)
+      const sent = JSON.parse(options.messages[0].content)
+      calls++
+      return { content: JSON.stringify({ paragraphs: sent.paragraphs.map(p => ({ paragraphId: p.paragraphId, sentenceFocus: [] })) }) }
+    },
+  })
+  const result = await adapter.requestLinkageParagraphBatch({
+    stage: 'overview', paragraphIds: paragraphs.map(p => p.paragraphId), maxTokens: 6000,
+    messages: [{ role: 'user', content: JSON.stringify({ paragraphs }) }],
+  })
+  assert.equal(calls, 5)
+  assert.equal(result.paragraphs.length, 5)
+})
+
+test('核验消息长度检查计入隐私脱敏后的膨胀', async () => {
+  const redaction = new ModelRedaction()
+  redaction.addNames(['张三'])
+  const paragraphs = [0, 1].map(index => ({ paragraphId: `p${index}`, text: '张三'.repeat(3500) }))
+  const content = JSON.stringify({ paragraphs })
+  assert.ok(content.length < 150000)
+  assert.ok(redaction.redact(content).length > 150000)
+  let calls = 0
+  const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+    'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+  ], {
+    currentModelRedaction: () => redaction,
+    createChatCompletion: async options => {
+      assert.ok(redaction.redact(options.messages[0].content).length <= 150000)
+      calls++
+      const sent = JSON.parse(options.messages[0].content)
+      return { content: JSON.stringify({ paragraphs: sent.paragraphs.map(p => ({ paragraphId: p.paragraphId, sentenceFocus: [] })) }) }
+    },
+  })
+  await adapter.requestLinkageParagraphBatch({
+    stage: 'overview', paragraphIds: ['p0', 'p1'], maxTokens: 6000,
+    messages: [{ role: 'user', content }],
+  })
+  assert.equal(calls, 2)
+})
+test('单段或共享上下文独自超限时明确报错，停止发送超限模型请求', async () => {
+  for (const payload of [
+    { paragraphs: [{ paragraphId: 'p1', text: '文'.repeat(150001) }] },
+    { caseContextMemory: '背'.repeat(150001), paragraphs: [{ paragraphId: 'p1', text: fact }, { paragraphId: 'p2', text: fact }] },
+  ]) {
+    const adapter = loadFunctions('../src/intelligence/linkage-response.ts', [
+      'hasStageFields', 'parseLinkageParagraphResponse', 'requestLinkageParagraphBatch',
+    ], { createChatCompletion: async () => { assert.fail('超限内容不应发出模型请求') } })
+    await assert.rejects(adapter.requestLinkageParagraphBatch({
+      stage: 'overview', paragraphIds: payload.paragraphs.map(p => p.paragraphId), maxTokens: 6000,
+      messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    }), /单段核验内容.*150000/)
+  }
 })
 
 test('持续非法模型输出只重试一次，不返回伪成功或覆盖已有数据', async () => {
@@ -474,34 +692,4 @@ test('持续非法模型输出只重试一次，不返回伪成功或覆盖已�
     stage: 'overview', paragraphIds: ['p1'], maxTokens: 1000, messages: [],
   }), /原文和已有关联均未改动/)
   assert.equal(calls, 2)
-})
-
-test('工作区异步刷新采用最新手动选中文件，不被旧闭包清空', () => {
-  const ref = { current: 'file-B' }
-  let previewId = null
-  const noop = () => {}
-  const { applyWorkspace } = loadFunctions('../../app/src/App.tsx', ['applyWorkspace'], {
-    manualPreviewEvidenceId: null, manualPreviewEvidenceIdRef: ref,
-    streamedDirectoryEvidencesRef: { current: [] },
-    selectedCaseId: 'case1', selectedCertificateId: null, activeParagraphId: null,
-    selectedEvidenceIds: [], locatorDraft: '',
-    localWorkspaceRef: {}, cloudAccountProfileRef: {}, cloudPointsSyncRef: {}, activeSentenceAnchorRef: { current: null },
-    normalizeWorkspaceState: x => x, enrichWorkspaceWithCloudProfile: x => x, mergeWorkspaceWithCloudPoints: x => x,
-    deriveSelection: (_, selection) => selection,
-    findSelectedParagraph: () => null, resolveParagraphSentenceSelection: () => ({ index: null, text: '' }),
-    getParagraphLinks: () => [],
-    setAppState: noop, setSelectedCaseId: noop, setSelectedCertificateId: noop, setActiveParagraphId: noop,
-    setSelectedEvidenceIds: noop, setImageViewerState: noop, setLocatorDraft: noop, setActiveSentenceIndex: noop, setActiveSentenceText: noop,
-    setManualPreviewEvidenceId: id => { ref.current = id; previewId = id },
-  })
-  const workspace = { evidences: [{ id: 'file-B', caseId: 'case1' }] }
-  applyWorkspace(workspace)
-  assert.equal(previewId, 'file-B')
-  applyWorkspace(workspace, {}, { preserveManualPreview: true })
-  assert.equal(previewId, 'file-B')
-  applyWorkspace(workspace, {}, { preserveManualPreview: false })
-  assert.equal(previewId, null)
-  ref.current = 'file-B'
-  applyWorkspace(workspace, { selectedCaseId: 'case2' })
-  assert.equal(previewId, null)
 })

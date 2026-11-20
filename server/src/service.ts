@@ -1,5 +1,23 @@
-import { createHash } from 'node:crypto'
-import { approveEvidenceParsing, ensureEvidenceParsed, supportsMineru } from './evidence-parsing.js'
+import { createHash, randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
+import { rememberAssistantCandidate } from './assistant/candidates.js'
+import { assistantMaterialVersion, assistantSnapshot, prepareAssistantDraft, verifiedDraftAuthorities } from './assistant/draft.js'
+import { getAssistantSkill, validateSkillOutput } from './assistant/skill-contract.js'
+import { markAssistantVerificationPending, recheckAssistantDeclarations, resumeAssistantVerification, type AssistantPendingVerification } from './assistant/recheck.js'
+import { rewriteRichText } from './assistant/rewrite-rich-text.js'
+import { rebuildParagraphs } from './document-editing.js'
+import { atomicOfficeJson, officeContentHash, officeFormat, type OfficeFile } from './office/files.js'
+import { extractDeclarations, parseModelDeclarationCandidates } from './intelligence/verification/extract.js'
+import { applyDeclarationDependencies } from './intelligence/verification/dependencies.js'
+import { assertDraftPosition } from './intelligence/verification/draft-policy.js'
+import { locateRewriteSelection, validateRewritePreview } from './intelligence/verification/rewrite-selection.js'
+import { verifyEvidence } from './intelligence/verification/evidence.js'
+import { verifyLegalDeclarations } from './intelligence/verification/legal.js'
+import { createVerificationSources } from './integrations/verification-sources.js'
+import { normalizeDocKey, profile as documentProfile } from './intelligence/verification/profile.js'
+import { carryDeclarationReviews, declarationEditSchema, declarationReferenceSchema, invalidateVerification, preserveScopedReferences, verificationAuthorityKey } from './intelligence/verification/review-state.js'
+import { documentMaterialKey, recheckDirtyDeclarations, recordVerification, sameVerificationDocument, saveDeclarationReview, validateDeclarationEdit, validateDeclarationReferences, verificationMaterialVersion } from './intelligence/verification/workspace-review.js'
+import { approveEvidenceParsing, cancelCaseEvidenceParsing, ensureEvidenceParsed, supportsMineru } from './evidence-parsing.js'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { rankCases } from './intelligence/legal-verification.js'
@@ -55,7 +73,8 @@ import {
   normalizeSentenceLinkageFocus,
 } from './intelligence/linkage-policy.js'
 import { requestLinkageParagraphBatch } from './intelligence/linkage-response.js'
-import { selectEvidenceChunksForUnderstanding } from './intelligence/evidence-retrieval.js'
+import { selectEvidenceChunksForUnderstanding, splitEvidenceTextIntoPages } from './intelligence/evidence-retrieval.js'
+import { rankLinkageEvidence } from './intelligence/linkage-evidence-ranking.js'
 import { resolveEvidenceUnderstandingMode } from './intelligence/evidence-understanding-mode.js'
 import { scanEvidenceRisks } from './intelligence/evidence-risk-scan.js'
 import {
@@ -65,14 +84,17 @@ import {
   isPlaceholderStatuteContent,
   pickPreferredStatuteBinding,
 } from './intelligence/statute-version.js'
-import { deleteObject, readObject, readObjectPath, storeObject } from './infrastructure/object-storage.js'
+import { readObject, readObjectPath, storeObject } from './infrastructure/object-storage.js'
 import { isDatabaseEnabled } from './infrastructure/postgres.js'
 import { createChatCompletion, createChatCompletionStream, isLlmConfigured, withRequestAbortSignal, type LlmChatMessage } from './integrations/llm-service.js'
 import { currentModelRedaction, withModelRedaction } from './integrations/model-redaction.js'
 import { getLlmCallCacheHitCount, resetLlmCallCacheHitCount, withLlmCallCache } from './infrastructure/llm-call-cache.js'
 import { createSemaphore, mapSettledWithConcurrency, mapWithConcurrency } from './infrastructure/concurrency.js'
 import { runExclusiveWorkspaceMutation } from './infrastructure/workspace-lock.js'
-import { createEmbedding, createEmbeddings, isEmbeddingConfigured } from './integrations/embedding-service.js'
+import {
+  createEmbedding, createEmbeddings, createEvidencePassageEmbeddings, getEmbeddingBatchSize,
+  isEmbeddingConfigured, maskTextForEvidenceEmbedding,
+} from './integrations/embedding-service.js'
 import { isPkulawCaseSearchConfigured, searchPkulawCases } from './integrations/pkulaw-mcp.js'
 import { isWkCaseSearchConfigured, searchWkCases } from './integrations/wk-mcp.js'
 import { isYuandianCaseSearchConfigured, searchYuandianCases } from './integrations/yuandian-mcp.js'
@@ -80,7 +102,7 @@ import { shouldUseCommercialKnowledgeStore } from './knowledge-mode.js'
 import { searchWorkspace, type SearchScope } from './search/workspace-search.js'
 import { OFFICIAL_LEGAL_SOURCES } from './legal-source-catalog.js'
 import { removeLocalKnowledgeFileIndex, replaceLocalKnowledgeFileIndex, searchLocalKnowledgeRagChunks } from './local-rag-store.js'
-import { getCurrentWorkspaceAccount, mutateWorkspaceCases, readWorkspace, runWithWorkspaceAccount, writeWorkspace } from './store.js'
+import { cleanupDeletedCaseFiles, getCurrentWorkspaceAccount, mutateWorkspaceCases, readWorkspace, runWithWorkspaceAccount, writeWorkspace } from './store.js'
 import {
   CASE_AGENT_RULES, evidenceSourceNumber, linkageMaterialFingerprint, normalizeStrategy, objectiveInputKey,
   positionSchema, strategyInputKey, type PositionDraft,
@@ -131,6 +153,10 @@ export type CertificateStreamEvent =
     workspace: WorkspaceState
     certificate: Certificate
     agentReply?: string
+    rewritePreview?: string
+    rewriteVersion?: string
+    candidateId?: string
+    draft?: ReturnType<typeof prepareAssistantDraft>['draft']
   }
 
 function createId(prefix: string) {
@@ -194,7 +220,7 @@ function queueBackgroundEvidenceProcessing(caseId: string, evidenceIds: string[]
 // 解析队列独立运行，不占用模型请求配额。单份完成即可进入现有理解队列。
 function startEvidenceParsing(evidenceIds: string[]) {
   for (const evidenceId of evidenceIds) {
-    void ensureEvidenceParsed(evidenceId).then(async evidence => {
+    void ensureEvidenceParsed(evidenceId, { batchSize: evidenceIds.length }).then(async evidence => {
       if (evidence?.parsing?.status !== 'ready') return
       const latest = await readWorkspace()
       const folder = latest.cases.find(item => item.id === evidence.caseId)
@@ -1023,6 +1049,7 @@ interface ParagraphAutoLinkAnalysis {
   legalIssues?: string[]
   caseSearchTopics?: string[]
   sentenceFocus: SentenceLinkageFocus[]
+  declarationCandidates?: ReturnType<typeof parseModelDeclarationCandidates>
   evidenceLinks: ParagraphAutoLinkEvidenceIntent[]
   statuteIntents: ParagraphAutoLinkStatuteIntent[]
   caseIntents: ParagraphAutoLinkCaseIntent[]
@@ -1384,19 +1411,6 @@ function buildCaseReference(
   }
 }
 
-function chunkItems<T>(items: T[], size: number) {
-  if (size <= 0 || items.length <= size) {
-    return [items]
-  }
-
-  const chunks: T[][] = []
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size))
-  }
-
-  return chunks
-}
-
 function summarizeEvidenceForAutoLinkPrompt(
   evidence: Evidence,
   insight: EvidenceInsight | null,
@@ -1412,15 +1426,11 @@ function summarizeEvidenceForAutoLinkPrompt(
     materialTypes: semanticSignals.materialTypes,
     semanticAliases: semanticSignals.aliases,
     contentEntities: semanticSignals.entities,
-    summary: insight?.summary ?? summarizeForPrompt(evidence.ocrText || evidence.name, 120),
+    summary: insight?.summary ?? '',
     keyFacts: insight?.keyFacts ?? [],
     issues: insight?.issues ?? [],
     positions: insight?.positions ?? [],
     ...normalizeMaterialUnderstanding(insight),
-    fragmentSnippets: fragments.slice(0, 3).map((fragment) => ({
-      locator: fragment.locator,
-      summary: summarizeForPrompt(fragment.text, 90),
-    })),
   }
 }
 
@@ -1538,109 +1548,62 @@ function inferEvidenceSemanticSignals(
   }
 }
 
-async function buildEvidenceSemanticScoreMap(
+async function buildLinkageEvidenceCandidates(
   workspace: WorkspaceState,
-  certificate: Certificate,
+  caseId: string,
   evidences: Evidence[],
+  paragraphs: Parameters<typeof rankLinkageEvidence>[0],
+  signal?: AbortSignal,
 ) {
-  const semanticScores = new Map<string, Map<string, number>>()
-  if (!certificate.paragraphs.length || !evidences.length || !isEmbeddingConfigured()) {
-    return semanticScores
+  const evidenceById = new Map(evidences.map(evidence => [evidence.id, evidence]))
+  const fragmentsByEvidence = new Map<string, EvidenceFragment[]>()
+  for (const fragment of workspace.evidenceFragments) {
+    if (!evidenceById.has(fragment.evidenceId)) continue
+    const fragments = fragmentsByEvidence.get(fragment.evidenceId) ?? []
+    fragments.push(fragment)
+    fragmentsByEvidence.set(fragment.evidenceId, fragments)
   }
-
-  const paragraphTexts = certificate.paragraphs.map((paragraph) =>
-    [
-      summarizeForPrompt(paragraph.text, 320),
-      ...splitIntoSentenceGroups(paragraph.text, 4).map((group) => summarizeForPrompt(group, 120)),
-    ].join('\n'),
-  )
-
-  const evidenceTexts = evidences.map((evidence) => {
-    const insight = getLatestEvidenceInsight(workspace, evidence.id)
-    const fragments = getEvidenceFragmentsForEvidence(workspace, evidence.id)
-    const semanticSignals = inferEvidenceSemanticSignals(evidence, insight ?? null, fragments)
-    return [
-      evidence.number,
-      evidence.name,
-      ...semanticSignals.materialTypes,
-      ...semanticSignals.aliases,
-      ...semanticSignals.entities,
-      evidence.summaryText ?? '',
-      insight?.summary ?? '',
-      ...(insight?.keyFacts ?? []),
-      ...(insight?.positions ?? []),
-      ...(insight?.issues ?? []),
-      ...(insight?.proofPurposes ?? []),
-      ...(insight?.disputedPoints ?? []),
-      ...fragments.slice(0, 4).flatMap((fragment) => [fragment.locator, fragment.summary, summarizeForPrompt(fragment.text, 120)]),
-    ].filter(Boolean).join('\n')
+  const insights = new Map(evidences.map(evidence => [evidence.id, getLatestEvidenceInsight(workspace, evidence.id)]))
+  const documents = evidences.map(evidence => {
+    const raw = getMeaningfulEvidenceText(evidence.ocrText)
+    const hasText = Boolean(raw) && ![evidence.name, evidence.fileName].some(name => normalizeLinkageText(name) === normalizeLinkageText(raw))
+    const fragments = hasText ? (fragmentsByEvidence.get(evidence.id) ?? []).flatMap(fragment => {
+      const text = getMeaningfulEvidenceText(fragment.text)
+      return text ? [{ text, locator: fragment.locator }] : []
+    }) : []
+    if (!fragments.length) {
+      const insight = insights.get(evidence.id)
+      const fallback = hasText ? raw : insight?.status === 'ready' && insight.confidence >= 0.7 && insight.keyFacts.length
+        ? [insight.summary, ...insight.keyFacts].filter(Boolean).join('\n') : ''
+      if (fallback) fragments.push({ text: fallback, locator: hasText ? evidence.anchorHint ?? '原件全文' : '材料理解摘要' })
+    }
+    return { id: evidence.id, number: evidence.number, name: evidence.name, fragments }
   })
-
-  try {
-    const [paragraphEmbeddings, evidenceEmbeddings] = await Promise.all([
-      createEmbeddings(paragraphTexts),
-      createEmbeddings(evidenceTexts),
-    ])
-
-    certificate.paragraphs.forEach((paragraph, paragraphIndex) => {
-      const perParagraph = new Map<string, number>()
-      evidences.forEach((evidence, evidenceIndex) => {
-        perParagraph.set(
-          evidence.id,
-          Number(Math.max(0, cosineSimilarity(paragraphEmbeddings[paragraphIndex] ?? [], evidenceEmbeddings[evidenceIndex] ?? [])).toFixed(4)),
-        )
-      })
-      semanticScores.set(paragraph.id, perParagraph)
-    })
-  } catch {
-    return new Map<string, Map<string, number>>()
-  }
-
-  return semanticScores
-}
-
-function rankEvidenceCandidatesForParagraph(
-  workspace: WorkspaceState,
-  paragraph: CertificateParagraph,
-  evidences: Evidence[],
-  limit = 8,
-  semanticScores?: Map<string, number>,
-) {
-  const sourceVariants = uniqueStrings([paragraph.text, ...splitIntoSentenceGroups(paragraph.text, 6)], 7)
-  return [...evidences]
-    .map((evidence) => {
-      const insight = getLatestEvidenceInsight(workspace, evidence.id)
-      const fragments = getEvidenceFragmentsForEvidence(workspace, evidence.id)
-      const semanticSignals = inferEvidenceSemanticSignals(evidence, insight ?? null, fragments)
-      const contentLexicalScore = sourceVariants.reduce((best, source) => Math.max(best, scoreKeywords(source, [
-        ...semanticSignals.materialTypes,
-        ...semanticSignals.aliases,
-        ...semanticSignals.entities,
-        evidence.summaryText ?? '',
-        insight?.summary ?? '',
-        ...(insight?.keyFacts ?? []),
-        ...(insight?.positions ?? []),
-        ...(insight?.issues ?? []),
-        ...fragments.slice(0, 4).flatMap((fragment) => [fragment.summary, fragment.locator, fragment.text]),
-      ])), 0)
-      const identifierScore = sourceVariants.reduce((best, source) => Math.max(best,
-        scoreKeywords(source, [evidence.number, evidence.name, evidence.anchorHint ?? '']) * 0.65
-        + scoreKeywords(source, [evidence.fileName]) * 0.15,
-      ), 0)
-      const explicitScore = findExplicitEvidenceMentions(workspace, paragraph.text, [evidence]).length ? 4 : 0
-      const denseSemanticScore = Math.max(0, semanticScores?.get(evidence.id) ?? 0) * 6.5
-      const score = contentLexicalScore * 1.4 + identifierScore + explicitScore + denseSemanticScore
-
-      return {
-        evidence,
-        insight,
-        fragments,
-        score,
-      }
-    })
-    .sort((left, right) => right.score - left.score)
-    .slice(0, Math.max(limit, Math.min(evidences.length, 3)))
-    .map(({ evidence, insight, fragments }) => summarizeEvidenceForAutoLinkPrompt(evidence, insight ?? null, fragments))
+  const scope = JSON.stringify([getCurrentWorkspaceAccount() ?? null, caseId])
+  const batchSize = getEmbeddingBatchSize()
+  const cloud = env.AI_GATEWAY_MODE === 'cloud'
+  const ranked = await rankLinkageEvidence(paragraphs, documents, {
+    prepareText: maskTextForEvidenceEmbedding,
+    ...(isEmbeddingConfigured() ? {
+      // 云端按请求扣积分，段落和材料各沿用旧方案的批次上限。全部片段仍参加本地检索。
+      maxQueries: cloud ? Math.ceil(paragraphs.length / batchSize) * batchSize : undefined,
+      maxPassages: cloud ? Math.ceil(evidences.length / batchSize) * batchSize : 1024,
+      embedQueries: createEmbeddings,
+      embedPassages: (texts, requestSignal) => createEvidencePassageEmbeddings(scope, texts, requestSignal),
+    } : {}),
+  }, signal)
+  const summaries = new Map<string, ReturnType<typeof summarizeEvidenceForAutoLinkPrompt>>()
+  return new Map([...ranked].map(([paragraphId, candidates]) => [paragraphId, candidates.flatMap(candidate => {
+    const evidence = evidenceById.get(candidate.evidenceId)
+    if (!evidence) return []
+    let summary = summaries.get(evidence.id)
+    if (!summary) {
+      summary = summarizeEvidenceForAutoLinkPrompt(evidence, insights.get(evidence.id) ?? null, fragmentsByEvidence.get(evidence.id) ?? [])
+      summaries.set(evidence.id, summary)
+    }
+    return [{ ...summary, summary: summary.summary || candidate.fragments[0]?.text || evidence.name, sentenceIndexes: candidate.sentenceIndexes,
+      fragmentSnippets: candidate.fragments.map(fragment => ({ locator: fragment.locator, summary: fragment.text })) }]
+  })]))
 }
 
 function normalizeAutoLinkEvidenceIntents(input: unknown) {
@@ -1785,7 +1748,6 @@ function buildParagraphAutoLinkPayload(
   certificate: Certificate,
   chunk: CertificateParagraph[],
   evidences: Evidence[],
-  evidenceSemanticScores: Map<string, Map<string, number>>,
 ) {
   const paragraphIndexById = new Map(certificate.paragraphs.map((item, index) => [item.id, index]))
 
@@ -1819,13 +1781,7 @@ function buildParagraphAutoLinkPayload(
         })),
       explicitStatuteMentions: extractStatuteMentions(paragraph.text, 3),
       explicitCaseSignals: extractCaseReferenceSignals(paragraph.text, 4),
-      evidenceCandidates: rankEvidenceCandidatesForParagraph(
-        workspace,
-        paragraph,
-        evidences,
-        12,
-        evidenceSemanticScores.get(paragraph.id),
-      ),
+      evidenceCandidates: [],
     }
   })
 }
@@ -1846,6 +1802,7 @@ async function analyzeCertificateAutoLinksWithLlm(
   evidences: Evidence[],
   caseContextMemory: CaseContextMemory | null,
   onProgress?: LinkageProgressReporter,
+  signal?: AbortSignal,
 ) {
   if (!certificate.paragraphs.length) {
     return new Map<string, ParagraphAutoLinkAnalysis>()
@@ -1866,219 +1823,243 @@ async function analyzeCertificateAutoLinksWithLlm(
     return false
   })
   onProgress?.(`正在比对 ${actionableParagraphs.length} 段关键内容与 ${evidences.length} 份案件材料`)
-  const evidenceSemanticScores = await buildEvidenceSemanticScoreMap(workspace, { ...certificate, paragraphs: actionableParagraphs }, evidences)
-  const paragraphChunks = chunkItems(actionableParagraphs, 3)
-
-  for (const chunk of paragraphChunks) {
-    const orders = chunk.map(item => certificate.paragraphs.indexOf(item) + 1)
+  if (!actionableParagraphs.length) return analyses
+  const chunk = actionableParagraphs
+  const maxTokens = 10000
+  const reportBatch = (stage: string, paragraphIds: string[]) => {
+    const orders = paragraphIds.map(id => certificate.paragraphs.findIndex(item => item.id === id) + 1)
     const scope = orders.length === 1 ? `第 ${orders[0]} 段` : `第 ${orders[0]}–${orders[orders.length - 1]} 段`
-    onProgress?.(`正在理解${scope}的关键事实、争议与证明要求`)
-    const paragraphPayload = buildParagraphAutoLinkPayload(
-      workspace,
-      certificate,
-      chunk,
-      evidences,
-      evidenceSemanticScores,
-    )
+    onProgress?.(`${stage}${scope}`)
+  }
+  const paragraphPayload = buildParagraphAutoLinkPayload(
+    workspace,
+    certificate,
+    chunk,
+    evidences,
+  )
+  const docKey = normalizeDocKey(certificate.docKey)
+  const extractionProfile = docKey ? documentProfile.profiles[docKey].elements : undefined
 
-    const overviewParsed = await requestLinkageParagraphBatch({
-      paragraphIds: chunk.map(item => item.id),
-      stage: 'overview',
-      messages: [
-        {
-          role: 'system',
-          content: [
-            '你是法律文书整体理解助手。',
-            '先只做整体理解，不做最终挂接。',
-            '你需要结合段落前后文、案件背景、争点焦点，判断每一段的论证角色、论证目标、需要什么样的证据支撑、涉及什么法律问题、适合从什么角度检索类案。',
-            '必须严格返回 JSON 对象，格式为 {"paragraphs":[{"paragraphId":"...","paragraphSummary":"...","paragraphRole":"...","argumentGoal":"...","proofRequirements":["..."],"legalIssues":["..."],"caseSearchTopics":["..."],"sentenceFocus":[{"sentenceIndex":0,"kind":"fact","priority":"high","reason":"关键付款事实","evidenceNeeded":true,"statuteNeeded":false,"caseNeeded":false}]}]}。',
-            'paragraphRole 示例：事实主张、证据说明、真实性抗辩、关联性质疑、证明力评价、法律适用、类案比附、结论请求。',
-            'proofRequirements 要写出该段真正需要什么证据事实，不要重复原文。',
-            'legalIssues 要提炼法律规则或争议焦点，不要编造具体条号。',
-            'caseSearchTopics 要提炼适合检索类案的事实模型、裁判规则或争点词。',
-            '对每一句先判断办案价值，不要求所有句子关联。kind 只能为 fact/dispute/legal_issue/identity/background/heading；priority 只能为 high/normal/skip。',
-            '重点关注当事人关心的争议、矛盾、付款履行、责任归属、金额时间、证据薄弱点、授权和程序风险。reason 要说明实际核验价值。',
-            '标题、普通姓名地址证件编号、常识、套话和无争议的背景介绍均为 skip，三个 Needed 都为 false。不得因材料库有案例就给身份字段检索案例。',
-            '身份冒用、主体资格或代理权限真的存在争议时，可核验对应身份事实，但不得把普通证件字段泛化为法律争议。',
-            '法条仅用于具体法律适用或责任争议；案例仅用于实际存在的裁判规则争议，不是每段必选。普通事实句通常只需材料核验。',
-            '用户底稿中的怀疑是待核验线索，不等于已证实事实；无其他材料支持时保留证明缺口，不强行匹配。',
-            'sentenceIndex 必须沿用输入序号。不要输出 sentenceText 或复制原句，系统会按序号还原。reason 简短，摘要最多80字，各列表最多3项，保证 JSON 完整。',
-            '不得编造原文中不存在的事实。',
-          ].join(' '),
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            caseName: caseFolder?.name ?? '',
-            caseDescription: caseFolder?.description ?? '',
-            certificateTitle: certificate.title,
-            certificateFocus: certificate.focus,
-            caseContextMemory: caseContextMemory
-              ? {
-                summary: caseContextMemory.summary,
-                disputedFacts: caseContextMemory.disputedFacts,
-                disputeFocuses: caseContextMemory.disputeFocuses,
-                claimsAndDefenses: caseContextMemory.claimsAndDefenses,
-                contradictions: caseContextMemory.contradictions,
-                lawyerFocuses: caseContextMemory.lawyerFocuses,
-                evidenceWeaknesses: caseContextMemory.evidenceWeaknesses,
-                proceduralRisks: caseContextMemory.proceduralRisks,
-                timeline: caseContextMemory.timeline,
-                supportMatrix: caseContextMemory.supportMatrix.map((item) => ({
-                  fact: item.fact,
-                  evidenceNumbers: item.evidenceNumbers,
-                })),
-              }
-              : null,
-            paragraphs: paragraphPayload.map((paragraph) => ({
-              paragraphId: paragraph.paragraphId,
-              text: paragraph.text,
-              previousParagraphText: paragraph.previousParagraphText,
-              nextParagraphText: paragraph.nextParagraphText,
-              sentenceGroups: paragraph.sentenceGroups,
-              explicitEvidenceMentions: paragraph.explicitEvidenceMentions,
-              explicitStatuteMentions: paragraph.explicitStatuteMentions,
-              explicitCaseSignals: paragraph.explicitCaseSignals,
-            })),
-          }),
-        },
-      ],
-      maxTokens: 6000,
-    })
+  const overviewParsed = await requestLinkageParagraphBatch({
+    paragraphIds: chunk.map(item => item.id),
+    stage: 'overview',
+    onBatch: ids => reportBatch('正在理解关键事实、争议与证明要求，处理', ids),
+    messages: [
+      {
+        role: 'system',
+        content: [
+          '你是法律文书整体理解助手。',
+          '先只做整体理解，不做最终挂接。',
+          '你需要结合段落前后文、案件背景、争点焦点，判断每一段的论证角色、论证目标、需要什么样的证据支撑、涉及什么法律问题、适合从什么角度检索类案。',
+          '必须严格返回 JSON 对象，格式为 {"paragraphs":[{"paragraphId":"...","paragraphSummary":"...","paragraphRole":"...","argumentGoal":"...","proofRequirements":["..."],"legalIssues":["..."],"caseSearchTopics":["..."],"sentenceFocus":[{"sentenceIndex":0,"kind":"fact","priority":"high","reason":"关键付款事实","evidenceNeeded":true,"statuteNeeded":false,"caseNeeded":false}]}]}。',
+          'paragraphRole 示例：事实主张、证据说明、真实性抗辩、关联性质疑、证明力评价、法律适用、类案比附、结论请求。',
+          'proofRequirements 要写出该段真正需要什么证据事实，不要重复原文。',
+          'legalIssues 要提炼法律规则或争议焦点，不要编造具体条号。',
+          'caseSearchTopics 要提炼适合检索类案的事实模型、裁判规则或争点词。',
+          '对每一句先判断办案价值，不要求所有句子关联。kind 只能为 fact/dispute/legal_issue/identity/background/heading；priority 只能为 high/normal/skip。',
+          '重点关注当事人关心的争议、矛盾、付款履行、责任归属、金额时间、证据薄弱点、授权和程序风险。reason 要说明实际核验价值。',
+          '标题、普通姓名地址证件编号、常识、套话和无争议的背景介绍均为 skip，三个 Needed 都为 false。不得因材料库有案例就给身份字段检索案例。',
+          '身份冒用、主体资格或代理权限真的存在争议时，可核验对应身份事实，但不得把普通证件字段泛化为法律争议。',
+          '法条仅用于具体法律适用或责任争议；案例仅用于实际存在的裁判规则争议，不是每段必选。普通事实句通常只需材料核验。',
+          '用户底稿中的怀疑是待核验线索，不等于已证实事实；无其他材料支持时保留证明缺口，不强行匹配。',
+          'sentenceFocus 的 sentenceIndex 必须沿用输入序号，不输出 sentenceText，系统会按序号还原。reason 简短，摘要最多80字，摘要相关列表最多3项，保证 JSON 完整。',
+          '每段另返回 declarationCandidates 数组，成员为 {sentenceIndex,type,quote,nature,factKinds}。quote 只复制最小连续原文，不改标点，不复制整段；sentenceIndex 用输入序号。',
+          'type 使用给定元素：required 有内容必须拆，optional 有独立核验价值才拆，off 不拆；缺少原文不要补写。证据清单按表格由本地抽取。请求与法条、事实与算式须分别标注。',
+          'nature 用 fact / opinion / legal-evaluation / background 区分客观事实、主观判断、法律评价和背景。E-FACT 只允许 fact；评价本身不是事实。factKinds 可多选 subject / act / time / place / object / result / cause / intent / procedure。',
+          '不得编造原文中不存在的事实。',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          caseName: caseFolder?.name ?? '',
+          caseDescription: caseFolder?.description ?? '',
+          certificateTitle: certificate.title,
+          certificateFocus: certificate.focus,
+          extractionProfile: extractionProfile ?? documentProfile.elementTypes,
+          caseContextMemory: caseContextMemory
+            ? {
+              summary: caseContextMemory.summary,
+              disputedFacts: caseContextMemory.disputedFacts,
+              disputeFocuses: caseContextMemory.disputeFocuses,
+              claimsAndDefenses: caseContextMemory.claimsAndDefenses,
+              contradictions: caseContextMemory.contradictions,
+              lawyerFocuses: caseContextMemory.lawyerFocuses,
+              evidenceWeaknesses: caseContextMemory.evidenceWeaknesses,
+              proceduralRisks: caseContextMemory.proceduralRisks,
+              timeline: caseContextMemory.timeline,
+              supportMatrix: caseContextMemory.supportMatrix.map((item) => ({
+                fact: item.fact,
+                evidenceNumbers: item.evidenceNumbers,
+              })),
+            }
+            : null,
+          paragraphs: paragraphPayload.map((paragraph) => ({
+            paragraphId: paragraph.paragraphId,
+            text: paragraph.text,
+            previousParagraphText: paragraph.previousParagraphText,
+            nextParagraphText: paragraph.nextParagraphText,
+            sentenceGroups: paragraph.sentenceGroups,
+            explicitEvidenceMentions: paragraph.explicitEvidenceMentions,
+            explicitStatuteMentions: paragraph.explicitStatuteMentions,
+            explicitCaseSignals: paragraph.explicitCaseSignals,
+          })),
+        }),
+      },
+    ],
+    maxTokens,
+  })
 
-    const paragraphOverviews = new Map(overviewParsed.paragraphs?.flatMap((item) => {
-      const paragraphId = typeof item?.paragraphId === 'string' ? item.paragraphId.trim() : ''
-      const paragraph = chunk.find((entry) => entry.id === paragraphId)
-      if (!paragraph) {
-        return []
-      }
+  const paragraphOverviews = new Map(overviewParsed.paragraphs?.flatMap((item) => {
+    const paragraphId = typeof item?.paragraphId === 'string' ? item.paragraphId.trim() : ''
+    const paragraph = chunk.find((entry) => entry.id === paragraphId)
+    if (!paragraph) {
+      return []
+    }
 
-      return [[paragraphId, {
-        paragraphSummary: typeof item.paragraphSummary === 'string' ? item.paragraphSummary.trim() : undefined,
-        paragraphRole: typeof item.paragraphRole === 'string' ? item.paragraphRole.trim() : undefined,
-        argumentGoal: typeof item.argumentGoal === 'string' ? item.argumentGoal.trim() : undefined,
-        proofRequirements: normalizeAutoLinkSignalList(item.proofRequirements, 6),
-        legalIssues: normalizeAutoLinkSignalList(item.legalIssues, 6),
-        caseSearchTopics: normalizeAutoLinkSignalList(item.caseSearchTopics, 6),
-        sentenceFocus: normalizeSentenceLinkageFocus(paragraph.text, item.sentenceFocus),
-      }]]
-    }) ?? [])
+    return [[paragraphId, {
+      paragraphSummary: typeof item.paragraphSummary === 'string' ? item.paragraphSummary.trim() : undefined,
+      paragraphRole: typeof item.paragraphRole === 'string' ? item.paragraphRole.trim() : undefined,
+      argumentGoal: typeof item.argumentGoal === 'string' ? item.argumentGoal.trim() : undefined,
+      proofRequirements: normalizeAutoLinkSignalList(item.proofRequirements, 6),
+      legalIssues: normalizeAutoLinkSignalList(item.legalIssues, 6),
+      caseSearchTopics: normalizeAutoLinkSignalList(item.caseSearchTopics, 6),
+      sentenceFocus: normalizeSentenceLinkageFocus(paragraph.text, item.sentenceFocus),
+      declarationCandidates: parseModelDeclarationCandidates(paragraph, item.declarationCandidates),
+    }]]
+  }) ?? [])
 
-    const linkagePayload = paragraphPayload.filter(paragraph => paragraphOverviews.get(paragraph.paragraphId)?.sentenceFocus
-      .some(item => item.priority !== 'skip' && (item.evidenceNeeded || item.statuteNeeded || item.caseNeeded)))
-    if (!linkagePayload.length) {
-      for (const paragraph of chunk) {
-        analyses.set(paragraph.id, {
-          ...paragraphOverviews.get(paragraph.id),
-          paragraphId: paragraph.id,
-          sentenceFocus: paragraphOverviews.get(paragraph.id)?.sentenceFocus ?? normalizeSentenceLinkageFocus(paragraph.text, []),
-          evidenceLinks: [], statuteIntents: [], caseIntents: [],
-        })
-      }
+  const linkagePayload = paragraphPayload.filter(paragraph => paragraphOverviews.get(paragraph.paragraphId)?.sentenceFocus
+    .some(item => item.priority !== 'skip' && (item.evidenceNeeded || item.statuteNeeded || item.caseNeeded)))
+  if (!linkagePayload.length) {
+    for (const paragraph of chunk) {
+      analyses.set(paragraph.id, {
+        ...paragraphOverviews.get(paragraph.id),
+        paragraphId: paragraph.id,
+        sentenceFocus: paragraphOverviews.get(paragraph.id)?.sentenceFocus ?? normalizeSentenceLinkageFocus(paragraph.text, []),
+        evidenceLinks: [], statuteIntents: [], caseIntents: [],
+      })
+    }
+    return analyses
+  }
+
+  const candidateInputs = linkagePayload.flatMap(({ paragraphId }) => {
+    const sentences = (paragraphOverviews.get(paragraphId)?.sentenceFocus ?? []).flatMap(sentence =>
+      sentence.evidenceNeeded && sentence.priority !== 'skip'
+        ? [{ sentenceText: sentence.sentenceText, sentenceIndex: sentence.sentenceIndex, priority: sentence.priority }] : [])
+    return sentences.length ? [{ id: paragraphId, sentences }] : []
+  })
+  let evidenceCandidates: Awaited<ReturnType<typeof buildLinkageEvidenceCandidates>> | undefined
+  if (evidences.length && candidateInputs.length) {
+    onProgress?.('正在检索关键句对应的证据片段')
+    evidenceCandidates = await buildLinkageEvidenceCandidates(workspace, certificate.caseId, evidences, candidateInputs, signal)
+  }
+  signal?.throwIfAborted()
+  const parsed = await requestLinkageParagraphBatch({
+    paragraphIds: linkagePayload.map(item => item.paragraphId),
+    stage: 'links',
+    onBatch: ids => reportBatch('正在核对证据原文与句级关联，处理', ids),
+    messages: [
+      {
+        role: 'system',
+        content: [
+          '你是法律文书关联编排助手。',
+          '你必须先遵循整体理解，再做局部挂接。',
+          '整体理解用于判断这一段到底想证明什么、抗辩什么、需要什么支撑；局部挂接用于确定具体哪一个句组该挂到哪份证据、哪条法条、哪类案例。',
+          '优先确保关联有办案价值和准确性，不以关联数量或覆盖所有句子为目标。只能关联 overview.sentenceFocus 中非 skip 且对应 Needed 为 true 的句子。',
+          '证据关联必须基于整体目标 + 句组语义 + 候选证据内容共同判断。',
+          '候选的 sentenceIndexes 表示本次检索命中的句子；优先查阅 fragmentSnippets 中带定位的材料片段。',
+          '标注为材料理解摘要的片段供寻找原文和核对证明范围使用。',
+          '判断证据时不得主要依赖文件名或证据标题猜测，应优先依据证据摘要、关键事实、片段内容、材料类型与案件事实的对应关系。',
+          '法条关联要结合法律问题和句组语义，优先输出真实可检索的 lawTitle/articleNumber/query/keywords。',
+          '案例关联要优先围绕事实模型、裁判规则、争点结构来检索，不要只抄原文词语。',
+          '必须严格返回 JSON 对象，格式为 {"paragraphs":[{"paragraphId":"...","evidenceLinks":[{"sentenceIndex":0,"evidenceNumber":"E01","relation":"support","reason":"具体证明关系","quoteHint":"实际材料摘录"}],"statuteIntents":[{"sentenceIndex":0,"lawTitle":"...","articleNumber":"第六十七条","query":"...","keywords":["..."],"reason":"具体法律争议"}],"caseIntents":[{"sentenceIndex":0,"query":"...","reason":"具体裁判争议"}]}]}。',
+          '必须使用输入 sentenceIndex 定位单个句子。不要输出 sentenceGroup，不要复制文书原句，系统会还原完整原句。reason 不超过60字，quoteHint 只摘录最相关的材料原文片段，不超过100字。',
+          '每段 evidenceLinks 最多12项，statuteIntents 最多8项，caseIntents 最多6项，优先保留与争议直接相关的依据。',
+          'relation 为 support/contradict/context。矛盾材料应标注 contradict 并说明同一主体、事件、时间或金额的冲突；不能仅因有否定词就认定矛盾。',
+          '证件仅核验身份资格；底稿、内部意见、草稿用于线索和观点，只能标为 context，不能独立证明付款、违约或其他外部事实。',
+          '尊重 proofPurposes 和 proofLimitations，必须提供材料中真实存在的 quoteHint。仅标题、姓名、材料类型、泛泛合同词相似不构成证明关系。',
+          'evidenceLinks 只能引用已给出的 evidenceNumber。',
+          '如果某段没有合适的证据、法条或案例，就返回空数组。',
+          '不得编造不存在的证据内容、法条条文或案例案号。',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          caseName: caseFolder?.name ?? '',
+          caseDescription: caseFolder?.description ?? '',
+          certificateTitle: certificate.title,
+          certificateFocus: certificate.focus,
+          caseContextMemory: caseContextMemory
+            ? {
+              summary: caseContextMemory.summary,
+              disputedFacts: caseContextMemory.disputedFacts,
+              disputeFocuses: caseContextMemory.disputeFocuses,
+              claimsAndDefenses: caseContextMemory.claimsAndDefenses,
+              contradictions: caseContextMemory.contradictions,
+              lawyerFocuses: caseContextMemory.lawyerFocuses,
+              evidenceWeaknesses: caseContextMemory.evidenceWeaknesses,
+              proceduralRisks: caseContextMemory.proceduralRisks,
+              timeline: caseContextMemory.timeline,
+              supportMatrix: caseContextMemory.supportMatrix.map((item) => ({
+                fact: item.fact,
+                evidenceNumbers: item.evidenceNumbers,
+              })),
+            }
+            : null,
+          paragraphs: linkagePayload.map((paragraph) => ({
+            ...paragraph,
+            ...(evidenceCandidates ? { evidenceCandidates: evidenceCandidates.get(paragraph.paragraphId) ?? [] } : {}),
+            overview: paragraphOverviews.get(paragraph.paragraphId) ?? null,
+          })),
+        }),
+      },
+    ],
+    maxTokens,
+  })
+
+  for (const item of parsed.paragraphs ?? []) {
+    const paragraphId = typeof item?.paragraphId === 'string' ? item.paragraphId.trim() : ''
+    if (!paragraphId) {
       continue
     }
 
-    onProgress?.(`正在核对${scope}的证据原文与句级关联`)
-    const parsed = await requestLinkageParagraphBatch({
-      paragraphIds: linkagePayload.map(item => item.paragraphId),
-      stage: 'links',
-      messages: [
-        {
-          role: 'system',
-          content: [
-            '你是法律文书关联编排助手。',
-            '你必须先遵循整体理解，再做局部挂接。',
-            '整体理解用于判断这一段到底想证明什么、抗辩什么、需要什么支撑；局部挂接用于确定具体哪一个句组该挂到哪份证据、哪条法条、哪类案例。',
-            '优先确保关联有办案价值和准确性，不以关联数量或覆盖所有句子为目标。只能关联 overview.sentenceFocus 中非 skip 且对应 Needed 为 true 的句子。',
-            '证据关联必须基于整体目标 + 句组语义 + 候选证据内容共同判断。',
-            '判断证据时不得主要依赖文件名或证据标题猜测，应优先依据证据摘要、关键事实、片段内容、材料类型与案件事实的对应关系。',
-            '法条关联要结合法律问题和句组语义，优先输出真实可检索的 lawTitle/articleNumber/query/keywords。',
-            '案例关联要优先围绕事实模型、裁判规则、争点结构来检索，不要只抄原文词语。',
-            '必须严格返回 JSON 对象，格式为 {"paragraphs":[{"paragraphId":"...","evidenceLinks":[{"sentenceIndex":0,"evidenceNumber":"E01","relation":"support","reason":"具体证明关系","quoteHint":"实际材料摘录"}],"statuteIntents":[{"sentenceIndex":0,"lawTitle":"...","articleNumber":"第六十七条","query":"...","keywords":["..."],"reason":"具体法律争议"}],"caseIntents":[{"sentenceIndex":0,"query":"...","reason":"具体裁判争议"}]}]}。',
-            '必须使用输入 sentenceIndex 定位单个句子。不要输出 sentenceGroup，不要复制文书原句，系统会还原完整原句。reason 不超过60字，quoteHint 只摘录最相关的材料原文片段，不超过100字。',
-            'relation 为 support/contradict/context。矛盾材料应标注 contradict 并说明同一主体、事件、时间或金额的冲突；不能仅因有否定词就认定矛盾。',
-            '证件仅核验身份资格；底稿、内部意见、草稿用于线索和观点，只能标为 context，不能独立证明付款、违约或其他外部事实。',
-            '尊重 proofPurposes 和 proofLimitations，必须提供材料中真实存在的 quoteHint。仅标题、姓名、材料类型、泛泛合同词相似不构成证明关系。',
-            'evidenceLinks 只能引用已给出的 evidenceNumber。',
-            '如果某段没有合适的证据、法条或案例，就返回空数组。',
-            '不得编造不存在的证据内容、法条条文或案例案号。',
-          ].join(' '),
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            caseName: caseFolder?.name ?? '',
-            caseDescription: caseFolder?.description ?? '',
-            certificateTitle: certificate.title,
-            certificateFocus: certificate.focus,
-            caseContextMemory: caseContextMemory
-              ? {
-                summary: caseContextMemory.summary,
-                disputedFacts: caseContextMemory.disputedFacts,
-                disputeFocuses: caseContextMemory.disputeFocuses,
-                claimsAndDefenses: caseContextMemory.claimsAndDefenses,
-                contradictions: caseContextMemory.contradictions,
-                lawyerFocuses: caseContextMemory.lawyerFocuses,
-                evidenceWeaknesses: caseContextMemory.evidenceWeaknesses,
-                proceduralRisks: caseContextMemory.proceduralRisks,
-                timeline: caseContextMemory.timeline,
-                supportMatrix: caseContextMemory.supportMatrix.map((item) => ({
-                  fact: item.fact,
-                  evidenceNumbers: item.evidenceNumbers,
-                })),
-              }
-              : null,
-            paragraphs: linkagePayload.map((paragraph) => ({
-              ...paragraph,
-              overview: paragraphOverviews.get(paragraph.paragraphId) ?? null,
-            })),
-          }),
-        },
-      ],
-      maxTokens: 6000,
+    analyses.set(paragraphId, {
+      paragraphId,
+      paragraphSummary:
+        typeof item.paragraphSummary === 'string'
+          ? item.paragraphSummary.trim()
+          : paragraphOverviews.get(paragraphId)?.paragraphSummary,
+      paragraphRole:
+        typeof item.paragraphRole === 'string'
+          ? item.paragraphRole.trim()
+          : paragraphOverviews.get(paragraphId)?.paragraphRole,
+      argumentGoal:
+        typeof item.argumentGoal === 'string'
+          ? item.argumentGoal.trim()
+          : paragraphOverviews.get(paragraphId)?.argumentGoal,
+      proofRequirements: paragraphOverviews.get(paragraphId)?.proofRequirements ?? [],
+      legalIssues: paragraphOverviews.get(paragraphId)?.legalIssues ?? [],
+      caseSearchTopics: paragraphOverviews.get(paragraphId)?.caseSearchTopics ?? [],
+      sentenceFocus: paragraphOverviews.get(paragraphId)?.sentenceFocus
+        ?? normalizeSentenceLinkageFocus(chunk.find(entry => entry.id === paragraphId)?.text ?? '', []),
+      declarationCandidates: paragraphOverviews.get(paragraphId)?.declarationCandidates,
+      evidenceLinks: normalizeAutoLinkEvidenceIntents(item.evidenceLinks).slice(0, 12),
+      statuteIntents: normalizeAutoLinkStatuteIntents(item.statuteIntents).slice(0, 8),
+      caseIntents: normalizeAutoLinkCaseIntents(item.caseIntents).slice(0, 6),
     })
-
-    for (const item of parsed.paragraphs ?? []) {
-      const paragraphId = typeof item?.paragraphId === 'string' ? item.paragraphId.trim() : ''
-      if (!paragraphId) {
-        continue
-      }
-
-      analyses.set(paragraphId, {
-        paragraphId,
-        paragraphSummary:
-          typeof item.paragraphSummary === 'string'
-            ? item.paragraphSummary.trim()
-            : paragraphOverviews.get(paragraphId)?.paragraphSummary,
-        paragraphRole:
-          typeof item.paragraphRole === 'string'
-            ? item.paragraphRole.trim()
-            : paragraphOverviews.get(paragraphId)?.paragraphRole,
-        argumentGoal:
-          typeof item.argumentGoal === 'string'
-            ? item.argumentGoal.trim()
-            : paragraphOverviews.get(paragraphId)?.argumentGoal,
-        proofRequirements: paragraphOverviews.get(paragraphId)?.proofRequirements ?? [],
-        legalIssues: paragraphOverviews.get(paragraphId)?.legalIssues ?? [],
-        caseSearchTopics: paragraphOverviews.get(paragraphId)?.caseSearchTopics ?? [],
-        sentenceFocus: paragraphOverviews.get(paragraphId)?.sentenceFocus
-          ?? normalizeSentenceLinkageFocus(chunk.find(entry => entry.id === paragraphId)?.text ?? '', []),
-        evidenceLinks: normalizeAutoLinkEvidenceIntents(item.evidenceLinks).slice(0, 12),
-        statuteIntents: normalizeAutoLinkStatuteIntents(item.statuteIntents).slice(0, 8),
-        caseIntents: normalizeAutoLinkCaseIntents(item.caseIntents).slice(0, 6),
+  }
+  for (const paragraph of chunk) {
+    if (!analyses.has(paragraph.id)) {
+      analyses.set(paragraph.id, {
+        ...paragraphOverviews.get(paragraph.id),
+        paragraphId: paragraph.id,
+        sentenceFocus: paragraphOverviews.get(paragraph.id)?.sentenceFocus ?? normalizeSentenceLinkageFocus(paragraph.text, []),
+        evidenceLinks: [], statuteIntents: [], caseIntents: [],
       })
     }
-    for (const paragraph of chunk) {
-      if (!analyses.has(paragraph.id)) {
-        analyses.set(paragraph.id, {
-          paragraphId: paragraph.id,
-          sentenceFocus: paragraphOverviews.get(paragraph.id)?.sentenceFocus ?? normalizeSentenceLinkageFocus(paragraph.text, []),
-          evidenceLinks: [], statuteIntents: [], caseIntents: [],
-        })
-      }
-    }
   }
-
   return analyses
 }
 
@@ -2095,7 +2076,10 @@ function findBestEvidenceFragmentForParagraph(
   }
 
   const source = [sentenceGroup ?? paragraphText, quoteHint ?? '', evidence.anchorHint ?? '', evidence.name].filter(Boolean).join(' ')
-  return [...fragments]
+  const grounded = quoteHint ? fragments.flatMap(fragment => splitEvidenceTextIntoPages(fragment.text).flatMap(page =>
+    isGroundedLinkageQuote(quoteHint, [page.content]) ? [{ ...fragment, text: page.content,
+      locator: page.page ? `第 ${page.page} 页` : fragment.locator, page: page.page ?? fragment.page }] : [])) : fragments
+  return grounded
     .map((fragment) => ({
       fragment,
       score:
@@ -2105,7 +2089,6 @@ function findBestEvidenceFragmentForParagraph(
           fragment.summary,
           ...fragment.keywords,
         ])
-        + ((quoteHint && fragment.text.includes(quoteHint)) ? 4 : 0)
         + ((fragment.confidence ?? 0.7) * 2),
     }))
     .sort((left, right) => right.score - left.score)
@@ -2451,8 +2434,7 @@ function upsertKnowledgeStatuteDocument(
 ) {
   const existingIndex = workspace.knowledgeStatutes.findIndex((item) =>
     item.id === nextDocument.id
-    || (nextDocument.sourceDocumentId && item.sourceDocumentId === nextDocument.sourceDocumentId)
-    || documentMatchesLawTitle(item, nextDocument.title),
+    || (nextDocument.sourceDocumentId && item.sourceProvider === nextDocument.sourceProvider && item.sourceDocumentId === nextDocument.sourceDocumentId),
   )
 
   if (existingIndex === -1) {
@@ -2521,8 +2503,7 @@ export async function resolveStatuteMentionFromOfficialSource(
     }
 
     const existingDocument =
-      workspace.knowledgeStatutes.find((item) => item.sourceDocumentId === detail.bbbs)
-      ?? workspace.knowledgeStatutes.find((item) => documentMatchesLawTitle(item, detail.title ?? title))
+      workspace.knowledgeStatutes.find((item) => item.sourceProvider === 'npc_flk' && item.sourceDocumentId === detail.bbbs)
       ?? null
 
     const article =
@@ -2655,6 +2636,8 @@ export function sanitizeCaseForClient(folder: CaseFolder): CaseFolder {
 
 export function sanitizeWorkspaceForClient(workspace: WorkspaceState): WorkspaceState {
   const fingerprintByCaseId = new Map<string, string>()
+  const materialByCaseId = new Map<string, string>()
+  const authorityByScope = new Map<string, string>()
   const fingerprintOf = (caseId: string) => {
     const cached = fingerprintByCaseId.get(caseId)
     if (cached) {
@@ -2679,12 +2662,22 @@ export function sanitizeWorkspaceForClient(workspace: WorkspaceState): Workspace
       previewDataUrl: undefined,
       pageImageDataUrls: undefined,
     })),
-    certificates: workspace.certificates.map((certificate) => ({
-      ...certificate,
-      // 材料在联动之后又增加或被重新理解时，联动结果已经过时，需要提示重新核验。
-      linkageStale: Boolean(certificate.linkageInputKey)
-        && certificate.linkageInputKey !== fingerprintOf(certificate.caseId),
-    })),
+    certificates: workspace.certificates.map((certificate) => {
+      const result = certificate.verification
+      let authoritiesChanged = false
+      if (result?.authorityKey) {
+        const scope = ['E-LAW', 'E-CASE'].filter(type => result.declarations.some(item => item.type === type)).join(',')
+        const key = authorityByScope.get(scope) ?? verificationAuthorityKey(workspace, result.declarations)
+        authorityByScope.set(scope, key)
+        authoritiesChanged = key !== result.authorityKey
+      }
+      const materialsChanged = Boolean(certificate.linkageInputKey && certificate.linkageInputKey !== fingerprintOf(certificate.caseId))
+      const materialVersion = result?.materialVersion && (materialByCaseId.get(certificate.caseId) ?? verificationMaterialVersion(workspace, certificate.caseId))
+      if (materialVersion) materialByCaseId.set(certificate.caseId, materialVersion)
+      const inputsChanged = materialsChanged || authoritiesChanged || Boolean(materialVersion && materialVersion !== result?.materialVersion)
+      return { ...certificate, linkageStale: certificate.linkageStale === true || inputsChanged,
+        ...(inputsChanged && result?.dirty && { linkageInputKey: undefined }) }
+    }),
   }
 }
 
@@ -2813,74 +2806,6 @@ function splitIntoSentences(text: string, limit = 6) {
     .map((segment) => segment.trim())
     .filter(Boolean)
     .slice(0, limit)
-}
-
-function splitIntoSentenceGroups(text: string, limit = 6) {
-  const segments = text
-    .replace(/\r/g, '')
-    .split(/\n+/)
-    .flatMap((block) =>
-      block
-        .replace(/\s+/g, ' ')
-        .split(/(?<=[。！？!?；;])/u)
-        .map((segment) => segment.trim())
-        .filter(Boolean),
-    )
-
-  const groups: string[] = []
-  let current = ''
-
-  for (const segment of segments) {
-    if (!current) {
-      current = segment
-      continue
-    }
-
-    if (`${current}${segment}`.length <= 86) {
-      current = `${current}${segment}`
-      continue
-    }
-
-    groups.push(current)
-    current = segment
-
-    if (groups.length >= limit) {
-      break
-    }
-  }
-
-  if (current && groups.length < limit) {
-    groups.push(current)
-  }
-
-  return uniqueStrings(
-    groups
-      .map((item) => item.replace(/\s+/g, ' ').trim())
-      .filter(Boolean),
-    limit,
-  )
-}
-
-function cosineSimilarity(left: number[], right: number[]) {
-  if (!left.length || left.length !== right.length) {
-    return 0
-  }
-
-  let dot = 0
-  let leftNorm = 0
-  let rightNorm = 0
-
-  for (let index = 0; index < left.length; index += 1) {
-    dot += left[index] * right[index]
-    leftNorm += left[index] * left[index]
-    rightNorm += right[index] * right[index]
-  }
-
-  if (!leftNorm || !rightNorm) {
-    return 0
-  }
-
-  return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm))
 }
 
 function uniqueStrings(items: string[], limit = items.length) {
@@ -4476,7 +4401,7 @@ function buildCertificate(caseFolder: CaseFolder, evidences: Evidence[], role: R
       text,
       richText: buildParagraphRichText(text),
       note: `自动绑定到 ${evidence.number}，可继续人工校正定位信息。`,
-      verified: index === 0,
+      verified: false,
       links: [createEvidenceLink(`paragraph-${index + 1}`, evidence)],
     }
   })
@@ -4677,6 +4602,7 @@ function buildStreamingCertificateMessages(params: {
   focus: string
   prompt: string
   currentDraft?: ReturnType<typeof buildDraftContext>
+  draftAuthorities?: Array<{ quote: string; sources: import('./intelligence/verification/protocol.js').DeclarationSource[] }>
 }) {
   const baseSystem = [
     params.mode === 'rewrite' ? '你是律师文书改写助手。' : '你是律师文书起草助手。',
@@ -4689,6 +4615,8 @@ function buildStreamingCertificateMessages(params: {
     '每个 <paragraph> 只包含一整段正式文书内容。仅有实际材料依据的关键事实、争议或证据评价填写 evidence 属性，最多3个；标题、普通身份信息、常识和套话使用 evidence=""，不能强行为每段填写编号。',
     '底稿中的推测、单方主张只能作为待核验线索，不得写成已证实事实；尊重材料能够证明和不能证明的边界。',
     '不要编造不存在的证据，不要引用未提供的事实。',
+    params.draftAuthorities && getAssistantSkill('draft')?.system,
+    params.draftAuthorities && '法条或案例编号后须接已核对的带引号原文，判项须明确标注。不得改写 verifiedAuthorities 中的出处摘录。没有依据时省略引文。',
     '输出的 title、focus、paragraph 文本必须是面向法官或诉讼参与人的正式法律文书内容，不得写入任何技术处理过程。',
     '严禁出现以下表达或同类含义：OCR、图片识别、文本抽取、自动提取、大模型、AI 分析、向量召回、证据匹配、支持矩阵、时间线抽取、结构化记忆、prompt、system prompt、系统判断、模型认为。',
     '如当前文书类型为质证意见，段落必须体现标题、案号案由、质证人、质证日期、总引言、分证据质证及综合质证意见这些层级；不能省略为普通散文段落。',
@@ -4704,6 +4632,7 @@ function buildStreamingCertificateMessages(params: {
     sampleStyleGuide: params.sampleStyleGuide,
     caseMemory: params.caseMemoryContext,
     currentDraft: params.currentDraft,
+    verifiedAuthorities: params.draftAuthorities,
     evidences: params.evidenceContext,
   }
 
@@ -5001,10 +4930,12 @@ async function rewriteCertificateWithLlm(params: {
   return {
     certificate: {
       ...params.certificate,
+      linkageInputKey: undefined,
+      linkageStale: true,
       title: parsed.title?.trim() || params.certificate.title,
       focus: parsed.focus?.trim() || params.certificate.focus,
       paragraphIds: paragraphs.map((paragraph) => paragraph.id),
-      paragraphs,
+      paragraphs: paragraphs.map(item => ({ ...item, aiOrigin: 'rewrite' as const })),
     } satisfies Certificate,
     agentReply: parsed.agentReply?.trim() || '我已根据你的追问对当前草稿完成二次改写，并尽量保留证据来源。',
   }
@@ -5026,10 +4957,10 @@ function splitImportedParagraphs(content: string) {
     .filter(Boolean)
 }
 
-function buildImportedCertificate(caseFolder: CaseFolder, payload: ImportCertificatePayload): Certificate {
+function buildImportedCertificate(caseFolder: CaseFolder, payload: ImportCertificatePayload, trustedTableCells: boolean): Certificate {
   const createdAt = new Date().toISOString()
   const inputParagraphs = payload.paragraphs?.filter((item) => item.text.trim()) ?? []
-  const paragraphs: Array<{ text: string; richText?: string }> = inputParagraphs.length
+  const paragraphs: NonNullable<ImportCertificatePayload['paragraphs']> = inputParagraphs.length
     ? inputParagraphs
     : splitImportedParagraphs(payload.content).map((text) => ({ text }))
   const normalizedParagraphs = (paragraphs.length ? paragraphs : [{ text: payload.content.trim() || '导入文书暂无正文内容。' }])
@@ -5039,6 +4970,8 @@ function buildImportedCertificate(caseFolder: CaseFolder, payload: ImportCertifi
       richText: paragraph.richText?.trim() || buildParagraphRichText(paragraph.text),
       note: `导入自 ${payload.sourceFileName}，可继续补充证据定位与核验批注。`,
       verified: false,
+      aiOrigin: payload.aiOrigin === 'draft' || payload.aiOrigin === 'rewrite' ? payload.aiOrigin : undefined,
+      evidenceCell: trustedTableCells ? paragraph.evidenceCell : undefined,
       links: [],
     } satisfies CertificateParagraph))
 
@@ -5046,6 +4979,7 @@ function buildImportedCertificate(caseFolder: CaseFolder, payload: ImportCertifi
     id: createId('certificate'),
     caseId: caseFolder.id,
     title: payload.title.trim() || `${caseFolder.name}导入文书`,
+    docKey: normalizeDocKey(payload.docKey),
     role: 'plaintiff',
     focus: '导入文书',
     paragraphIds: normalizedParagraphs.map((paragraph) => paragraph.id),
@@ -5804,10 +5738,8 @@ export async function bindWorkspaceCloudAccount(payload: BindCloudAccountPayload
   })
 }
 
-export async function bootstrap() {
-  const workspace = hydrateWorkspaceStatutesFromKnowledgeFiles(
-    await hydrateWorkspaceKnowledgeFiles(await readWorkspace()),
-  )
+export async function bootstrap(options?: { sanitizeForClient?: boolean }) {
+  const workspace = await hydrateWorkspaceKnowledgeFiles(await readWorkspace())
   let duplicatesChanged = false
   for (const folder of workspace.cases) {
     if (applyDuplicateMarks(workspace, folder.id)) {
@@ -5828,7 +5760,9 @@ export async function bootstrap() {
     }
   }
   startEvidenceParsing(workspace.evidences.filter(item => ['queued', 'processing'].includes(item.parsing?.status ?? '')).map(item => item.id))
-  return { workspace }
+  // 核验指纹使用持久化的法源，知识文件预览只在响应中补充。
+  const snapshot = options?.sanitizeForClient ? sanitizeWorkspaceForClient(workspace) : workspace
+  return { workspace: hydrateWorkspaceStatutesFromKnowledgeFiles(snapshot) }
 }
 
 function markCaseAgentQueued(folder: CaseFolder, evidenceIds: string[]) {
@@ -6064,17 +5998,29 @@ export async function createCaseRecord(name: string, description?: string) {
   return { cases, caseFolder }
 }
 
-export async function updateCaseRecord(caseId: string, patch: Partial<Pick<CaseFolder, 'name' | 'description' | 'status'>>) {
+type CaseUpdate = Partial<Pick<CaseFolder, 'name' | 'description' | 'status' | 'basicInfo'>>
+
+export async function updateCaseRecord(caseId: string, patch: CaseUpdate) {
   const safePatch: typeof patch = {}
   if (typeof patch.name === 'string' && patch.name.trim()) safePatch.name = patch.name.trim()
   if (typeof patch.description === 'string') safePatch.description = patch.description
   if (patch.status && ['draft', 'in_review', 'ready'].includes(patch.status)) safePatch.status = patch.status
+  const basicInfo: NonNullable<CaseFolder['basicInfo']> = {}
+  if (patch.basicInfo && typeof patch.basicInfo === 'object') {
+    for (const key of ['plaintiff', 'defendant', 'cause', 'court', 'caseNumber'] as const) {
+      const value = patch.basicInfo[key]
+      if (typeof value === 'string') basicInfo[key] = value.trim()
+    }
+    const side = patch.basicInfo.ourSide
+    if (side === 'plaintiff' || side === 'defendant' || side === null) basicInfo.ourSide = side
+  }
   let queued = false
   const cases = await mutateWorkspaceCases((items, hasEvidence) => {
     const current = items.find(c => c.id === caseId)
     if (!current) throw new Error('案件不存在。')
     const descriptionChanged = safePatch.description !== undefined && safePatch.description !== current.description
     Object.assign(current, safePatch)
+    if (Object.keys(basicInfo).length) current.basicInfo = { ...current.basicInfo, ...basicInfo }
     if (descriptionChanged && hasEvidence(caseId)) {
       markCaseAgentQueued(current, [])
       queued = true
@@ -6089,7 +6035,7 @@ export async function createCase(name: string, description?: string) {
   return { workspace: await readWorkspace(), caseFolder }
 }
 
-export async function updateCase(caseId: string, patch: Partial<Pick<CaseFolder, 'name' | 'description' | 'status'>>) {
+export async function updateCase(caseId: string, patch: CaseUpdate) {
   await updateCaseRecord(caseId, patch)
   return { workspace: await readWorkspace() }
 }
@@ -6115,11 +6061,16 @@ export async function rebuildCaseMemory(caseId: string) {
 }
 
 export async function deleteCase(caseId: string) {
+  const { parsingStopped } = await runExclusiveWorkspaceMutation(() => deleteCaseUnlocked(caseId))
+  await parsingStopped
+  return runExclusiveWorkspaceMutation(async () => {
+    cleanupDeletedCaseFiles(caseId)
+    return { workspace: await readWorkspace() }
+  })
+}
+
+async function deleteCaseUnlocked(caseId: string) {
   const workspace = await readWorkspace()
-  const removedEvidences = workspace.evidences.filter((item) => item.caseId === caseId)
-  const removedStorageKeys = new Set(
-    removedEvidences.map((item) => item.storageKey?.trim()).filter((key): key is string => Boolean(key)),
-  )
   workspace.cases = workspace.cases.filter((item) => item.id !== caseId)
   workspace.evidences = workspace.evidences.filter((item) => item.caseId !== caseId)
   workspace.certificates = workspace.certificates.filter((item) => item.caseId !== caseId)
@@ -6133,21 +6084,8 @@ export async function deleteCase(caseId: string) {
   await writeWorkspace(workspace)
   // 案件删除后不再有材料理解队列任务，避免删除后又被队列捞起来写回孤儿数据。
   cancelBackgroundEvidenceProcessing(caseId)
-  // 原件文件在数据落库后再回收，磁盘不残留；失败只记日志，不影响删除结果。
-  const retainedStorageKeys = new Set(
-    workspace.evidences.map((item) => item.storageKey?.trim()).filter((key): key is string => Boolean(key)),
-  )
-  for (const key of removedStorageKeys) {
-    if (retainedStorageKeys.has(key)) {
-      continue
-    }
-    try {
-      await deleteObject(key)
-    } catch (error) {
-      console.error('Evidence source file could not be removed:', error instanceof Error ? error.message : String(error))
-    }
-  }
-  return { workspace }
+  // 释放工作区锁后再等待解析收尾，避免解析落库和删除互相等待。
+  return { parsingStopped: cancelCaseEvidenceParsing(caseId) }
 }
 
 export async function importEvidences(payload: EvidenceImportPayload) {
@@ -6323,7 +6261,13 @@ async function importEvidencesUnlocked(payload: EvidenceImportPayload) {
       workspace.evidences.find((item) => item.id === evidenceId)?.type !== 'other')
     if (queueEvidenceIds.length) markCaseAgentQueued(folder, queueEvidenceIds)
     await writeWorkspace(workspace)
-    startEvidenceParsing(Array.from(touchedEvidenceIds).filter(id => supportsMineru(workspace.evidences.find(item => item.id === id)!)))
+    const parsingBatch = Array.from(touchedEvidenceIds, id => workspace.evidences.find(item => item.id === id)!)
+      .filter(supportsMineru)
+    // 先让耗时较长的 PDF 开始加载模型，避免多个 PDF 堆在批次末尾。
+    if (env.PARSER_WORKERS > 1 && parsingBatch.length >= 4) {
+      parsingBatch.sort((left, right) => Number(right.type === 'pdf') - Number(left.type === 'pdf'))
+    }
+    startEvidenceParsing(parsingBatch.map(item => item.id))
     if (queueEvidenceIds.length) queueBackgroundEvidenceProcessing(caseFolder.id, queueEvidenceIds)
     return { workspace, created }
   }
@@ -6947,7 +6891,8 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
     throw new Error('案件不存在。')
   }
 
-  const evidences = workspace.evidences.filter((item) => payload.evidenceIds.includes(item.id))
+  const positionVersion = assertDraftPosition(caseFolder.agent?.position, payload.role)
+  const evidences = workspace.evidences.filter((item) => item.caseId === caseFolder.id && payload.evidenceIds.includes(item.id))
   if (evidences.length === 0) {
     throw new Error('请至少勾选一份证据。')
   }
@@ -6973,7 +6918,9 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
           certificate: buildCertificate(caseFolder, evidences, payload.role, payload.focus),
           agentReply: '当前未配置模型，已回退为基础规则生成文书。',
         }
-  const certificate = await attachAutoStatuteReferencesToCertificate(workspace, rawCertificate)
+  const certificate = await attachAutoStatuteReferencesToCertificate(workspace, {
+    ...rawCertificate, docKey: normalizeDocKey(payload.docKey), paragraphs: rawCertificate.paragraphs.map(item => ({ ...item, aiOrigin: 'draft' })),
+  })
   // 保存前重新读取工作区，把生成结果应用到最新状态：
   // 期间后台的材料理解与其它任务的更新不会被旧快照覆盖。
   const latest = await commitToLatestWorkspace(
@@ -6989,9 +6936,11 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
       )
     },
     (state) => {
-      if (!state.cases.some((item) => item.id === caseFolder.id)) {
+      const latestCase = state.cases.find((item) => item.id === caseFolder.id)
+      if (!latestCase) {
         throw new Error('案件已删除，生成结果已丢弃。')
       }
+      assertDraftPosition(latestCase.agent?.position, payload.role, positionVersion)
     },
   )
   return { workspace: latest, certificate, agentReply }
@@ -7000,15 +6949,16 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
 export async function streamGenerateCertificate(
   payload: GenerateCertificatePayload,
   onEvent: (event: CertificateStreamEvent) => Promise<void> | void,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; preview?: { certificateId?: string } },
 ) {
   // 客户端断开（删除案件、手动停止）时把中止信号传进模型调用，避免继续消耗额度。
-  return withRequestAbortSignal(options?.signal, () => runStreamGenerateCertificate(payload, onEvent))
+  return withRequestAbortSignal(options?.signal, () => runStreamGenerateCertificate(payload, onEvent, options))
 }
 
 async function runStreamGenerateCertificate(
   payload: GenerateCertificatePayload,
   onEvent: (event: CertificateStreamEvent) => Promise<void> | void,
+  options?: { signal?: AbortSignal; preview?: { certificateId?: string } },
 ) {
   const workspace = await readWorkspace()
   const caseFolder = workspace.cases.find((item) => item.id === payload.caseId)
@@ -7017,7 +6967,14 @@ async function runStreamGenerateCertificate(
     throw new Error('案件不存在。')
   }
 
-  const evidences = workspace.evidences.filter((item) => payload.evidenceIds.includes(item.id))
+  const positionVersion = assertDraftPosition(caseFolder.agent?.position, payload.role)
+  const preview = options?.preview
+  const previewMaterialVersion = preview ? assistantMaterialVersion(workspace, caseFolder.id) : ''
+  const sourceDocument = preview?.certificateId ? workspace.certificates.find(item => item.id === preview.certificateId && item.caseId === caseFolder.id) : undefined
+  if (preview?.certificateId && !sourceDocument) throw new AppError('起草所用文书已变化，请重新选择。', 409, 'DRAFT_TARGET_CHANGED')
+  const authorities = preview ? verifiedDraftAuthorities(workspace, sourceDocument) : []
+  const docKey = normalizeDocKey(payload.docKey) ?? (preview ? normalizeDocKey(sourceDocument?.docKey) : undefined)
+  const evidences = workspace.evidences.filter((item) => item.caseId === caseFolder.id && payload.evidenceIds.includes(item.id))
   if (evidences.length === 0) {
     throw new Error('请至少勾选一份证据。')
   }
@@ -7032,10 +6989,8 @@ async function runStreamGenerateCertificate(
   let agentReply: string | undefined
 
   if (!isLlmConfigured()) {
-    certificate = await attachAutoStatuteReferencesToCertificate(
-      workspace,
-      buildCertificate(caseFolder, evidences, payload.role, payload.focus),
-    )
+    const fallback = buildCertificate(caseFolder, evidences, payload.role, payload.focus)
+    certificate = preview ? fallback : await attachAutoStatuteReferencesToCertificate(workspace, fallback)
     agentReply = '当前未配置模型，已回退为基础规则生成文书。'
     await onEvent({ type: 'meta', title: certificate.title, focus: certificate.focus })
     for (const [index, paragraph] of certificate.paragraphs.entries()) {
@@ -7055,10 +7010,13 @@ async function runStreamGenerateCertificate(
       prompt: payload.prompt,
       focus: payload.focus,
     })
-    const sampleStyleGuide = buildCertificateSampleStyleGuide({
+    const selectedProfile = preview && docKey ? documentProfile.profiles[docKey] : undefined
+    const sampleStyleGuide = selectedProfile
+      ? `采用${selectedProfile.name}体例。必要内容：${selectedProfile.identityElements.map(type => selectedProfile.elements[type].hint || documentProfile.elementTypes[type]).join('；')}`
+      : buildCertificateSampleStyleGuide({
       role: payload.role,
       kind: documentKind,
-    })
+      })
 
     const parsed = await streamStructuredCertificateFromLlm({
       messages: buildStreamingCertificateMessages({
@@ -7070,6 +7028,7 @@ async function runStreamGenerateCertificate(
         evidenceContext,
         focus: payload.focus,
         prompt: payload.prompt?.trim() || '请基于现有证据生成一版结构完整、可用于后续核验修改的法律文书。',
+        draftAuthorities: preview ? authorities.map(({ quote, sources }) => ({ quote, sources: sources.filter(source => source.tier !== 'l1') })) : undefined,
       }),
       onEvent,
     })
@@ -7079,7 +7038,7 @@ async function runStreamGenerateCertificate(
     }
 
     const paragraphs = buildCertificateParagraphsFromLlmOutput(parsed.paragraphs, evidences, payload.prompt)
-    certificate = await attachAutoStatuteReferencesToCertificate(workspace, {
+    certificate = {
       id: createId('certificate'),
       caseId: caseFolder.id,
       title: parsed.title?.trim() || buildFallbackTitle(caseFolder, payload.role),
@@ -7088,7 +7047,8 @@ async function runStreamGenerateCertificate(
       paragraphIds: paragraphs.map((paragraph) => paragraph.id),
       paragraphs,
       createdAt: new Date().toISOString(),
-    })
+    }
+    if (!preview) certificate = await attachAutoStatuteReferencesToCertificate(workspace, certificate)
     agentReply =
       parsed.agentReply?.trim()
       || (certificate.title
@@ -7096,6 +7056,45 @@ async function runStreamGenerateCertificate(
         : '已根据你的要求生成一版文书草稿。')
   }
 
+  certificate = { ...certificate, docKey, paragraphs: certificate.paragraphs.map(item => ({ ...item, aiOrigin: 'draft' })) }
+  if (preview) {
+    options?.signal?.throwIfAborted()
+    const prepared = prepareAssistantDraft(workspace, certificate, authorities, previewMaterialVersion)
+    validateSkillOutput('draft', prepared.draft)
+    const targetVersion = assistantSnapshot(sourceDocument)
+    const materialVersion = previewMaterialVersion
+    const legalVersion = authorities.length ? assistantSnapshot([workspace.knowledgeStatutes, workspace.knowledgeCases]) : undefined
+    const caseId = caseFolder.id
+    const caseVersion = assistantSnapshot([caseFolder.name, caseFolder.description, caseFolder.basicInfo])
+    const certificateId = sourceDocument?.id
+    const candidateId = rememberAssistantCandidate({ caseId, certificateId }, () => runExclusiveWorkspaceMutation(async () => {
+      const latest = await readWorkspace()
+      const currentCase = latest.cases.find(item => item.id === caseId)
+      if (!currentCase) throw new AppError('案件已删除，请重新起草。', 409, 'DRAFT_TARGET_CHANGED')
+      assertDraftPosition(currentCase.agent?.position, payload.role, positionVersion)
+      const currentDocument = certificateId && latest.certificates.find(item => item.id === certificateId && item.caseId === caseId)
+      if (caseVersion !== assistantSnapshot([currentCase.name, currentCase.description, currentCase.basicInfo])
+        || (certificateId && targetVersion !== assistantSnapshot(currentDocument)) || materialVersion !== assistantMaterialVersion(latest, caseId)
+        || (legalVersion && legalVersion !== assistantSnapshot([latest.knowledgeStatutes, latest.knowledgeCases]))) {
+        throw new AppError('起草所依据的文书、材料或法源已更新，请重新生成。', 409, 'DRAFT_TARGET_CHANGED')
+      }
+      const accepted = prepared.certificate
+      accepted.verification.revision = randomUUID()
+      accepted.verification.authorityKey = verificationAuthorityKey(latest, accepted.verification.declarations)
+      accepted.verification.audit = [{ id: randomUUID(), at: new Date().toISOString(), actor: getCurrentWorkspaceAccount() ?? latest.user.email,
+        action: 'adopt', paragraphId: accepted.paragraphs[0]?.id, note: '律师采纳 AI 起草候选，新增声明待核验',
+        affected: accepted.verification.declarations.map(item => item.id) }]
+      latest.certificates.unshift(accepted)
+      currentCase.status = 'in_review'
+      const memory = latest.caseContextMemories.find(item => item.caseId === caseId) ?? null
+      upsertDraftMemory(latest, buildDraftMemory(latest, accepted, payload.prompt?.trim() || payload.focus, memory,
+        latest.evidences.filter(item => item.caseId === caseId && payload.evidenceIds.includes(item.id))))
+      await writeWorkspace(latest)
+      return { certificateId: accepted.id }
+    }))
+    await onEvent({ type: 'done', workspace, certificate: prepared.certificate, candidateId, draft: prepared.draft })
+    return
+  }
   // 保存前重新读取工作区，把生成结果应用到最新状态：
   // 期间后台的材料理解与其它任务的更新不会被旧快照覆盖。
   const latest = await commitToLatestWorkspace(
@@ -7112,9 +7111,11 @@ async function runStreamGenerateCertificate(
     },
     (state) => {
       // 落库前确认案件仍在，避免案件被删除后把生成结果写回成孤儿文书。
-      if (!state.cases.some((item) => item.id === caseFolder.id)) {
+      const latestCase = state.cases.find((item) => item.id === caseFolder.id)
+      if (!latestCase) {
         throw new Error('案件已删除，生成结果已丢弃。')
       }
+      assertDraftPosition(latestCase.agent?.position, payload.role, positionVersion)
     },
   )
   await onEvent({
@@ -7223,6 +7224,8 @@ async function runStreamRewriteCertificate(
   if (!certificate) {
     throw new Error('当前文书不存在。')
   }
+  const selection = payload.selection
+  const selectedParagraph = selection === undefined ? undefined : locateRewriteSelection(certificate.paragraphs, selection)
 
   if (!isLlmConfigured()) {
     throw new Error('当前未配置模型，暂时无法执行二次改写。')
@@ -7269,11 +7272,19 @@ async function runStreamRewriteCertificate(
       caseMemoryContext,
       evidenceContext,
       focus: certificate.focus,
-      prompt: payload.prompt.trim(),
-      currentDraft: buildDraftContext(certificate),
+      prompt: selection ? `只对给定的一段原文调整表述。返回且只返回一个段落；不得新增事实或引用，不得改变数字、日期、条号、案号。\n${payload.prompt.trim()}` : payload.prompt.trim(),
+      currentDraft: buildDraftContext(selectedParagraph && selection
+        ? { ...certificate, paragraphs: [{ ...selectedParagraph, text: selection.quote }] } : certificate),
     }),
-    onEvent,
+    onEvent: selection ? () => {} : onEvent,
   })
+
+  if (selection) {
+    const rewritePreview = validateRewritePreview(selection.quote, parsed.paragraphs)
+    validateSkillOutput('rewrite', { type: 'draft-paragraph', verifiedCandidate: rewritePreview })
+    await onEvent({ type: 'done', workspace: await readWorkspace(), certificate, rewritePreview, rewriteVersion: assistantSnapshot(certificate) })
+    return
+  }
 
   if (!parsed.paragraphs.length) {
     throw new Error('模型未返回有效改写结果。')
@@ -7288,10 +7299,12 @@ async function runStreamRewriteCertificate(
 
   const rewrittenCertificate = await attachAutoStatuteReferencesToCertificate(workspace, {
     ...certificate,
+    linkageInputKey: undefined,
+    linkageStale: true,
     title: parsed.title?.trim() || certificate.title,
     focus: parsed.focus?.trim() || certificate.focus,
     paragraphIds: rewrittenParagraphs.map((paragraph) => paragraph.id),
-    paragraphs: rewrittenParagraphs,
+    paragraphs: rewrittenParagraphs.map(item => ({ ...item, aiOrigin: 'rewrite' })),
   })
 
   // 保存前重新读取工作区：改写会整体替换段落内容，
@@ -7329,7 +7342,9 @@ async function runStreamRewriteCertificate(
   })
 }
 
-export async function importCertificate(payload: ImportCertificatePayload) {
+export async function importCertificate(payload: ImportCertificatePayload,
+  options: { trustedTableCells?: boolean; documentFile?: OfficeFile } = {}) {
+  if (path.extname(payload.sourceFileName)) officeFormat(payload.sourceFileName)
   const workspace = await readWorkspace()
   const caseFolder = workspace.cases.find((item) => item.id === payload.caseId)
 
@@ -7343,8 +7358,12 @@ export async function importCertificate(payload: ImportCertificatePayload) {
 
   const certificate = await attachAutoStatuteReferencesToCertificate(
     workspace,
-    buildImportedCertificate(caseFolder, payload),
+    buildImportedCertificate(caseFolder, payload, options.trustedTableCells === true),
   )
+  if (options.documentFile) {
+    certificate.officeFile = { ...options.documentFile, contentHash: officeContentHash(certificate.paragraphs) }
+    await atomicOfficeJson(certificate.officeFile.id, { paragraphs: certificate.paragraphs })
+  }
   workspace.certificates.unshift(certificate)
   workspace.cases = workspace.cases.map((item) =>
     item.id === caseFolder.id ? { ...item, status: 'in_review' } : item,
@@ -7357,15 +7376,124 @@ export async function importCertificate(payload: ImportCertificatePayload) {
   }
 }
 
+export async function classifyCertificate(certificateId: string, value: string | null) {
+  const docKey = normalizeDocKey(value)
+  if (value !== null && !docKey) throw new AppError('文书类型无效。', 400, 'INVALID_DOCUMENT_TYPE')
+  return runExclusiveWorkspaceMutation(async () => {
+    const workspace = await readWorkspace()
+    const certificate = workspace.certificates.find(item => item.id === certificateId)
+    if (!certificate) throw new AppError('文书已不存在。', 404, 'DOCUMENT_NOT_FOUND')
+    if (certificate.docKey !== docKey) {
+      certificate.docKey = docKey
+      certificate.linkageInputKey = undefined
+      certificate.linkageStale = true
+      const caseFolder = workspace.cases.find(item => item.id === certificate.caseId)
+      if (caseFolder?.status === 'ready') caseFolder.status = 'in_review'
+      await writeWorkspace(workspace)
+    }
+    return { workspace: sanitizeWorkspaceForClient(await readWorkspace()) }
+  })
+}
+
+type AssistantRewriteUpdate = { start: number; quote: string; candidate: string; version: string; confirmed: boolean }
+
+async function finishAssistantRewriteRecheck(certificate: Certificate, workspace: WorkspaceState, marked: AssistantPendingVerification) {
+  if (!marked.dirtyIds.length && !marked.editedParagraphIds?.length) return { workspace, assistantRecheck: 'complete' as const }
+  const documentVersion = assistantSnapshot(certificate)
+  const lawVersion = assistantSnapshot([workspace.knowledgeStatutes, workspace.knowledgeCases])
+  const signal = AbortSignal.timeout(12000)
+  const next = await recheckAssistantDeclarations(certificate, marked, workspace, { signal, ...createVerificationSources(workspace) })
+  return runExclusiveWorkspaceMutation(async () => {
+    const latest = await readWorkspace()
+    const target = latest.certificates.find(item => item.id === certificate.id && item.caseId === certificate.caseId)
+    if (!target || assistantSnapshot(target) !== documentVersion || assistantMaterialVersion(latest, certificate.caseId) !== marked.verification.inputKey
+      || assistantSnapshot([latest.knowledgeStatutes, latest.knowledgeCases]) !== lawVersion) {
+      throw new AppError('局部重核期间正文或来源已更新，请重试。', 409, 'ASSISTANT_RECHECK_TARGET_CHANGED')
+    }
+    const rechecked = new Set(marked.dirtyIds)
+    const declarationIds = (next.dirty?.declarationIds ?? []).filter(id => !rechecked.has(id))
+    const remaining = new Set(declarationIds)
+    const remainingParagraphs = new Set(next.declarations.filter(item => remaining.has(item.id)).map(item => item.location.paragraphId))
+    const paragraphIds = (next.dirty?.paragraphIds ?? []).filter(id => !marked.editedParagraphIds?.includes(id) || remainingParagraphs.has(id))
+    target.verification = { ...recordVerification(latest, target.verification, next, marked.dirtyIds, target.caseId),
+      dirty: declarationIds.length || paragraphIds.length ? { declarationIds, paragraphIds } : undefined }
+    await writeWorkspace(latest)
+    return { workspace: latest, assistantRecheck: 'complete' as const }
+  })
+}
+
+export async function retryAssistantRewriteRecheck(certificateId: string) {
+  const workspace = await readWorkspace()
+  const certificate = workspace.certificates.find(item => item.id === certificateId)
+  if (!certificate) throw new AppError('文书已不存在。', 404, 'DOCUMENT_NOT_FOUND')
+  const marked = resumeAssistantVerification(certificate, assistantMaterialVersion(workspace, certificate.caseId))
+  return finishAssistantRewriteRecheck(certificate, workspace, marked)
+}
+
+async function adoptAssistantRewrite(certificateId: string, paragraphId: string, patch: Partial<CertificateParagraph>, rewrite: AssistantRewriteUpdate) {
+  if (rewrite.confirmed !== true) throw new AppError('请确认采纳选区改写。', 400, 'ASSISTANT_CONFIRMATION_REQUIRED')
+  const saved = await runExclusiveWorkspaceMutation(async () => {
+    const workspace = await readWorkspace()
+    const previous = workspace.certificates.find(item => item.id === certificateId)
+    const caseFolder = previous && workspace.cases.find(item => item.id === previous.caseId)
+    if (!previous || !caseFolder || rewrite.version !== assistantSnapshot(previous)) {
+      throw new AppError('文书已变化，请重新选择后生成改写候选。', 409, 'REWRITE_TARGET_CHANGED')
+    }
+    const original = locateRewriteSelection(previous.paragraphs, { paragraphId, start: rewrite.start, quote: rewrite.quote })
+    if (typeof rewrite.candidate !== 'string') throw new AppError('改写候选无效。', 400, 'REWRITE_INVALID_CANDIDATE')
+    const candidate = validateRewritePreview(rewrite.quote, [{ text: rewrite.candidate }])
+    const text = original.text.slice(0, rewrite.start) + candidate + original.text.slice(rewrite.start + rewrite.quote.length)
+    if (patch.text !== text || text === original.text) throw new AppError('改写候选与当前选区不一致。', 409, 'REWRITE_TARGET_CHANGED')
+    const richText = rewriteRichText(original.richText, original.text, text)
+    const [rebuilt] = rebuildParagraphs([original], [{ id: original.id, text, richText }])
+    const changed = normalizeParagraph({ ...rebuilt, aiOrigin: 'rewrite' })
+    const certificate = { ...previous, paragraphs: previous.paragraphs.map(item => item.id === paragraphId ? changed : item) }
+    const inputKey = assistantMaterialVersion(workspace, certificate.caseId)
+    const prior = previous.verification
+    const authorityChanged = prior?.authorityKey && prior.authorityKey !== verificationAuthorityKey(workspace, prior.declarations)
+    const marked = markAssistantVerificationPending(certificate, paragraphId, inputKey, authorityChanged ? { ...previous, linkageStale: true } : previous)
+    marked.verification.revision = randomUUID()
+    marked.verification.authorityKey = verificationAuthorityKey(workspace, marked.verification.declarations)
+    marked.verification.audit = [...(prior?.audit ?? []), { id: randomUUID(), at: new Date().toISOString(),
+      actor: getCurrentWorkspaceAccount() ?? workspace.user.email, action: 'adopt', paragraphId, quote: rewrite.quote,
+      note: '律师采纳选区改写，待局部重核', affected: marked.dirtyIds }]
+    Object.assign(certificate, { verification: marked.verification, linkageInputKey: inputKey, linkageStale: !marked.hasCurrentBaseline })
+    workspace.certificates = workspace.certificates.map(item => item.id === certificateId ? certificate : item)
+    if (caseFolder.status === 'ready') caseFolder.status = 'in_review'
+    await writeWorkspace(workspace)
+    const persisted = workspace.certificates.find(item => item.id === certificateId)!
+    return { certificate: persisted, workspace, marked }
+  })
+  try {
+    return await finishAssistantRewriteRecheck(saved.certificate, saved.workspace, saved.marked)
+  } catch {
+    return { workspace: await readWorkspace(), assistantRecheck: 'pending' as const }
+  }
+}
+
 export async function updateParagraph(
   certificateId: string,
   paragraphId: string,
-  input: Partial<CertificateParagraph> & { expectedContent?: { text: string; richText?: string } },
+  input: Partial<CertificateParagraph> & { expectedContent?: { text: string; richText?: string; links?: EvidenceLink[]; references?: ParagraphReference[] };
+    assistantRewrite?: AssistantRewriteUpdate; declarationReview?: unknown; declarationEdit?: unknown; declarationReferences?: unknown },
 ) {
-  const { expectedContent, ...patch } = input
+  const { expectedContent, assistantRewrite, declarationReview, declarationEdit, declarationReferences, ...patch } = input
+  if (declarationReview !== undefined) return saveDeclarationReview(certificateId, paragraphId, declarationReview)
+  if (assistantRewrite) return adoptAssistantRewrite(certificateId, paragraphId, patch, assistantRewrite)
   const workspace = await readWorkspace()
-  const current = workspace.certificates.find(item => item.id === certificateId)?.paragraphs.find(item => item.id === paragraphId)
-  if (!current) throw new AppError('文稿段落已不存在，草稿会保留。', 404, 'PARAGRAPH_NOT_FOUND')
+  const document = workspace.certificates.find(item => item.id === certificateId)
+  const current = document?.paragraphs.find(item => item.id === paragraphId)
+  if (!document || !current) throw new AppError('文稿段落已不存在，草稿会保留。', 404, 'PARAGRAPH_NOT_FOUND')
+  const editAudit = declarationEdit === undefined ? undefined
+    : validateDeclarationEdit(workspace, document, paragraphId, declarationEditSchema.parse(declarationEdit), patch.text)
+  const referenceEdit = declarationReferences === undefined ? undefined
+    : validateDeclarationReferences(workspace, document, current, declarationReferenceSchema.parse(declarationReferences), patch)
+  if (editAudit === null || referenceEdit === null) return { workspace }
+  // 按客户端读回的 JSON 结构比较，存储层补出的 undefined 属性不代表引用发生变化。
+  if (expectedContent && ((expectedContent.links && !isDeepStrictEqual(JSON.parse(JSON.stringify(getParagraphLinks(current))), expectedContent.links))
+    || (expectedContent.references && !isDeepStrictEqual(JSON.parse(JSON.stringify(current.references ?? [])), expectedContent.references)))) {
+    throw new AppError('该段引用已有更新，请重新打开后再保存。', 409, 'PARAGRAPH_CONFLICT')
+  }
   if (expectedContent && (current.text !== expectedContent.text
     || (current.richText !== undefined && current.richText !== expectedContent.richText))
     && (current.text !== patch.text || current.richText !== patch.richText)) {
@@ -7381,27 +7509,44 @@ export async function updateParagraph(
     }
 
     const nextParagraphs: CertificateParagraph[] = []
+    let textChanged = false
+    let sourcesChanged = false
     for (const paragraph of certificate.paragraphs) {
       if (paragraph.id !== paragraphId) {
         nextParagraphs.push(paragraph)
         continue
       }
 
+      textChanged = typeof patch.text === 'string' && patch.text !== paragraph.text
       const mergedParagraph = normalizeParagraph({
         ...paragraph,
         ...patch,
-        linkageFocus: typeof patch.text === 'string' && patch.text !== paragraph.text ? undefined : paragraph.linkageFocus,
+        ...(textChanged ? { verified: false, linkageFocus: undefined } : {}),
       })
-      const textChanged = typeof patch.text === 'string' && patch.text !== paragraph.text
+      sourcesChanged = (Object.hasOwn(patch, 'links') || Object.hasOwn(patch, 'link'))
+        && JSON.stringify(getParagraphLinks(paragraph)) !== JSON.stringify(getParagraphLinks(mergedParagraph))
+        || Object.hasOwn(patch, 'references') && JSON.stringify(paragraph.references ?? []) !== JSON.stringify(mergedParagraph.references ?? [])
       nextParagraphs.push(textChanged
         ? await attachAutoStatuteReferencesToParagraph(workspace, mergedParagraph, cache)
         : mergedParagraph)
     }
 
-    nextCertificates.push({
-      ...certificate,
-      paragraphs: nextParagraphs,
-    })
+    const next = textChanged ? preserveScopedReferences(certificate, { ...certificate, paragraphs: nextParagraphs }) : { ...certificate, paragraphs: nextParagraphs }
+    if (textChanged || sourcesChanged || Object.hasOwn(patch, 'richText')) {
+      if (referenceEdit && certificate.verification) next.verification = { ...certificate.verification, manualReferences: referenceEdit.bindings }
+      next.verification = invalidateVerification(certificate, next, getCurrentWorkspaceAccount() ?? workspace.user.email)
+      const audit = editAudit ?? referenceEdit?.audit
+      if (audit && next.verification) {
+        next.verification = { ...next.verification, audit: [...(next.verification.audit ?? []), { ...audit, affected: next.verification.dirty?.declarationIds }] }
+      }
+      if (textChanged || sourcesChanged || next.verification !== certificate.verification) {
+        next.linkageInputKey = next.verification?.dirty ? certificate.linkageInputKey : undefined
+        next.linkageStale = true
+        const folder = workspace.cases.find(item => item.id === certificate.caseId)
+        if (folder?.status === 'ready') folder.status = 'in_review'
+      }
+    }
+    nextCertificates.push(next)
   }
 
   workspace.certificates = nextCertificates
@@ -7562,8 +7707,13 @@ async function enrichRetrievalLimitedInsightsByNewEvidence(
 export async function autoLinkCertificate(
   certificateId: string,
   onProgress?: LinkageProgressReporter,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; scope?: 'dirty' },
 ) {
+  if (options?.scope === 'dirty') {
+    onProgress?.('正在复核待处理声明及关联依据')
+    const { workspace, certificate } = await recheckDirtyDeclarations(certificateId, options.signal)
+    return summarizeLinkage(workspace, certificate)
+  }
   if (!isLlmConfigured()) {
     throw new Error('当前桌面端尚未配置 LLM API Key，证据联动依赖大模型理解，请先完成模型配置后再试。')
   }
@@ -7585,8 +7735,16 @@ export async function autoLinkCertificate(
     }
 
     const caseEvidences = workspace.evidences.filter((item) => item.caseId === certificate.caseId)
+    const materialVersion = verificationMaterialVersion(workspace, certificate.caseId)
     learnCaseRedaction(workspace, certificate.caseId, caseEvidences)
     for (const paragraph of certificate.paragraphs) currentModelRedaction()?.learnText(paragraph.text)
+    const failedParsing = caseEvidences.filter(item => item.parsing?.status === 'failed')
+    if (failedParsing.length) {
+      const details = failedParsing.slice(0, 3).map(item =>
+        `${item.number || item.name || item.fileName}（${item.parsing?.error?.trim() || '解析未完成'}）`).join('、')
+      throw new AppError(`案件中有 ${failedParsing.length} 份材料解析失败。${details}。请在案件材料中打开对应材料，恢复解析服务后重新解析，或对照原件确认正文后继续核验。`,
+        409, 'CASE_PARSE_REVIEW_REQUIRED')
+    }
     if (caseEvidences.some(item => item.parsing && item.parsing.status !== 'ready')) {
       throw new AppError('案件材料仍在解析或等待人工审核，请完成后再核验文书。', 409, 'CASE_PARSE_REVIEW_REQUIRED')
     }
@@ -7605,6 +7763,7 @@ export async function autoLinkCertificate(
       linkableEvidences,
       caseContextMemory,
       reportProgress,
+      signal,
     )
     throwIfLinkageAborted(signal)
 
@@ -7615,6 +7774,8 @@ export async function autoLinkCertificate(
 
     // 补齐后的理解结果写回了工作区，联动要基于最新材料记忆来做。
     const linkageWorkspace = await readWorkspace()
+    const statuteSnapshot = [...linkageWorkspace.knowledgeStatutes]
+    const caseSnapshot = [...linkageWorkspace.knowledgeCases]
 
     reportProgress('正在整理证据与关键句子的证明关系')
     const evidenceLinkedCertificate = attachAutoEvidenceLinksToCertificateWithLlm(linkageWorkspace, certificate, linkableEvidences, analyses)
@@ -7644,6 +7805,11 @@ export async function autoLinkCertificate(
     if (!latestCertificate) {
       throw new Error('文书已被删除，联动结果已丢弃。')
     }
+    if (certificate.caseId !== latestCertificate.caseId || certificate.docKey !== latestCertificate.docKey || certificateParagraphsChanged(certificate, latestCertificate)
+      || certificate.paragraphs.some((paragraph, index) => paragraph.id !== latestCertificate.paragraphs[index]?.id
+        || paragraph.richText !== latestCertificate.paragraphs[index]?.richText)) {
+      throw new AppError('正文在核验期间已更新，请对保存后的正文重新核验。', 409, 'WORKSPACE_CONFLICT')
+    }
     // 联动期间重建的案件记忆：与最新工作区取版本较新的一方。
     const memoryById = new Map(latestWorkspace.caseContextMemories.map((item) => [item.id, item]))
     for (const memory of workspace.caseContextMemories) {
@@ -7658,13 +7824,67 @@ export async function autoLinkCertificate(
       latestWorkspace.evidences.filter((item) => item.caseId === certificate.caseId),
       latestWorkspace.evidenceInsights.filter((item) => item.caseId === certificate.caseId),
     )
-    latestWorkspace.certificates = latestWorkspace.certificates.map((item) =>
-      item.id === certificateId
-        ? { ...mergeAutoLinkageIntoCertificate(item, nextCertificate), linkageInputKey }
-        : item,
-    )
+    if (materialVersion !== verificationMaterialVersion(latestWorkspace, certificate.caseId) || linkageInputKey !== linkageMaterialFingerprint(
+      linkageWorkspace.evidences.filter((item) => item.caseId === certificate.caseId),
+      linkageWorkspace.evidenceInsights.filter((item) => item.caseId === certificate.caseId),
+    )) {
+      throw new AppError('材料在核验期间已更新，请重新核验。', 409, 'WORKSPACE_CONFLICT')
+    }
+    const merged = mergeAutoLinkageIntoCertificate(latestCertificate, nextCertificate)
+    const candidates = merged.paragraphs.flatMap(paragraph => {
+      const analysis = analyses.get(paragraph.id)
+      return analysis?.declarationCandidates ?? (analysis?.sentenceFocus ?? [])
+        .filter(item => !getSentenceLinkageGuard(item.sentenceText).skip && item.kind === 'fact' && item.evidenceNeeded)
+        .map(item => ({ paragraphId: paragraph.id, quote: item.sentenceText, type: 'E-FACT' as const }))
+    })
+    const { declarations, docKey, classificationRequired } = extractDeclarations(merged, candidates)
+    const usedStatutes = declarations.some(item => item.type === 'E-LAW') || merged.paragraphs.some(paragraph =>
+      paragraph.references?.some(reference => reference.note === AUTO_STATUTE_REFERENCE_NOTE))
+    if (usedStatutes && !isDeepStrictEqual(statuteSnapshot, latestWorkspace.knowledgeStatutes)) {
+      throw new AppError('法源在核验期间已更新，请使用新版本重新核验。', 409, 'WORKSPACE_CONFLICT')
+    }
+    const usedCases = declarations.some(item => item.type === 'E-CASE')
+    if (usedCases && !isDeepStrictEqual(caseSnapshot, latestWorkspace.knowledgeCases)) {
+      throw new AppError('案例索引在核验期间已更新，请重新核验。', 409, 'WORKSPACE_CONFLICT')
+    }
+    const caseDeadline = usedCases ? AbortSignal.timeout(12000) : undefined
+    const { statuteAdapter, officialStatuteAdapter, caseAdapter } = createVerificationSources(latestWorkspace, caseDeadline)
+    const { declarations: evidenceVerified, documentDiagnostics } = verifyEvidence(merged, declarations, latestWorkspace)
+    const previous = latestCertificate.verification
+    const sameRules = previous?.profileVersion === documentProfile.version && previous.docKey === docKey
+    const withReviews = sameRules ? carryDeclarationReviews(previous, evidenceVerified) : evidenceVerified
+    const legalVerified = await verifyLegalDeclarations(merged, withReviews, {
+      knowledgeStatutes: latestWorkspace.knowledgeStatutes, knowledgeCases: latestWorkspace.knowledgeCases,
+    }, statuteAdapter, signal, officialStatuteAdapter, caseAdapter)
+    throwIfLinkageAborted(signal)
     try {
-      await writeWorkspace(latestWorkspace)
+      await runExclusiveWorkspaceMutation(async () => {
+        const currentWorkspace = await readWorkspace()
+        const current = currentWorkspace.certificates.find(item => item.id === certificateId)
+        if (!current || !sameVerificationDocument(latestCertificate, current) || !isDeepStrictEqual(previous, current.verification)
+          || linkageInputKey !== documentMaterialKey(currentWorkspace, certificate.caseId)
+          || materialVersion !== verificationMaterialVersion(currentWorkspace, certificate.caseId)
+          || (usedStatutes && !isDeepStrictEqual(latestWorkspace.knowledgeStatutes, currentWorkspace.knowledgeStatutes))
+          || (usedCases && !isDeepStrictEqual(latestWorkspace.knowledgeCases, currentWorkspace.knowledgeCases))) {
+          throw new AppError('核验期间正文、人工确认、材料或来源已更新，请重新核验。', 409, 'WORKSPACE_CONFLICT')
+        }
+        const currentMemories = new Map(currentWorkspace.caseContextMemories.map(item => [item.id, item]))
+        for (const memory of latestWorkspace.caseContextMemories) {
+          if ((currentMemories.get(memory.id)?.version ?? -1) < (memory.version ?? 0)) currentMemories.set(memory.id, memory)
+        }
+        currentWorkspace.caseContextMemories = [...currentMemories.values()]
+        const basis = applyDeclarationDependencies(legalVerified)
+        const result = recordVerification(currentWorkspace, previous, {
+          version: 1, profileVersion: documentProfile.version, inputKey: linkageInputKey, docKey, classificationRequired,
+          declarations: sameRules ? carryDeclarationReviews(previous, basis) : basis,
+          ...(documentDiagnostics.length ? { documentDiagnostics } : {}),
+        }, undefined, certificate.caseId)
+        const next = mergeAutoLinkageIntoCertificate(current, nextCertificate)
+        currentWorkspace.certificates = currentWorkspace.certificates.map(item => item.id === certificateId
+          ? { ...next, linkageInputKey, linkageStale: false, verification: result } : item)
+        throwIfLinkageAborted(signal)
+        await writeWorkspace(currentWorkspace)
+      })
     } catch (error) {
       if ((error as { code?: string }).code === 'WORKSPACE_CONFLICT') {
         throw new AppError('联动结果保存失败：材料或文书在联动期间被更新，请重新执行联动。', 409, 'WORKSPACE_CONFLICT')
@@ -7675,8 +7895,13 @@ export async function autoLinkCertificate(
     const refreshedWorkspace = await readWorkspace()
     const refreshedCertificate = refreshedWorkspace.certificates.find((item) => item.id === certificateId) ?? nextCertificate
 
-    return {
-      workspace: refreshedWorkspace,
+    return summarizeLinkage(refreshedWorkspace, refreshedCertificate)
+  }))
+}
+
+function summarizeLinkage(workspace: WorkspaceState, refreshedCertificate: Certificate) {
+  return {
+      workspace,
       linkedParagraphCount: refreshedCertificate.paragraphs.filter((paragraph) =>
         getParagraphLinks(paragraph).length > 0 || (paragraph.references ?? []).length > 0,
       ).length,
@@ -7698,8 +7923,7 @@ export async function autoLinkCertificate(
         (total, paragraph) => total + (paragraph.references ?? []).filter((item) => item.note === AUTO_CASE_REFERENCE_NOTE).length,
         0,
       ),
-    }
-  }))
+  }
 }
 
 export async function reviewParagraphMatches(certificateId: string, paragraphId: string) {

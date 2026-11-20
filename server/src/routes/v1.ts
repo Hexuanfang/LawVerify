@@ -15,10 +15,13 @@ import { storeObject } from '../infrastructure/object-storage.js'
 import { isDatabaseEnabled } from '../infrastructure/postgres.js'
 import { runWithWorkspaceAccount } from '../store.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
-import { getLlmRuntimeStatus, pingLlm } from '../integrations/llm-service.js'
+import { getLlmRuntimeStatus, pingLlm, withAssistantModel } from '../integrations/llm-service.js'
 import { env } from '../config/env.js'
+import { adoptAssistantCandidate, discardAssistantCandidate } from '../assistant/candidates.js'
+import { checkAssistantCaseReport, executeAssistantSkill } from '../assistant/execute.js'
 import {
   bootstrap,
+  classifyCertificate,
   createCase,
   deleteCase,
   deleteEvidence,
@@ -41,6 +44,7 @@ import {
   recommendKnowledgeFiles,
   reindexKnowledgeFile,
   reviewParagraphMatches,
+  retryAssistantRewriteRecheck,
   rewriteCertificate,
   recommendKnowledgeCases,
   recommendKnowledgeStatutes,
@@ -66,6 +70,12 @@ const loginSchema = z.object({
 
 const createCaseSchema = z.object({
   name: z.string().min(1, '案件名称不能为空。'),
+})
+
+const assistantTargetSchema = z.object({ caseId: z.string().min(1).max(200), certificateId: z.string().min(1).max(200).optional() })
+const draftPreviewSchema = assistantTargetSchema.extend({
+  docKey: z.string().max(16).optional(), evidenceIds: z.array(z.string().min(1).max(200)).min(1),
+  role: z.enum(['plaintiff', 'defendant']), focus: z.string().max(6000), prompt: z.string().max(8000).optional(), model: z.string().max(200).optional(),
 })
 
 const rechargeSchema = z.object({
@@ -375,7 +385,8 @@ export function createV1Router() {
     sendSuccess(response, result)
   })
 
-  router.post('/certificates/generate/stream', async (request, response) => {
+  router.post(['/certificates/generate/stream', '/assistant/draft/stream'], async (request, response) => {
+    const preview = request.path === '/assistant/draft/stream' ? draftPreviewSchema.parse(request.body) : undefined
     startEventStream(response)
     // 客户端断开（删除案件、手动停止）时中止模型调用，避免服务端继续生成。
     const controller = new AbortController()
@@ -387,8 +398,12 @@ export function createV1Router() {
     })
 
     try {
-      await streamGenerateCertificate(request.body, async (event) => {
+      await withAssistantModel(preview?.model, () => streamGenerateCertificate(preview ?? request.body, async (event) => {
         if (event.type === 'done') {
+          if (preview) {
+            sendStreamEvent(response, 'done', { candidateId: event.candidateId, certificate: event.certificate, draft: event.draft })
+            return
+          }
           sendStreamEvent(response, 'done', {
             ...event,
             workspace: sanitizeWorkspaceForClient(event.workspace as WorkspaceState),
@@ -397,7 +412,7 @@ export function createV1Router() {
         }
 
         sendStreamEvent(response, event.type, event)
-      }, { signal: controller.signal })
+      }, { signal: controller.signal, preview }))
     } catch (error) {
       if (!response.destroyed && !controller.signal.aborted) {
         const message = error instanceof Error ? error.message : '生成失败'
@@ -406,6 +421,36 @@ export function createV1Router() {
     } finally {
       if (!response.destroyed) response.end()
     }
+  })
+
+  router.post('/assistant/candidates/:candidateId/adopt', async (request, response) => {
+    const body = assistantTargetSchema.extend({ confirmed: z.literal(true) }).parse(request.body)
+    const candidateId = z.uuid().parse(request.params.candidateId)
+    sendSuccess(response, await adoptAssistantCandidate({ ...body, candidateId }))
+  })
+
+  router.delete('/assistant/candidates/:candidateId', (request, response) => {
+    discardAssistantCandidate(z.uuid().parse(request.params.candidateId))
+    sendSuccess(response, { ok: true })
+  })
+
+  router.post('/assistant/skills/:skillId', async (request, response) => {
+    const body = assistantTargetSchema.extend({ query: z.string().trim().max(400).optional(), factDate: z.iso.date().optional() }).parse(request.body)
+    const controller = new AbortController()
+    response.once('close', () => { if (!response.writableEnded) controller.abort() })
+    const result = await executeAssistantSkill(request.params.skillId, body, AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]))
+    if (!response.destroyed) sendSuccess(response, result)
+  })
+
+  router.post('/assistant/documents/:certificateId/recheck', async (request, response) => {
+    const result = await retryAssistantRewriteRecheck(request.params.certificateId)
+    sendSuccess(response, { assistantRecheck: result.assistantRecheck })
+  })
+
+  router.post('/assistant/case-report/check', async (request, response) => {
+    const body = assistantTargetSchema.extend({ version: z.string().max(100).optional(), confirmed: z.literal(true),
+      report: z.record(z.string(), z.unknown()) }).parse(request.body)
+    sendSuccess(response, await checkAssistantCaseReport(body))
   })
 
   router.post('/certificates/:certificateId/rewrite', async (request, response) => {
@@ -433,6 +478,7 @@ export function createV1Router() {
         certificateId: request.params.certificateId,
         evidenceIds: Array.isArray(request.body?.evidenceIds) ? request.body.evidenceIds : [],
         prompt: typeof request.body?.prompt === 'string' ? request.body.prompt : '',
+        selection: request.body?.selection,
       }, async (event) => {
         if (event.type === 'done') {
           sendStreamEvent(response, 'done', {
@@ -464,6 +510,11 @@ export function createV1Router() {
     sendSuccess(response, result)
   })
 
+  router.patch('/certificates/:certificateId/document-type', async (request, response) => {
+    const { docKey } = z.object({ docKey: z.string().max(16).nullable() }).parse(request.body)
+    sendSuccess(response, await classifyCertificate(request.params.certificateId, docKey))
+  })
+
   router.patch('/certificates/:certificateId/paragraphs/:paragraphId', async (request, response) => {
     const result = await updateParagraph(
       request.params.certificateId,
@@ -474,7 +525,7 @@ export function createV1Router() {
   })
 
   router.post('/certificates/:certificateId/auto-link', async (request, response) => {
-    const result = await autoLinkCertificate(request.params.certificateId)
+    const result = await autoLinkCertificate(request.params.certificateId, undefined, { scope: request.query.scope === 'dirty' ? 'dirty' : undefined })
     sendSuccess(response, result)
   })
 

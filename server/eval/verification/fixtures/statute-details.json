@@ -1,0 +1,50 @@
+{
+  "provenance": "受控离线法源详情。fixture URL 仅模拟官方域名与版本定位，不请求网络，不作真实法源凭据。",
+  "old": {
+    "id": "t4-contract-law-107",
+    "law_name": "中华人民共和国合同法",
+    "article_number": "第一百零七条",
+    "text": "当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
+    "url": "https://flk.npc.gov.cn/detail2.html?bbbs=lawverify-offline-contract-law-107",
+    "validity": "REPEALED",
+    "effective_date": "1999-10-01",
+    "repeal_date": "2021-01-01",
+    "checked_at": "2025-01-01",
+    "version": "1999",
+    "doc_type": "法律"
+  },
+  "replacement": {
+    "id": "t4-civil-code-577",
+    "law_name": "中华人民共和国民法典",
+    "article_number": "第五百七十七条",
+    "text": "当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
+    "url": "https://flk.npc.gov.cn/detail2.html?bbbs=lawverify-offline-civil-code-577",
+    "validity": "VALID",
+    "effective_date": "2021-01-01",
+    "checked_at": "2025-01-01",
+    "version": "2021",
+    "doc_type": "法律"
+  },
+  "definition": {
+    "id": "t4-civil-code-667",
+    "law_name": "中华人民共和国民法典",
+    "article_number": "第六百六十七条",
+    "text": "借款合同是借款人向贷款人借款，到期返还借款并支付利息的合同。",
+    "url": "https://flk.npc.gov.cn/detail2.html?bbbs=lawverify-offline-civil-code-667",
+    "validity": "VALID",
+    "effective_date": "2021-01-01",
+    "checked_at": "2025-01-01",
+    "doc_type": "法律"
+  },
+  "appeal": {
+    "id": "t4-civil-procedure-177",
+    "law_name": "中华人民共和国民事诉讼法",
+    "article_number": "第一百七十七条",
+    "text": "第二审人民法院对上诉案件，经过审理，按照下列情形，分别处理：\n（一）原判决、裁定认定事实清楚，适用法律正确的，以判决、裁定方式驳回上诉，维持原判决、裁定；\n（二）原判决、裁定认定事实错误或者适用法律错误的，以判决、裁定方式依法改判、撤销或者变更；\n（三）原判决认定基本事实不清的，裁定撤销原判决，发回原审人民法院重审，或者查清事实后改判；\n（四）原判决遗漏当事人或者违法缺席判决等严重违反法定程序的，裁定撤销原判决，发回原审人民法院重审。\n原审人民法院对发回重审的案件作出判决后，当事人提起上诉的，第二审人民法院不得再次发回重审。",
+    "url": "https://flk.npc.gov.cn/detail2.html?bbbs=lawverify-offline-civil-procedure-177",
+    "validity": "VALID",
+    "effective_date": "2022-01-01",
+    "checked_at": "2025-01-01",
+    "doc_type": "法律"
+  }
+}

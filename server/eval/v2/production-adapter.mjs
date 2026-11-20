@@ -5,8 +5,10 @@ import path from 'node:path'
 import vm from 'node:vm'
 import ts from 'typescript'
 import * as policy from '../../src/intelligence/linkage-policy.ts'
+import { normalizeDocKey, profile as documentProfile } from '../../src/intelligence/verification/profile.ts'
+import { parseModelDeclarationCandidates } from '../../src/intelligence/verification/extract.ts'
 import { buildEvidenceFragments } from '../../src/intelligence/evidence-matching.ts'
-import { buildEvidenceChunks, buildEvidenceChunkIndex, rankEvidenceChunks } from '../../src/intelligence/evidence-retrieval.ts'
+import { buildEvidenceChunks, buildEvidenceChunkIndex, rankEvidenceChunks, splitEvidenceTextIntoPages } from '../../src/intelligence/evidence-retrieval.ts'
 import { parseDocument } from '../../src/infrastructure/document-jobs.ts'
 import { boundedFileStorage } from '../../src/middleware/bounded-upload.ts'
 
@@ -25,7 +27,7 @@ export function loadProductionFunctions(names, bindings = {}) {
     }
   }
   if (snippets.length !== names.length) throw new Error('生产函数签名变化，benchmark 适配器需要检查')
-  const context = vm.createContext({ ...policy, Buffer, ...bindings })
+  const context = vm.createContext({ ...policy, normalizeDocKey, documentProfile, parseModelDeclarationCandidates, Buffer, ...bindings })
   vm.runInContext(ts.transpileModule(`${snippets.join('\n')}\nthis.result={${names.join(',')}}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText, context)
@@ -38,6 +40,7 @@ const linkage = loadProductionFunctions([
   'isPlaceholderEvidenceText', 'scoreKeywords', 'tokenizeKeywordSource', 'createEvidenceLink',
 ], {
   AUTO_EVIDENCE_LINK_NOTE: 'system:auto-evidence-linked', createId: () => randomUUID(),
+  splitEvidenceTextIntoPages,
   // 富文本与引用排版不属于本次挂接指标，保留生产筛选与定位逻辑。
   normalizeParagraph: p => p, getQuote: text => text.slice(0, 120),
 })

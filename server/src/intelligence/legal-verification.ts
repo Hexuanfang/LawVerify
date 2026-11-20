@@ -19,7 +19,11 @@ export function isValidCaseNumber(value: string) {
   const normalized = normalizeCaseNumber(value)
   const year = Number(normalized.match(/^\((\d{4})\)/)?.[1])
   return year >= 1949 && year <= new Date().getFullYear() + 1
-    && /^\(\d{4}\)[\u4e00-\u9fff]\d{0,4}[\u4e00-\u9fff]{1,8}[1-9]\d{0,9}号$/.test(normalized)
+    && hasCaseNumberFormat(normalized)
+}
+
+export function hasCaseNumberFormat(value: string) {
+  return /^\(\d{4}\)[\u4e00-\u9fff]\d{0,4}[\u4e00-\u9fff]{1,8}[1-9]\d{0,9}号$/.test(normalizeCaseNumber(value))
 }
 
 export function isOfficialCaseUrl(value?: string) {
@@ -31,7 +35,7 @@ export function isOfficialCaseUrl(value?: string) {
   } catch { return false }
 }
 
-function articleIndex(value: string): number {
+export function articleIndex(value: string): number {
   if (/^\d+$/.test(value)) return Number(value)
   const digits = '零一二三四五六七八九'
   let total = 0, section = 0, digit = 0

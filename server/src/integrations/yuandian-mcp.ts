@@ -41,7 +41,7 @@ const SEARCH_TOOL_CANDIDATES = [
   'yuandian_search_authoritative_cases',
 ] as const
 
-let cachedSessionId: string | null = null
+const searchSession: { id?: string } = {}
 let initialized = false
 let cachedTools: McpToolDescriptor[] | null = null
 
@@ -183,34 +183,53 @@ function parseRpcResponse<T>(payload: string): T {
   throw new Error('元典 MCP 返回结果无法解析。')
 }
 
-async function postRpc<T>(request: JsonRpcRequest) {
+async function postRpc<T>(request: JsonRpcRequest, session = searchSession, signal?: AbortSignal) {
   const headers: Record<string, string> = {
     Accept: 'application/json, text/event-stream',
     'Content-Type': 'application/json',
     Authorization: `Bearer ${env.YUANDIAN_API_KEY}`,
   }
 
-  if (cachedSessionId) {
-    headers['Mcp-Session-Id'] = cachedSessionId
+  if (session.id) {
+    headers['Mcp-Session-Id'] = session.id
   }
 
   const response = isCloudAiEnabled() ? await cloudAiFetch('mcp/yuandian', request,
-    cachedSessionId ? { 'Mcp-Session-Id': cachedSessionId } : {}) : await fetch(env.YUANDIAN_MCP_URL ?? DEFAULT_YUANDIAN_MCP_URL, {
+    session.id ? { 'Mcp-Session-Id': session.id } : {}, signal) : await fetch(env.YUANDIAN_MCP_URL ?? DEFAULT_YUANDIAN_MCP_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify(request),
+    signal, redirect: 'error',
   })
 
   if (!response.ok) {
     const message = (await response.text()).trim()
-    throw new Error(message || `元典 MCP 请求失败（${response.status}）。`)
+    throw Object.assign(new Error(message || `元典 MCP 请求失败（${response.status}）。`), { status: response.status })
   }
 
-  cachedSessionId = response.headers.get('mcp-session-id')
-    ?? response.headers.get('Mcp-Session-Id')
-    ?? cachedSessionId
+  session.id = response.headers.get('mcp-session-id') ?? session.id
 
   return parseRpcResponse<T>(await response.text())
+}
+
+export function createYuandianToolCaller() {
+  if (!isYuandianCaseSearchConfigured()) return undefined
+  const session: { id?: string } = {}
+  let ready: Promise<void> | undefined
+  async function open(signal: AbortSignal) {
+    await postRpc({ jsonrpc: '2.0', id: createRequestId('yuandian-init'), method: 'initialize', params: {
+      protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'lawverify', version: '0.0.1' },
+    } }, session, signal)
+    await postRpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, session, signal)
+  }
+  return async (name: string, args: Record<string, unknown>, signal?: AbortSignal) => {
+    const deadline = AbortSignal.timeout(8000)
+    const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline
+    ready ??= open(requestSignal).catch(error => { ready = undefined; throw error })
+    await ready
+    return postRpc<ToolCallResult>({ jsonrpc: '2.0', id: createRequestId('yuandian-tool'), method: 'tools/call',
+      params: { name, arguments: args } }, session, requestSignal)
+  }
 }
 
 async function ensureInitialized() {

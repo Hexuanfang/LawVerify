@@ -1,0 +1,1249 @@
+[
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": null,
+    "reason": "已定位演示身份材料，核对提交版本时需检查脱敏情况。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-subj",
+    "type": "E-SUBJ",
+    "quote": "原告：王某，男，住北京市朝阳区。",
+    "src": "l1",
+    "verdict": "note",
+    "checks": {
+      "A1": "通过"
+    },
+    "sourceMatches": [
+      {
+        "sourceId": "S1",
+        "match": [],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 96,
+    "reason": "借条原件与流水同日同额，借贷合意与交付互证。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q1",
+    "checks": {
+      "A1": "通过",
+      "A2": "通过"
+    },
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "2023年3月15日，被告以经营周转为由向原告借款500,000元，并出具借条一张，约定借期一年，年利率12%。同日，原告通过招商银行向被告转账500,000元。",
+    "sourceMatches": [
+      {
+        "sourceId": "S2",
+        "match": [
+          [
+            "金额 500,000",
+            "ok"
+          ],
+          [
+            "借期一年",
+            "ok"
+          ],
+          [
+            "利率 12%",
+            "ok"
+          ]
+        ],
+        "main": true
+      },
+      {
+        "sourceId": "S3",
+        "match": [
+          [
+            "日期",
+            "ok"
+          ],
+          [
+            "金额",
+            "ok"
+          ],
+          [
+            "主体",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 72,
+    "reason": "基数与利率有据，但未展示利息算式，立案与质证时难复核。",
+    "advice": "建议写明算式：500,000 × 12% × 实际天数 ÷ 365，并列出截至起诉日的金额。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q2",
+    "type": "E-CALC",
+    "src": "l1",
+    "verdict": "warn",
+    "quote": "判令被告支付利息（以500,000元为基数，按年利率12%，自2023年3月15日起计算至实际清偿之日）。",
+    "sourceMatches": [
+      {
+        "sourceId": "S4",
+        "match": [
+          [
+            "基数",
+            "ok"
+          ],
+          [
+            "利率",
+            "ok"
+          ],
+          [
+            "起算日",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 3,
+    "purpose": "declaration",
+    "conf": 81,
+    "reason": "消息原文命中；截图为传来证据，已标“未经公证”。",
+    "advice": "当庭出示手机原始记录，或补办公证保全。不影响主干事实。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q3",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "note",
+    "quote": "2024年3月20日，被告在微信中回复“钱我认，再宽限两个月”。",
+    "sourceMatches": [
+      {
+        "sourceId": "S5",
+        "match": [
+          [
+            "日期",
+            "ok"
+          ],
+          [
+            "承认欠款",
+            "ok"
+          ],
+          [
+            "未经公证",
+            "mid"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 4,
+    "purpose": "declaration",
+    "conf": 23,
+    "reason": "文书日期金额与流水矛盾，且“此后未再付”与该笔付款冲突。",
+    "advice": "改为 4 月 11 日、35,000 元；删去“此后未再支付”，或补 4 月 1 日 3 万元凭证。改声明后可局部重核。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q4",
+    "issue": "矛盾",
+    "checks": {
+      "A1": "通过",
+      "A2": "不通过",
+      "A5": "预警"
+    },
+    "verifiedText": "被告于2023年4月11日向原告支付利息35,000元。",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "fail",
+    "quote": "被告于2023年4月1日向原告支付利息30,000元，此后再未支付任何款项。",
+    "diff": {
+      "head": [
+        "",
+        "文书",
+        "原材料"
+      ],
+      "rows": [
+        [
+          "日期",
+          "2023-04-01",
+          "2023-04-11"
+        ],
+        [
+          "金额",
+          "30,000 元",
+          "35,000 元"
+        ]
+      ]
+    },
+    "sourceMatches": [
+      {
+        "sourceId": "S6",
+        "match": [
+          [
+            "日期 04-01≠04-11",
+            "bad"
+          ],
+          [
+            "金额 30,000≠35,000",
+            "bad"
+          ],
+          [
+            "性质 利息",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 5,
+    "purpose": "declaration",
+    "conf": 12,
+    "reason": "本案原材料缺少不动产登记信息。",
+    "advice": "删除该句，或补充不动产登记查询结果后再核验。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q5",
+    "issue": "缺源",
+    "checks": {
+      "A1": "不通过"
+    },
+    "type": "E-FACT",
+    "src": "l0",
+    "verdict": "miss",
+    "quote": "被告名下另有房产两套，具备偿还能力。",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 6,
+    "purpose": "declaration",
+    "conf": 98,
+    "reason": "民法典 675 / 577 现行有效，引文与库内逐字一致，要件匹配。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q6",
+    "dependsOn": {
+      "id": "c1-q1",
+      "code": "B4",
+      "reason": "借款交付事实尚未核实，法条适配性需重新核对。"
+    },
+    "checks": {
+      "B1": "通过",
+      "B2": "通过",
+      "B4": "通过"
+    },
+    "type": "E-LAW",
+    "src": "l2",
+    "verdict": "pass",
+    "quote": "依据《中华人民共和国民法典》第六百七十五条、第五百七十七条，被告应当偿还本金并支付利息。",
+    "sourceMatches": [
+      {
+        "sourceId": "S7",
+        "match": [
+          [
+            "条号",
+            "ok"
+          ],
+          [
+            "效力 现行有效",
+            "ok"
+          ],
+          [
+            "引文一致",
+            "ok"
+          ],
+          [
+            "要件",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-qs",
+    "paragraphIndex": 7,
+    "purpose": "declaration",
+    "conf": 93,
+    "reason": "案号命中，要旨与判决书一致，严格命中（民间借贷+借条+转账）。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-q7",
+    "dependsOn": {
+      "id": "c1-q1",
+      "code": "C4",
+      "warn": true,
+      "label": "近似类比",
+      "reason": "本案的借款交付事实待核验，类案由严格命中降为近似类比。"
+    },
+    "checks": {
+      "C1": "通过",
+      "C3": "通过",
+      "C4": "通过",
+      "C5": "通过"
+    },
+    "type": "E-CASE",
+    "src": "l3",
+    "verdict": "pass",
+    "quote": "类案参考：（2021）京01民终1234号民事判决认定，出借人通过银行转账交付借款并持有借条的，借贷关系成立。",
+    "sourceMatches": [
+      {
+        "sourceId": "S8",
+        "match": [
+          [
+            "四要素",
+            "ok"
+          ],
+          [
+            "要旨一致",
+            "ok"
+          ],
+          [
+            "严格命中",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-db",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": 31,
+    "reason": "纠正了日期金额，但“此后未再付款”仍与流水自相矛盾。",
+    "advice": "删去“此后未再付款”。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-d1",
+    "type": "E-CROSS",
+    "src": "l1",
+    "verdict": "fail",
+    "quote": "原告所述“2023年4月1日支付利息30,000元”与事实不符。答辩人于2023年4月11日支付利息35,000元，此后未再付款。",
+    "sourceMatches": [
+      {
+        "sourceId": "S9",
+        "match": [
+          [
+            "日期",
+            "ok"
+          ],
+          [
+            "金额",
+            "ok"
+          ],
+          [
+            "此后未再付",
+            "bad"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-db",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 95,
+    "reason": "与流水第5页完全一致。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-d2",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "答辩人于2023年4月11日通过招商银行向原告转账35,000元，系按约支付的利息。",
+    "sourceMatches": [
+      {
+        "sourceId": "S10",
+        "match": [
+          [
+            "日期",
+            "ok"
+          ],
+          [
+            "金额",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-db",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 92,
+    "reason": "对对方诉请的认可表述未歪曲起诉状原文。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-d3",
+    "type": "E-CROSS",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "对原告主张的借款本金500,000元、年利率12%及2023年3月15日转账交付事实，答辩人无异议。",
+    "sourceMatches": [
+      {
+        "sourceId": "S11",
+        "match": [
+          [
+            "对应",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-db",
+    "paragraphIndex": 3,
+    "purpose": "declaration",
+    "conf": 97,
+    "reason": "民法典 674 现行有效，按期付息要件匹配。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-d4",
+    "type": "E-LAW",
+    "src": "l2",
+    "verdict": "pass",
+    "quote": "依据《中华人民共和国民法典》第六百七十四条，借款人应当按照约定的期限支付利息。",
+    "sourceMatches": [
+      {
+        "sourceId": "S12",
+        "match": [
+          [
+            "效力",
+            "ok"
+          ],
+          [
+            "要件",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-db",
+    "paragraphIndex": 4,
+    "purpose": "declaration",
+    "conf": 15,
+    "reason": "无免除利息的聊天记录、函件或录音。",
+    "advice": "删除该抗辩，或补充原始载体。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-d5",
+    "type": "E-FACT",
+    "src": "l0",
+    "verdict": "miss",
+    "quote": "原告曾口头同意免除剩余利息。",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zj",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": 94,
+    "reason": "清单行与卷内材料一一对应，证明目的未超出证据内容。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-z1",
+    "type": "E-EVID",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "证据1：借条原件.jpg ｜ 证明目的：借贷合意，本金50万、借期一年、年利率12%。",
+    "sourceMatches": [
+      {
+        "sourceId": "S13",
+        "match": [
+          [
+            "清单↔卷内",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zj",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 28,
+    "reason": "证明目的超出证据内容：“承认欠款”推不出“欺诈”。",
+    "advice": "目的改为“被告自认欠款并请求宽限”。欺诈另举证。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-z2",
+    "verifiedText": "证据3：微信聊天截图.png，证明被告承认欠款并请求宽限。",
+    "issue": "越界",
+    "checks": {
+      "A4": "不通过"
+    },
+    "type": "E-PURP",
+    "src": "l1",
+    "verdict": "fail",
+    "quote": "证据3：微信聊天截图.png ｜ 证明目的：被告构成欺诈，应承担缔约过失责任。",
+    "sourceMatches": [
+      {
+        "sourceId": "S14",
+        "match": [
+          [
+            "欺诈故意",
+            "bad"
+          ],
+          [
+            "缔约过程",
+            "bad"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zj",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 10,
+    "reason": "卷内没有“证人王某书面证言”。幽灵证据。",
+    "advice": "上传证言原件，或从清单删除此行。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-z3",
+    "type": "E-EVID",
+    "src": "l0",
+    "verdict": "miss",
+    "quote": "证据4：证人王某书面证言 ｜ 证明目的：在场见证借款交付。",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zj",
+    "paragraphIndex": null,
+    "purpose": "alignment-diagnostic",
+    "conf": 58,
+    "reason": "反向漏登：身份证与户籍材料在卷内未列入清单。",
+    "advice": "补入清单，或标“非证据附件”。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-z4",
+    "type": "E-EVID",
+    "src": "l1",
+    "verdict": "warn",
+    "quote": "卷内《原告身份证.jpg》《被告户籍信息.pdf》未列入证据清单。",
+    "sourceMatches": [
+      {
+        "sourceId": "S15",
+        "match": [
+          [
+            "反向 卷内→清单",
+            "bad"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zz",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": 93,
+    "reason": "对借条与流水的转述与证据一致，未加戏。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-t1",
+    "type": "E-CROSS",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "对证据1借条、证据2流水：认可真实性，认可2023年3月15日收到50万元。该借条不能排除已付利息35,000元。",
+    "sourceMatches": [
+      {
+        "sourceId": "S16",
+        "match": [
+          [
+            "转述一致",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zz",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 64,
+    "reason": "质疑微信真实性但未指出具体篡改点，也未申请鉴定。",
+    "advice": "指出缺上下文/非原始载体，并申请当庭出示手机或鉴定。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-t2",
+    "type": "E-CROSS",
+    "src": "l1",
+    "verdict": "warn",
+    "quote": "对证据3微信截图：不认可真实性，截图可能被篡改。",
+    "sourceMatches": [
+      {
+        "sourceId": "S17",
+        "match": [
+          [
+            "具体瑕疵定位",
+            "mid"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zz",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 8,
+    "reason": "对方证据目录与卷内均无证据4，攻击了不存在的证据。",
+    "advice": "删除该条质证，或先确认对方是否真提交了该证言。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-t3",
+    "issue": "缺源",
+    "checks": {
+      "A1": "不通过"
+    },
+    "type": "E-CROSS",
+    "src": "l0",
+    "verdict": "fail",
+    "quote": "对证据4王某证人证言：证人与原告系同事，且未出庭，不认可。",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-dlc",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": 95,
+    "reason": "借条+转账互证，事实链完整。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-l1",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "2023年3月15日借条与同日50万元银行转账相互印证，借贷合意与交付均已成立。",
+    "sourceMatches": [
+      {
+        "sourceId": "S18",
+        "match": [
+          [
+            "合意",
+            "ok"
+          ]
+        ],
+        "main": true
+      },
+      {
+        "sourceId": "S19",
+        "match": [
+          [
+            "交付",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-dlc",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 97,
+    "reason": "民法典 667 现行有效，借款合同定义准确。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-l2",
+    "type": "E-LAW",
+    "src": "l2",
+    "verdict": "pass",
+    "quote": "依据《中华人民共和国民法典》第六百六十七条，借款合同是借款人向贷款人借款，到期返还借款并支付利息的合同。",
+    "sourceMatches": [
+      {
+        "sourceId": "S20",
+        "match": [
+          [
+            "效力",
+            "ok"
+          ],
+          [
+            "要件",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-dlc",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 92,
+    "reason": "严格命中，要旨一致。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-l3",
+    "dependsOn": {
+      "id": "c1-l4",
+      "code": "C6",
+      "warn": true,
+      "reason": "本段论证引用的旧法依据已变，引用类案前需核对时间效力。"
+    },
+    "type": "E-CASE",
+    "src": "l3",
+    "verdict": "pass",
+    "quote": "（2021）京01民终1234号：出借人持借条原件并出具银行转账凭证，借贷关系成立。",
+    "sourceMatches": [
+      {
+        "sourceId": "S21",
+        "match": [
+          [
+            "严格命中",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-dlc",
+    "paragraphIndex": 3,
+    "purpose": "declaration",
+    "conf": 20,
+    "reason": "《合同法》已于 2021-01-01 废止，本案事实发生在 2023 年。论证链断裂。",
+    "advice": "替换为《民法典》第577条后局部重核。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-l4",
+    "issue": "失效",
+    "timing": [
+      "1999-10-01 旧法施行",
+      "2021-01-01 民法典施行、旧法废止",
+      "2023-03-15 示例借款事实发生"
+    ],
+    "checks": {
+      "B1": "通过",
+      "B2": "不通过"
+    },
+    "verifiedText": "依据《中华人民共和国民法典》第五百七十七条，当事人一方不履行合同义务，应承担相应违约责任。",
+    "type": "E-LAW",
+    "src": "l2",
+    "verdict": "fail",
+    "quote": "依据《中华人民共和国合同法》第一百零七条，当事人一方不履行合同义务的，应当承担违约责任。",
+    "sourceMatches": [
+      {
+        "sourceId": "S22",
+        "match": [
+          [
+            "效力 已废止",
+            "bad"
+          ],
+          [
+            "替代 577",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": [
+      {
+        "sourceId": "S23",
+        "match": [
+          [
+            "效力",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ]
+  },
+  {
+    "documentId": "c1-ss",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": 78,
+    "reason": "指错定位到第6页本院认为，转述一致；反证为补强公证，建议一并提交。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-s1",
+    "type": "E-ERR",
+    "src": "l1",
+    "verdict": "note",
+    "quote": "一审判决第6页“本院认为”以微信截图无法确认真实性为由不予采信，认定有误。",
+    "sourceMatches": [
+      {
+        "sourceId": "S24",
+        "match": [
+          [
+            "段落定位",
+            "ok"
+          ],
+          [
+            "原文一致",
+            "ok"
+          ],
+          [
+            "新证据 公证",
+            "mid"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-ss",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 18,
+    "reason": "把“已付35,000元利息”写成“分文未付”，认定被反转。",
+    "advice": "逐字引用原审认定，不得反转。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-s2",
+    "issue": "失真",
+    "type": "E-ERR",
+    "src": "l1",
+    "verdict": "fail",
+    "quote": "一审认定答辩人分文未付，与事实不符。",
+    "diff": {
+      "head": [
+        "",
+        "上诉状",
+        "一审判决书"
+      ],
+      "rows": [
+        [
+          "已付利息",
+          "分文未付",
+          "已付 35,000 元利息"
+        ]
+      ]
+    },
+    "sourceMatches": [
+      {
+        "sourceId": "S25",
+        "match": [
+          [
+            "原审 已付35,000",
+            "ok"
+          ],
+          [
+            "转述 分文未付",
+            "bad"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-ss",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 14,
+    "reason": "未定位到一审判决书具体段落，空泛指错。",
+    "advice": "落到页码/段落，附“原审认定 vs 我方主张 vs 反证”三栏。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-s3",
+    "type": "E-ERR",
+    "src": "l0",
+    "verdict": "miss",
+    "quote": "一审认定事实错误，适用法律错误，请二审依法纠正。",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-ss",
+    "paragraphIndex": 3,
+    "purpose": "declaration",
+    "conf": 94,
+    "reason": "民诉法 177 现行有效，与上诉请求类型对应。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-s4",
+    "type": "E-CLAIM",
+    "src": "l2",
+    "verdict": "pass",
+    "quote": "请求撤销原判，依法改判或发回重审。依据《中华人民共和国民事诉讼法》第一百七十七条。",
+    "sourceMatches": [
+      {
+        "sourceId": "S26",
+        "match": [
+          [
+            "效力",
+            "ok"
+          ],
+          [
+            "对应",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-zs",
+    "paragraphIndex": 0,
+    "purpose": "pending-placeholder",
+    "conf": null,
+    "reason": "示例文书，等待补充对应材料与依据。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-zs",
+    "type": "E-ERR",
+    "quote": "申请对一审判决中有关利息支付的认定依法复查。",
+    "src": "l0",
+    "verdict": "pending",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-lsh",
+    "paragraphIndex": 0,
+    "purpose": "pending-placeholder",
+    "conf": null,
+    "reason": "示例文书，等待补充对应材料与依据。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-lsh",
+    "type": "E-CLAIM",
+    "quote": "请在收到本函后与委托人核对借款本金及已支付利息。",
+    "src": "l0",
+    "verdict": "pending",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-flyj",
+    "paragraphIndex": 0,
+    "purpose": "pending-placeholder",
+    "conf": null,
+    "reason": "示例文书，等待补充对应材料与依据。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-flyj",
+    "type": "E-FOCUS",
+    "quote": "本案争议集中在借款交付事实与已支付利息数额。",
+    "src": "l0",
+    "verdict": "pending",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c1-cx",
+    "paragraphIndex": 0,
+    "purpose": "pending-placeholder",
+    "conf": null,
+    "reason": "示例文书，等待补充对应材料与依据。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c1-cx",
+    "type": "E-PROC",
+    "quote": "请求依法审查本案的地域管辖依据。",
+    "src": "l0",
+    "verdict": "pending",
+    "sourceMatches": [],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c2-qs",
+    "paragraphIndex": 0,
+    "purpose": "declaration",
+    "conf": 94,
+    "reason": "合同、送货单、验收单时间线吻合。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c2-q1",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "2024年3月10日，原告星辰科技与被告远大商贸签订《钢材购销合同》，约定原告向被告供应Q235B钢材120吨，单价每吨4,800元，货款共计576,000元，收货后30日内付清。",
+    "sourceMatches": [
+      {
+        "sourceId": "S1",
+        "match": [
+          [
+            "签订日",
+            "ok"
+          ],
+          [
+            "数量",
+            "ok"
+          ],
+          [
+            "单价",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c2-qs",
+    "paragraphIndex": 1,
+    "purpose": "declaration",
+    "conf": 66,
+    "reason": "送货与验收有据；“法定代表人亲自签收”与验收单签字人不符。",
+    "advice": "改为“被告仓库管理员刘某签收，被告于2024年5月10日验收合格”。",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c2-q2",
+    "verifiedText": "2024年4月12日原告送货，2024年5月10日由库管员刘某签收验收单。",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "warn",
+    "quote": "2024年4月12日原告送货，被告法定代表人亲自签收并组织验收，2024年5月10日验收合格。",
+    "sourceMatches": [
+      {
+        "sourceId": "S2",
+        "match": [
+          [
+            "送货日",
+            "ok"
+          ],
+          [
+            "验收合格",
+            "ok"
+          ],
+          [
+            "签收人=法定代表人",
+            "bad"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c2-qs",
+    "paragraphIndex": 2,
+    "purpose": "declaration",
+    "conf": 91,
+    "reason": "已付 20 万有流水，欠 376,000 可复算（576,000−200,000）。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c2-q3",
+    "type": "E-CALC",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "被告仅支付货款200,000元，尚欠376,000元。依据《中华人民共和国民法典》第五百七十七条、第五百九十五条，请求判令支付欠款及逾期付款损失。",
+    "sourceMatches": [
+      {
+        "sourceId": "S3",
+        "match": [
+          [
+            "已付",
+            "ok"
+          ],
+          [
+            "欠款算式",
+            "ok"
+          ]
+        ],
+        "main": true
+      },
+      {
+        "sourceId": "S4",
+        "match": [
+          [
+            "效力",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  },
+  {
+    "documentId": "c2-qs",
+    "paragraphIndex": 3,
+    "purpose": "declaration",
+    "conf": 89,
+    "reason": "催款函与EMS签收一致，已履行催告。",
+    "advice": "",
+    "audit": [],
+    "user": null,
+    "note": "",
+    "quoteEdit": null,
+    "id": "c2-q4",
+    "type": "E-FACT",
+    "src": "l1",
+    "verdict": "pass",
+    "quote": "原告于2024年6月15日向被告发出催款函，被告于6月18日签收，至今未付余款。",
+    "sourceMatches": [
+      {
+        "sourceId": "S5",
+        "match": [
+          [
+            "发函日",
+            "ok"
+          ],
+          [
+            "签收日",
+            "ok"
+          ]
+        ],
+        "main": true
+      }
+    ],
+    "suggestedSourceMatches": []
+  }
+]

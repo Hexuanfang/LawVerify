@@ -8,7 +8,8 @@ import { scoreLinks, scoreExtraction, validateDataset, validateManifest, ratio, 
 import { renderReport } from './report.mjs'
 import { parserProbes } from './parser-probes.mjs'
 import { parseLinkageParagraphResponse } from '../../src/intelligence/linkage-response.ts'
-import { closePythonWorkers } from '../../src/infrastructure/python-workers.ts'
+import { rememberCloudAiToken } from '../../src/integrations/cloud-ai.ts'
+import { runWithWorkspaceAccount } from '../../src/store.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const project = path.resolve(here, '../../..')
@@ -23,8 +24,21 @@ env.STORAGE_LOCAL_ROOT = path.join(scratch, 'storage')
 env.KNOWLEDGE_RAG_MODE = 'local'
 env.DATABASE_URL = undefined
 env.AI_GATEWAY_MODE = 'direct'
-// 离线模式在网络边界阻断，避免以后适配器变更意外调用真实接口。
-if (!runLive) globalThis.fetch = async () => { throw new Error('离线 benchmark 禁止网络请求') }
+env.PARSER_SERVICE_URL = process.env.PARSER_TEST_SERVICE_URL || env.PARSER_SERVICE_URL
+const parserSession = process.env.PARSER_TEST_SESSION_TOKEN?.trim()
+if (parserSession) env.PARSER_SERVICE_TOKEN = undefined
+// 离线评估只开放明确指定的解析和签发接口，其他请求继续阻断。
+if (!runLive) {
+  const parser = process.env.PARSER_TEST_SERVICE_URL && new URL(`${env.PARSER_SERVICE_URL.replace(/\/$/, '')}/parse`)
+  const issuer = parserSession && env.CLOUD_API_BASE_URL && new URL(`${env.CLOUD_API_BASE_URL.replace(/\/$/, '')}/api/account/parser-ticket`)
+  const request = globalThis.fetch
+  globalThis.fetch = async (input, options) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    if (options?.method === 'POST' && parser && [parser, issuer].some(target => target
+      && url.origin === target.origin && url.pathname === target.pathname)) return request(input, { ...options, redirect: 'error' })
+    throw new Error('离线 benchmark 只允许访问 PARSER_TEST_SERVICE_URL 指定的解析服务及其凭证签发接口')
+  }
+}
 
 const { applyProductionLinks, measureChunkRetrieval, parseUploadedFile, serviceSha256 } = await import('./production-adapter.mjs')
 const { liveAvailability, predictLinks, recognizePages } = await import('./live.mjs')
@@ -38,9 +52,10 @@ const report = { generatedAt: new Date().toISOString(), mode: runLive ? `live${r
   counts: { cases: dataset.length, claims: dataset.reduce((n, s) => n + s.claims.length, 0), files: manifest.documents.length },
   sourceHashes: { service: serviceSha256, dataset: hash(JSON.stringify(dataset)), manifest: hash(manifestBytes),
     modules: Object.fromEntries(readdirSync(here).filter(n => /\.(mjs|py)$/.test(n)).map(n => [n, hash(readFileSync(path.join(here, n)))])),
-    production: Object.fromEntries(['intelligence/evidence-retrieval.ts', 'intelligence/evidence-matching.ts', 'intelligence/linkage-policy.ts',
-      'intelligence/linkage-response.ts', 'infrastructure/python-workers.ts', 'infrastructure/document-jobs.ts', 'middleware/bounded-upload.ts']
-      .map(n => [n, hash(readFileSync(path.join(here, '../../src', n)))])) },
+    production: { ...Object.fromEntries(['intelligence/evidence-retrieval.ts', 'intelligence/evidence-matching.ts', 'intelligence/linkage-policy.ts',
+      'intelligence/linkage-response.ts', 'infrastructure/document-jobs.ts', 'middleware/bounded-upload.ts']
+      .map(n => [n, hash(readFileSync(path.join(here, '../../src', n)))])),
+    'python-workers/python-workers.ts': hash(readFileSync(path.join(project, 'python-workers/python-workers.ts'))) } },
   thresholds, cases: [], files: [], guards: { correct: 0, total: 0, rate: null }, mutations: {},
   live: { textStatus: runLive ? '待执行' : '未测', visionStatus: runVision ? '待执行' : '未测', caseResults: [], visionResults: [], fileLinkResults: [] },
   issues: [...validateDataset(dataset), ...validateManifest(manifest)], scratch }
@@ -120,7 +135,10 @@ for (const doc of manifest.documents) {
     result.sha256 = hash(readFileSync(filePath))
     if (result.sha256 !== doc.sha256) throw new Error('附件哈希不匹配')
     result.integrityVerified = true
-    parsed = await parseUploadedFile(filePath, doc.file.endsWith('.png') ? 'image/png' : 'application/pdf')
+    parsed = await runWithWorkspaceAccount('eval-parser@example.invalid', () => {
+      rememberCloudAiToken(parserSession)
+      return parseUploadedFile(filePath, doc.file.endsWith('.png') ? 'image/png' : 'application/pdf')
+    })
     result.totalPages = parsed.patch.pages; result.renderedPages = parsed.patch.pageImageDataUrls?.length ?? 0
     result.uploadBytesMatch = parsed.uploadBytesMatch; result.actualPages = parsed.pages
     if (!parsed.uploadBytesMatch) issue(`${doc.id}：上传内容变化`)
@@ -186,5 +204,4 @@ for (const stem of [name, 'latest']) {
 }
 console.log(`结果：${report.status}；防线 ${report.guards.correct}/${report.guards.total}；附件通过 ${report.files.filter(f => f.status === '通过' || f.status === '正确拒绝损坏文件').length}/${report.files.length}`)
 console.log(`报告：${path.join(reports, `${name}.md`)}`)
-await closePythonWorkers()
 if (args.has('--strict') && failed) process.exitCode = 1

@@ -9,13 +9,16 @@ const source = readFileSync(new URL('../src/service.ts', import.meta.url), 'utf8
 const ast = ts.createSourceFile('service.ts', source, ts.ScriptTarget.Latest, true)
 const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'updateParagraph')
 function fixture() {
-  const workspace = { certificates: [{ id: 'c', paragraphs: [{ id: 'p', text: 'Current', richText: '<p>Current</p>' }] }] }
+  const workspace = { user: { email: 'test@example.invalid' }, cases: [], certificates: [{ id: 'c', paragraphs: [{ id: 'p', text: 'Current', richText: '<p>Current</p>' }] }] }
   let saves = 0
   const context = vm.createContext({
     AppError, Map,
     readWorkspace: async () => workspace, writeWorkspace: async () => { saves++ },
     normalizeParagraph: item => item,
     attachAutoStatuteReferencesToParagraph: async (_workspace, paragraph) => paragraph,
+    getCurrentWorkspaceAccount: () => workspace.user.email,
+    invalidateVerification: certificate => certificate.verification,
+    preserveScopedReferences: (_certificate, next) => next,
   })
   vm.runInContext(ts.transpileModule(`${declaration.getText(ast).replace(/^export\s+/, '')};this.update=updateParagraph`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },

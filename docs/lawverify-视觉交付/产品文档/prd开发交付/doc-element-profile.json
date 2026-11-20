@@ -1,0 +1,1154 @@
+{
+  "version": "1.2.0",
+  "updatedAt": "2026-11-17",
+  "note": "LawVerify 文书类型 × 元素拆解配置。技术可直接加载本文件替换 src/utils/review.js 的全局 ELEMENTS。 level: required=必拆 / optional=选拆 / off=不拆。 identityElements 为身份元素完整清单（排序与『没做这类文书』判定用）。 本文件是 source of truth：修改后拷贝到 src/data/doc-element-profile.json。",
+  "elementTypes": {
+    "E-SUBJ": "主体身份",
+    "E-CLAIM": "诉讼请求",
+    "E-FACT": "事实陈述",
+    "E-CALC": "数额计算",
+    "E-EVID": "证据项",
+    "E-PURP": "证明目的",
+    "E-LAW": "法条引用",
+    "E-CASE": "案例引用",
+    "E-FOCUS": "争议焦点",
+    "E-PROC": "程序事项",
+    "E-CROSS": "质证回应",
+    "E-ERR": "前审指错"
+  },
+  "dimensionChecks": {
+    "A1": "溯源性",
+    "A2": "一致性",
+    "A3": "完整性",
+    "A4": "边界性",
+    "A5": "自洽性",
+    "B1": "真实性",
+    "B2": "有效性",
+    "B3": "准确性",
+    "B4": "适配性",
+    "B5": "层级性",
+    "B6": "遗漏",
+    "C1": "真实性",
+    "C2": "可回查性",
+    "C3": "准确性",
+    "C4": "相关性",
+    "C5": "效力层级",
+    "C6": "时效性",
+    "C7": "去重"
+  },
+  "profiles": {
+    "qs": {
+      "name": "起诉状",
+      "position": "我方进攻文书。律师先看请求能否成立、事实有无凭据、法条是否现行、金额能否复算。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "当事人栏与首部身份：姓名/名称、住所、法定代表人。与身份证、户籍、工商照面核对。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B4",
+            "B6"
+          ],
+          "hint": "诉讼请求逐项拆，一项一条。每项挂请求权基础。"
+        },
+        "E-FACT": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5"
+          ],
+          "hint": "事实与理由按九类事实单元切：主体/行为/时间/地点/对象/结果/因果/主观/程序。评价语（欺诈、违约）还原为客观事实再拆。"
+        },
+        "E-CALC": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "B3"
+          ],
+          "hint": "本金、利息、违约金、损失。必须给 基数×利率×期间÷年化 算式；给不出算式黄灯。"
+        },
+        "E-EVID": {
+          "level": "optional",
+          "checks": [
+            "A1"
+          ],
+          "hint": "正文点到证据名时抽；完整清单另走 zj。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "证明目的是证据清单的事，起诉状不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4",
+            "B5",
+            "B6"
+          ],
+          "hint": "请求权基础逐条拆。只给条号不给原文=红。旧法+新事实=红+替代条文。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "C7"
+          ],
+          "hint": "起诉状引用类案较少，出现才拆。"
+        },
+        "E-FOCUS": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "B4"
+          ],
+          "hint": "复杂案件可归纳争点，简单案件可不拆。"
+        },
+        "E-PROC": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B4"
+          ],
+          "hint": "管辖连接点、时效、起诉条件。"
+        },
+        "E-CROSS": {
+          "level": "off",
+          "checks": [],
+          "hint": "质证是对方文书的事。"
+        },
+        "E-ERR": {
+          "level": "off",
+          "checks": [],
+          "hint": "无前审不拆。"
+        }
+      },
+      "minExpect": {
+        "E-SUBJ": 1,
+        "E-CLAIM": 1,
+        "E-FACT": 2,
+        "E-LAW": 1
+      },
+      "example": "c1-q1 事实互证 / c1-q2 利息算式黄灯 / c1-q4 日期金额矛盾 / c1-q5 房产缺源 / c1-q6 民法典675 / c1-l4-style 废法见 dlc",
+      "identityElements": [
+        "E-SUBJ",
+        "E-CLAIM",
+        "E-FACT",
+        "E-CALC",
+        "E-LAW",
+        "E-PROC"
+      ]
+    },
+    "db": {
+      "name": "答辩状",
+      "position": "我方防守文书。律师先看抗辩有无证据、对方诉请有没有被歪曲、抗辩权基础是否成立。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "答辩人身份。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B4",
+            "B6"
+          ],
+          "hint": "答辩请求（驳回/部分驳回/反诉）单独一条。"
+        },
+        "E-FACT": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "A5"
+          ],
+          "hint": "抗辩事实。自洽性重点：不能一边承认付款一边说未再付。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2",
+            "B3"
+          ],
+          "hint": "已付款、抵扣、违约金过高调整时拆。"
+        },
+        "E-EVID": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A3"
+          ],
+          "hint": "提交反证时拆。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4",
+            "B5"
+          ],
+          "hint": "抗辩权基础（时效、不安抗辩、违约金调整等）。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C6"
+          ],
+          "hint": "出现才拆。"
+        },
+        "E-FOCUS": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "B4"
+          ],
+          "hint": "归纳对方主张与我方争点。"
+        },
+        "E-PROC": {
+          "level": "optional",
+          "checks": [
+            "B1",
+            "B2",
+            "B4"
+          ],
+          "hint": "管辖异议、主体不适格等程序抗辩。"
+        },
+        "E-CROSS": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "B4"
+          ],
+          "hint": "对对方诉请/事实/证据的回应。转述必须与对方文书逐项对应，不得歪曲。"
+        },
+        "E-ERR": {
+          "level": "off",
+          "checks": [],
+          "hint": "一审答辩无前审。"
+        }
+      },
+      "minExpect": {
+        "E-SUBJ": 1,
+        "E-CLAIM": 1,
+        "E-CROSS": 1
+      },
+      "example": "c1-d1 自相矛盾红灯 / c1-d2 流水一致 / c1-d3 转述一致 / c1-d5 口头免息缺源",
+      "identityElements": [
+        "E-SUBJ",
+        "E-CLAIM",
+        "E-FACT",
+        "E-LAW",
+        "E-CROSS"
+      ]
+    },
+    "zj": {
+      "name": "证据清单",
+      "position": "按行核。律师先看幽灵证据、目的越界、卷内有而清单漏登。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "optional",
+          "checks": [
+            "A1"
+          ],
+          "hint": "证据来源主体。"
+        },
+        "E-CLAIM": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-FACT": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "证据内容概述与卷内不一致时拆。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2",
+            "B3"
+          ],
+          "hint": "金额类证据行。"
+        },
+        "E-EVID": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A3"
+          ],
+          "hint": "每一行证据一条。清单↔卷内双向对齐，反向漏登也报（warn）。卷内没有=幽灵证据 miss。"
+        },
+        "E-PURP": {
+          "level": "required",
+          "checks": [
+            "A4"
+          ],
+          "hint": "证明目的单独一条，不得超出证据内容。承认欠款推不出欺诈。"
+        },
+        "E-LAW": {
+          "level": "off",
+          "checks": [],
+          "hint": "清单不引法条。"
+        },
+        "E-CASE": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-FOCUS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-PROC": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-CROSS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-ERR": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        }
+      },
+      "minExpect": {
+        "E-EVID": 2,
+        "E-PURP": 1
+      },
+      "example": "c1-z1 清单↔卷内 / c1-z2 越界红灯 / c1-z3 幽灵证据 / c1-z4 反向漏登黄灯",
+      "identityElements": [
+        "E-EVID",
+        "E-PURP"
+      ]
+    },
+    "zz": {
+      "name": "质证意见",
+      "position": "逐证攻击。律师先看有没有攻击不存在的证据、质疑真实性却无定位、转述加戏。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "optional",
+          "checks": [
+            "A1"
+          ],
+          "hint": "质证人与举证方。"
+        },
+        "E-CLAIM": {
+          "level": "off",
+          "checks": [],
+          "hint": "一般不提新请求。"
+        },
+        "E-FACT": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "转述证据内容时抽，必须与证据一致。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A2",
+            "B3"
+          ],
+          "hint": "质证金额时拆。"
+        },
+        "E-EVID": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A3"
+          ],
+          "hint": "对方证据项。先确认证据在对方目录与卷内存在，再质。攻击不存在的证据=红灯。"
+        },
+        "E-PURP": {
+          "level": "optional",
+          "checks": [
+            "A4"
+          ],
+          "hint": "攻击对方证明目的越界时拆。"
+        },
+        "E-LAW": {
+          "level": "optional",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4"
+          ],
+          "hint": "证据规则（民诉证据规定等）。"
+        },
+        "E-CASE": {
+          "level": "off",
+          "checks": [],
+          "hint": "一般不引类案。"
+        },
+        "E-FOCUS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-PROC": {
+          "level": "optional",
+          "checks": [
+            "B1",
+            "B4"
+          ],
+          "hint": "申请鉴定、当庭出示原件。"
+        },
+        "E-CROSS": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "B4"
+          ],
+          "hint": "三性意见逐证一条。质疑真实性必须落具体瑕疵点，口头质疑=黄灯。"
+        },
+        "E-ERR": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        }
+      },
+      "minExpect": {
+        "E-EVID": 1,
+        "E-CROSS": 1
+      },
+      "example": "c1-t1 转述一致 / c1-t2 口头质疑黄灯 / c1-t3 攻击不存在证据红灯",
+      "identityElements": [
+        "E-EVID",
+        "E-CROSS"
+      ]
+    },
+    "dlc": {
+      "name": "代理词",
+      "position": "论证文书。律师先看论证链断没断、旧法有没有失效、类案是不是严格命中。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "optional",
+          "checks": [
+            "A1"
+          ],
+          "hint": "代理人与被代理人。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B4",
+            "B6"
+          ],
+          "hint": "重申请求或答辩意见。"
+        },
+        "E-FACT": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "A5"
+          ],
+          "hint": "事实论证段。多源互证写清楚。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A2",
+            "B3"
+          ],
+          "hint": "损失计算段。"
+        },
+        "E-EVID": {
+          "level": "optional",
+          "checks": [
+            "A1"
+          ],
+          "hint": "点到证据名时拆。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4",
+            "B5",
+            "B6"
+          ],
+          "hint": "请求权/抗辩权基础+时间效力。合同法107+2023事实=红灯，给民法典577替代。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "C7"
+          ],
+          "hint": "引用判项前必须 detail 全文。上游事实未核实→严格命中降近似类比。"
+        },
+        "E-FOCUS": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "B4"
+          ],
+          "hint": "争议焦点。双方争点，不混我方立场。"
+        },
+        "E-PROC": {
+          "level": "optional",
+          "checks": [
+            "B1",
+            "B4"
+          ],
+          "hint": "二审/再审程序处理方式。"
+        },
+        "E-CROSS": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "回应对方观点。"
+        },
+        "E-ERR": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "二审/再审代理词指错时拆，必须定位到页/段。"
+        }
+      },
+      "minExpect": {
+        "E-FACT": 1,
+        "E-LAW": 1,
+        "E-FOCUS": 1
+      },
+      "example": "c1-l1 事实互证 / c1-l2 民法典667 / c1-l3 类案严格命中 / c1-l4 合同法107失效红灯",
+      "identityElements": [
+        "E-CLAIM",
+        "E-FACT",
+        "E-LAW",
+        "E-FOCUS"
+      ]
+    },
+    "ss": {
+      "name": "上诉状",
+      "position": "指错文书。律师先看指错有没有定位、原审认定有没有被反转、上诉请求对应民诉法177哪一档。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "上诉人/被上诉人。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B4"
+          ],
+          "hint": "上诉请求：撤销/改判/发回，对应民诉法177。"
+        },
+        "E-FACT": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "新事实或对原审事实的补充。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A2",
+            "B3"
+          ],
+          "hint": "金额上诉时拆。"
+        },
+        "E-EVID": {
+          "level": "off",
+          "checks": [],
+          "hint": "新证据另附，不在上诉状正文拆证明目的。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4"
+          ],
+          "hint": "二审处理法条+实体修正依据。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C6"
+          ],
+          "hint": "出现才拆。"
+        },
+        "E-FOCUS": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "B4"
+          ],
+          "hint": "上诉争议点。"
+        },
+        "E-PROC": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B4"
+          ],
+          "hint": "上诉期、缴纳上诉费。"
+        },
+        "E-CROSS": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "回应对方上诉。"
+        },
+        "E-ERR": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "每处指错一条，必须定位到原审判决页/段/本院认为。空泛指错（一审认定事实错误无定位）=缺源。转述不得反转原审认定。"
+        }
+      },
+      "minExpect": {
+        "E-SUBJ": 1,
+        "E-CLAIM": 1,
+        "E-ERR": 1,
+        "E-LAW": 1
+      },
+      "example": "c1-s1 定位一致 note / c1-s2 分文未付失真红灯 / c1-s3 空泛指错缺源 / c1-s4 民诉法177",
+      "identityElements": [
+        "E-SUBJ",
+        "E-CLAIM",
+        "E-LAW",
+        "E-PROC",
+        "E-ERR"
+      ]
+    },
+    "zs": {
+      "name": "再审申请书",
+      "position": "法定事由文书。律师先看是否落在民诉法207条事由、新证据有没有、原审认定有没有被反转。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "再审申请人/被申请人。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B2",
+            "B4"
+          ],
+          "hint": "再审请求。"
+        },
+        "E-FACT": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "新证据所涉事实。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A2",
+            "B3"
+          ],
+          "hint": "金额再审时拆。"
+        },
+        "E-EVID": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A3"
+          ],
+          "hint": "新证据项。卷内没有=缺源。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4"
+          ],
+          "hint": "民诉法207再审事由逐项对应。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6"
+          ],
+          "hint": "出现才拆。"
+        },
+        "E-FOCUS": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "B4"
+          ],
+          "hint": "再审争点=原审漏审/错认的点。"
+        },
+        "E-PROC": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B4"
+          ],
+          "hint": "六个月期限、管辖（上一级/本级）。"
+        },
+        "E-CROSS": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "回应对方再审意见。"
+        },
+        "E-ERR": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "对原审认定指错，定位+逐字，不得反转判项。"
+        }
+      },
+      "minExpect": {
+        "E-CLAIM": 1,
+        "E-ERR": 1,
+        "E-LAW": 1
+      },
+      "example": "c1-zs 示例 pending：申请对利息认定复查，待补材料",
+      "identityElements": [
+        "E-SUBJ",
+        "E-CLAIM",
+        "E-LAW",
+        "E-PROC",
+        "E-FOCUS",
+        "E-ERR"
+      ]
+    },
+    "lsh": {
+      "name": "律师函",
+      "position": "对外交涉文书。律师先看事实有没有凭据、要求是否明确、引法是否现行。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "委托人与受函人。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B4",
+            "B6"
+          ],
+          "hint": "催告/解除/索赔/停止侵权，一项一条，带期限。"
+        },
+        "E-FACT": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "A4"
+          ],
+          "hint": "事实经过。对外函更容易写评价语，先还原客观事实。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A2",
+            "B3"
+          ],
+          "hint": "欠款/赔偿金额必须可复算。"
+        },
+        "E-EVID": {
+          "level": "off",
+          "checks": [],
+          "hint": "一般不列证据清单。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4"
+          ],
+          "hint": "解除权/违约责任/时效中断依据。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C4"
+          ],
+          "hint": "少见，出现才拆。"
+        },
+        "E-FOCUS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-PROC": {
+          "level": "optional",
+          "checks": [
+            "B1",
+            "B4"
+          ],
+          "hint": "期限、送达方式、后果告知。"
+        },
+        "E-CROSS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-ERR": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        }
+      },
+      "minExpect": {
+        "E-SUBJ": 1,
+        "E-CLAIM": 1,
+        "E-FACT": 1,
+        "E-LAW": 1
+      },
+      "example": "c1-lsh 示例 pending：请核对借款本金及已付利息",
+      "identityElements": [
+        "E-SUBJ",
+        "E-CLAIM",
+        "E-FACT",
+        "E-LAW"
+      ]
+    },
+    "flyj": {
+      "name": "法律意见书",
+      "position": "分析文书。律师先看争点清不清楚、法律分析有没有失效条文、结论有没有超出事实。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "委托人与相关方。"
+        },
+        "E-CLAIM": {
+          "level": "optional",
+          "checks": [
+            "B4"
+          ],
+          "hint": "建议方案可拆为请求式建议。"
+        },
+        "E-FACT": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "A2",
+            "A4"
+          ],
+          "hint": "事实依据。意见书最容易把假设当事实，缺源标 L0。"
+        },
+        "E-CALC": {
+          "level": "optional",
+          "checks": [
+            "A2",
+            "B3"
+          ],
+          "hint": "风险敞口/赔偿测算。"
+        },
+        "E-EVID": {
+          "level": "off",
+          "checks": [],
+          "hint": "附件不拆证明目的。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4",
+            "B5",
+            "B6"
+          ],
+          "hint": "分析依据。LOW 置信度不得作确定结论。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6"
+          ],
+          "hint": "出现才拆，严格命中/近似类比必须标。"
+        },
+        "E-FOCUS": {
+          "level": "required",
+          "checks": [
+            "A1",
+            "B4"
+          ],
+          "hint": "法律问题/争议焦点，表述为可回答的问题。"
+        },
+        "E-PROC": {
+          "level": "optional",
+          "checks": [
+            "B1",
+            "B4"
+          ],
+          "hint": "时效、管辖、程序路径。"
+        },
+        "E-CROSS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-ERR": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        }
+      },
+      "minExpect": {
+        "E-FOCUS": 1,
+        "E-FACT": 1,
+        "E-LAW": 1
+      },
+      "example": "c1-flyj 示例 pending：争议集中在交付事实与已付利息",
+      "identityElements": [
+        "E-SUBJ",
+        "E-FACT",
+        "E-LAW",
+        "E-FOCUS"
+      ]
+    },
+    "proc": {
+      "name": "程序类文书",
+      "alias": [
+        "cx"
+      ],
+      "position": "管辖权异议、保全、回避等。律师先看程序法条对不对、连接点事实有没有。",
+      "elements": {
+        "E-SUBJ": {
+          "level": "required",
+          "checks": [
+            "A1"
+          ],
+          "hint": "申请人/被申请人/受理法院。"
+        },
+        "E-CLAIM": {
+          "level": "required",
+          "checks": [
+            "B2",
+            "B4"
+          ],
+          "hint": "程序请求：异议/保全/回避。"
+        },
+        "E-FACT": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "管辖连接点事实（合同履行地、住所地、签收地）。"
+        },
+        "E-CALC": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-EVID": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-PURP": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-LAW": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B3",
+            "B4",
+            "B5"
+          ],
+          "hint": "民诉法24条、民诉法解释18条等。层级性重点：解释 vs 法律。"
+        },
+        "E-CASE": {
+          "level": "optional",
+          "checks": [
+            "C1",
+            "C2",
+            "C4"
+          ],
+          "hint": "出现才拆。"
+        },
+        "E-FOCUS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-PROC": {
+          "level": "required",
+          "checks": [
+            "B1",
+            "B2",
+            "B4"
+          ],
+          "hint": "异议期、移送、保全担保。"
+        },
+        "E-CROSS": {
+          "level": "off",
+          "checks": [],
+          "hint": "不拆。"
+        },
+        "E-ERR": {
+          "level": "optional",
+          "checks": [
+            "A1",
+            "A2"
+          ],
+          "hint": "对裁定指错时拆，须定位。"
+        }
+      },
+      "minExpect": {
+        "E-SUBJ": 1,
+        "E-CLAIM": 1,
+        "E-LAW": 1,
+        "E-PROC": 1
+      },
+      "example": "c1-cx 示例 pending：请求审查地域管辖依据",
+      "identityElements": [
+        "E-SUBJ",
+        "E-CLAIM",
+        "E-LAW",
+        "E-PROC"
+      ]
+    }
+  },
+  "docKeyAlias": {
+    "qs": "qs",
+    "db": "db",
+    "zj": "zj",
+    "zz": "zz",
+    "dlc": "dlc",
+    "ss": "ss",
+    "zs": "zs",
+    "lsh": "lsh",
+    "flyj": "flyj",
+    "cx": "proc",
+    "proc": "proc"
+  }
+}

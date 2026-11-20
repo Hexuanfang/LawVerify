@@ -69,6 +69,28 @@ test('compact case CRUD preserves analysis and originals without loading them or
   const existingCase = (await renameWithEvidence.json()).cases.find(c => c.id === 'original')
   assert.equal(existingCase.name, 'Renamed existing case')
   assert.equal(existingCase.agent.task, undefined, 'name-only edits must not schedule AI analysis')
+  const basicInfo = {
+    plaintiff: '原告甲', defendant: '被告乙', ourSide: 'defendant',
+    cause: '买卖合同纠纷', court: '某法院', caseNumber: '(2026) 民初 1 号',
+  }
+  const editBasics = await request('/cases/original?response=compact', 'PATCH', {
+    basicInfo: { ...basicInfo, plaintiff: ' 原告甲 ', extra: 'ignored' },
+  })
+  assert.equal(editBasics.status, 200)
+  const edited = (await editBasics.json()).cases.find(caseFolder => caseFolder.id === 'original')
+  assert.deepEqual(edited.basicInfo, basicInfo)
+  assert.equal(edited.description, existingCase.description)
+  assert.equal(edited.agent.task, undefined, 'basic info edits must not schedule AI analysis')
+  const partialEdit = await request('/cases/original?response=compact', 'PATCH', {
+    basicInfo: { court: '', ourSide: 'invalid', defendant: 1 },
+  })
+  assert.equal(partialEdit.status, 200)
+  const persisted = JSON.parse(db.prepare('SELECT payload FROM cases WHERE id = ?').get('original').payload)
+  assert.deepEqual(persisted.basicInfo, { ...basicInfo, court: '' })
+  const clearSide = await request('/cases/original?response=compact', 'PATCH', { basicInfo: { ourSide: null } })
+  assert.equal(clearSide.status, 200)
+  assert.deepEqual((await clearSide.json()).cases.find(caseFolder => caseFolder.id === 'original').basicInfo,
+    { ...basicInfo, court: '', ourSide: null })
   assert.equal((await request('/cases?response=compact', 'POST', { name: '   ' })).status, 400)
   assert.equal((await request('/cases/missing?response=compact', 'PATCH', { name: 'Missing' })).status, 400)
   const other = await request(`/cases/${created.caseFolder.id}?response=compact`, 'PATCH', { name: 'Wrong account' }, 'other@test.invalid')

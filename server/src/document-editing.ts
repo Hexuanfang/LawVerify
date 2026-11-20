@@ -3,7 +3,8 @@ import { AppError } from './core/app-error.js'
 import type { CertificateParagraph, EvidenceLink, ParagraphReference } from './domain.js'
 import { runExclusiveWorkspaceMutation } from './infrastructure/workspace-lock.js'
 import { getLinkageSentences } from './intelligence/linkage-policy.js'
-import { readWorkspace, writeWorkspace } from './store.js'
+import { invalidateVerification, preserveScopedReferences } from './intelligence/verification/review-state.js'
+import { getCurrentWorkspaceAccount, readWorkspace, writeWorkspace } from './store.js'
 
 const blockSchema = z.object({
   id: z.string().min(1).max(200),
@@ -23,14 +24,14 @@ function sameContent(left: ContentBlock[], right: ContentBlock[]) {
   })
 }
 
-function rebuildParagraphs(current: CertificateParagraph[], blocks: ContentBlock[]) {
+export function rebuildParagraphs(current: CertificateParagraph[], blocks: ContentBlock[]) {
   const originals = new Map(current.map(paragraph => [paragraph.id, paragraph]))
   const next = blocks.map(block => {
     const original = originals.get(block.id)
     if (original?.text === block.text) return { ...original, ...block }
     return {
       id: block.id, text: block.text, richText: block.richText,
-      note: original?.note, verified: false, links: [], references: [],
+      note: original?.note, evidenceCell: original?.evidenceCell, verified: false, links: [], references: [],
     } satisfies CertificateParagraph
   })
   const before = current.flatMap(paragraph => getLinkageSentences(paragraph.text))
@@ -94,9 +95,14 @@ export async function saveDocumentContent(certificateId: string, input: unknown)
     }
     const textChanged = current.length !== paragraphs.length || current.some((paragraph, index) =>
       paragraph.id !== paragraphs[index]?.id || paragraph.text !== paragraphs[index]?.text)
-    certificate.paragraphs = rebuildParagraphs(current, paragraphs)
+    const next = preserveScopedReferences(certificate, { ...certificate, paragraphs: rebuildParagraphs(current, paragraphs) })
+    const verification = invalidateVerification(certificate, next, getCurrentWorkspaceAccount() ?? workspace.user.email)
+    const verificationChanged = verification !== certificate.verification
+    certificate.verification = verification
+    certificate.paragraphs = next.paragraphs
     certificate.paragraphIds = certificate.paragraphs.map(paragraph => paragraph.id)
-    if (textChanged) {
+    if (textChanged || verificationChanged) {
+      if (!verification?.dirty) certificate.linkageInputKey = undefined
       certificate.linkageStale = true
       const caseFolder = workspace.cases.find(item => item.id === certificate.caseId)
       if (caseFolder?.status === 'ready') caseFolder.status = 'in_review'

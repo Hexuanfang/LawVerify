@@ -163,6 +163,8 @@ export interface ParagraphReference {
 }
 
 export interface CertificateParagraph {
+  aiOrigin?: import('./intelligence/verification/protocol.js').Declaration['aiOrigin']
+  evidenceCell?: import('./intelligence/verification/protocol.js').EvidenceCell
   id: string
   text: string
   richText?: string
@@ -317,6 +319,18 @@ export interface DraftMemory {
 }
 
 export interface Certificate {
+  docKey?: import('./intelligence/verification/protocol.js').DocKey
+  verification?: import('./intelligence/verification/protocol.js').VerificationResult
+  officeFile?: {
+    id: string
+    fileName: string
+    format: 'doc' | 'docx' | 'txt'
+    version: number
+    sha256: string
+    contentHash: string
+    updatedAt: string
+    sessionId?: string
+  }
   id: string
   caseId: string
   title: string
@@ -331,10 +345,20 @@ export interface Certificate {
   linkageStale?: boolean
 }
 
+export interface CaseBasicInfo {
+  plaintiff?: string
+  defendant?: string
+  ourSide?: 'plaintiff' | 'defendant' | null
+  cause?: string
+  court?: string
+  caseNumber?: string
+}
+
 export interface CaseFolder {
   id: string
   name: string
   description: string
+  basicInfo?: CaseBasicInfo
   createdAt: string
   status: 'draft' | 'in_review' | 'ready'
   agent?: CaseAgentState
@@ -504,6 +528,7 @@ export interface EvidenceImportPayload {
 }
 
 export interface GenerateCertificatePayload {
+  docKey?: string
   caseId: string
   evidenceIds: string[]
   role: RoleType
@@ -515,9 +540,12 @@ export interface RewriteCertificatePayload {
   certificateId: string
   evidenceIds: string[]
   prompt: string
+  selection?: import('./intelligence/verification/rewrite-selection.js').RewriteSelection
 }
 
 export interface ImportCertificatePayload {
+  docKey?: string
+  aiOrigin?: 'draft' | 'rewrite'
   caseId: string
   title: string
   content: string
@@ -525,5 +553,6 @@ export interface ImportCertificatePayload {
   paragraphs?: Array<{
     text: string
     richText?: string
+    evidenceCell?: import('./intelligence/verification/protocol.js').EvidenceCell
   }>
 }

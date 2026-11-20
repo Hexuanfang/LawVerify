@@ -51,18 +51,24 @@ export class ModelRedaction {
     return token
   }
 
+  private replaceSensitive(text: string, replacement: (kind: Kind, original: string) => string) {
+    const masked = text.replace(contactPattern, (...args: unknown[]) => {
+      const groups = args.at(-1) as Partial<Record<Kind, string>>
+      const kind = groups.邮箱 ? '邮箱' : groups.身份证号 ? '身份证号' : '手机号'
+      return replacement(kind, args[0] as string)
+    })
+    if (!this.names.size) return masked
+    const alternatives = [...this.names].sort((a, b) => b.length - a.length)
+      .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    return masked.replace(new RegExp(alternatives.join('|'), 'gu'), name => replacement('姓名', name))
+  }
+
+  maskForEmbedding(value: string) {
+    return this.replaceSensitive(value, (_kind, original) => '＊'.repeat(original.length))
+  }
+
   redact(value: string) {
-    const replace = (text: string) => {
-      const masked = text.replace(contactPattern, (...args: unknown[]) => {
-        const groups = args.at(-1) as Partial<Record<Kind, string>>
-        const kind = groups.邮箱 ? '邮箱' : groups.身份证号 ? '身份证号' : '手机号'
-        return this.token(kind, args[0] as string)
-      })
-      if (!this.names.size) return masked
-      const alternatives = [...this.names].sort((a, b) => b.length - a.length)
-        .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      return masked.replace(new RegExp(alternatives.join('|'), 'gu'), name => this.token('姓名', name))
-    }
+    const replace = (text: string) => this.replaceSensitive(text, (kind, original) => this.token(kind, original))
     let parsed: unknown
     try { parsed = JSON.parse(value) } catch { return replace(value) }
     return JSON.stringify(parsed, (_key, item: unknown) => {

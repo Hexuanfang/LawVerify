@@ -1,0 +1,124 @@
+{
+  "version": "1.2.0",
+  "updatedAt": "2026-11-17",
+  "note": "LawVerify 助手技能包生产契约。前端清单仍用 src/data/skills.js；本文件供后端/生产环境加载，是唯一生产契约。forbidFabricate 全局只读 true，不得被团队配置关闭；needLawyerConfirm 仅对会写入正文/导出的技能必须 true（draft/rewrite/statute-mcp/case-mcp/case-report/inbox-search），分析卡可为 false。",
+  "guardGlobal": {
+    "forbidFabricate": true,
+    "needLawyerConfirmWritePath": true,
+    "aiOriginPending": true,
+    "lawDomain": "中国大陆现行法",
+    "overseasLaw": "本期关闭"
+  },
+  "skills": [
+    {
+      "id": "inbox-search",
+      "name": "卷内检索",
+      "group": "检索",
+      "tools": [],
+      "system": "只在 L1 案件原材料中定位出处。未命中明确说未找到，并建议切法条/案例 MCP；禁止用相似出处补位，禁止说『可能』。",
+      "output": { "type": "citation-card", "require": ["material_name", "loc", "excerpt"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": true }
+    },
+    {
+      "id": "statute-mcp",
+      "name": "法条 MCP",
+      "group": "检索",
+      "tools": ["legal_statute"],
+      "system": "只回现行有效与已废止替代；引文逐字；缺源不编。效力状态用 7 态枚举：VALID/AMENDED/PARTIAL/REPEALED/EXPIRED/PENDING/UNCERTAIN。UNCERTAIN 不得伪装现行有效。引用前 article_detail 取原文。历史时点传 refer_date。元典无版本链工具，沿革转官方页 flk.npc.gov.cn。",
+      "output": { "type": "citation-card", "require": ["law_name", "article_number", "validity", "text", "url"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": true }
+    },
+    {
+      "id": "case-mcp",
+      "name": "案例 MCP",
+      "group": "检索",
+      "tools": ["legal_case"],
+      "system": "必须带案号、法院、裁判日期、要旨。引用判项或原文前必须 detail 全文。严格命中与近似类比必须分开标。地位标签以返回字段为准，不得升格。被撤销/未生效判决不得引用。未命中缺源不编。",
+      "output": { "type": "citation-card", "require": ["case_number", "court", "judgment_date", "gist", "hit_level", "url"] },
+      "outputEnums": { "hit_level": ["严格命中", "近似类比", "不相关"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": true }
+    },
+    {
+      "id": "draft",
+      "name": "起草文书",
+      "group": "写作",
+      "tools": ["inbox-search", "legal_statute", "legal_case"],
+      "dependsOn": ["caseMemory.position"],
+      "system": "按代理立场 + L1 + L2 + L3 起草，体例符合文书类型 profile。全部声明 verdict=pending 并标 aiOrigin。立场为空先拦截提示，不得代填。不越立场。不写文书外的免责、AI 身份、检索过程。",
+      "output": { "type": "draft-doc", "require": ["docType", "items"], "itemRequire": ["type", "quote", "loc", "sources"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": true }
+    },
+    {
+      "id": "rewrite",
+      "name": "改写润色",
+      "group": "写作",
+      "tools": [],
+      "system": "只改写选中文段。不加新事实；不改数字、日期、金额、条号、案号。产出 pending。无选中则提示。",
+      "output": { "type": "draft-paragraph", "require": ["verifiedCandidate"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": true }
+    },
+    {
+      "id": "evidence",
+      "name": "证据三性",
+      "group": "核验",
+      "tools": ["inbox-search"],
+      "system": "评估真实性、合法性、关联性与证明力，给补强建议。不下『能赢』结论。评价语还原为客观事实。缺原始载体标 warn 并给补强动作。",
+      "output": { "type": "analysis-card", "require": ["authenticity", "legality", "relevance", "probative", "reinforce"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": false }
+    },
+    {
+      "id": "chain",
+      "name": "论证链检查",
+      "group": "核验",
+      "tools": ["inbox-search", "legal_statute", "legal_case"],
+      "system": "沿 事实→法条→案例→结论 找断链点。上游 pending/fail 时下游法条适配性与类案命中必须重开。只列断链，不代替律师补法条。",
+      "output": { "type": "analysis-card", "require": ["breaks"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": false }
+    },
+    {
+      "id": "calc",
+      "name": "金额复算",
+      "group": "核验",
+      "tools": ["inbox-search"],
+      "system": "必须给算式：基数 × 利率 × 期间 ÷ 年化（或约定计息方式）。对不上流水即黄/红。只写结果不给算式=黄。题面未给定的利率、标准不得编造。",
+      "output": { "type": "analysis-card", "require": ["formula", "inputs", "result"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": false }
+    },
+    {
+      "id": "risk",
+      "name": "风险与补强",
+      "group": "核验",
+      "tools": ["inbox-search"],
+      "system": "只列缺源、矛盾与待补证据动作。不预测判决结果，不做『包过』表述。",
+      "output": { "type": "analysis-card", "require": ["risks", "actions"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": false }
+    },
+    {
+      "id": "focus",
+      "name": "争议焦点",
+      "group": "记忆",
+      "tools": ["inbox-search"],
+      "system": "归纳双方争点，不混我方立场。焦点表述为可回答的法律问题。",
+      "output": { "type": "analysis-card", "require": ["ourIssues", "theirIssues", "shared"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": false }
+    },
+    {
+      "id": "timeline",
+      "name": "时间线梳理",
+      "group": "记忆",
+      "tools": ["inbox-search"],
+      "system": "按材料日期排。无据日期标待核，不虚构。九类事实中的时间/程序事实优先。",
+      "output": { "type": "analysis-card", "require": ["events"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": false }
+    },
+    {
+      "id": "case-report",
+      "name": "案例检索报告",
+      "group": "交付",
+      "tools": ["legal_case"],
+      "system": "把本文书 L3 案例打包成 Word 报告。结构：检索任务/结果概览/清单表/逐案摘录/核验声明。缺源不编；附免责；官方库为准。案例报告导出不阻断文书导出闸门。",
+      "output": { "type": "docx-case-report", "require": ["task", "overview", "list", "excerpts", "disclaimer"] },
+      "guard": { "forbidFabricate": true, "needLawyerConfirm": true }
+    }
+  ]
+}

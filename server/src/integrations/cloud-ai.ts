@@ -26,8 +26,12 @@ export function forgetCloudAiToken(account?: string | null) {
 export function isCloudAiEnabled() { return env.AI_GATEWAY_MODE === 'cloud' }
 
 export function hasCloudAiToken() {
+  return Boolean(getCloudSessionToken())
+}
+
+export function getCloudSessionToken() {
   const account = getCurrentWorkspaceAccount()
-  return Boolean(account && tokens.get(account))
+  return account ? tokens.get(account) : undefined
 }
 
 // 上游错误要保留真实语义，避免被兜底成 400 Bad Request。

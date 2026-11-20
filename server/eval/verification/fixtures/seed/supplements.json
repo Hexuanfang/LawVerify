@@ -1,0 +1,24 @@
+[
+  {
+    "caseId": "c1",
+    "documentId": "c1-ss",
+    "kind": "controlled-material",
+    "name": "一审判决书.pdf",
+    "segments": [
+      { "loc": "第6页 · 本院认为 第2段", "text": "微信截图打印件无法确认真实性，不予采信。" },
+      { "loc": "第7页 · 本院查明 第3段", "text": "2023年4月11日被告支付利息35,000元。" }
+    ]
+  },
+  {
+    "caseId": "c1",
+    "documentId": "c1-dlc",
+    "kind": "controlled-statute-detail",
+    "name": "中华人民共和国合同法（已废止）",
+    "loc": "第一百零七条",
+    "status": "repealed",
+    "effectiveFrom": "1999-10-01",
+    "repealedOn": "2021-01-01",
+    "text": null,
+    "replacementLocator": "民法典第577条"
+  }
+]

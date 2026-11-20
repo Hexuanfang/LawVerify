@@ -1,0 +1,41 @@
+{
+  "provenance": "合成裁判全文，仅供离线测试。seed 复用冻结种子的案号和论证语义，法院、日期、裁判书与关联资料均为测试构造。",
+  "sample": {
+    "id": "fixture-appeal-17",
+    "case_number": "（2023）京01民终17号",
+    "name": "受控借款合同纠纷上诉案",
+    "court": "北京市第一中级人民法院",
+    "judgment_date": "2023-05-17",
+    "url": "https://example.invalid/cases/appeal-17",
+    "body": "北京市第一中级人民法院\n民事判决书\n（2023）京01民终17号\n本院认为：持借条和转账凭证，借贷关系成立。\n判决如下：驳回上诉，维持原判。\n本判决为终审判决。",
+    "effect": "effective",
+    "level": "ordinary",
+    "cause": "民间借贷纠纷",
+    "legal_relationship": "民间借贷",
+    "party_roles": ["出借人", "借款人"],
+    "key_facts": ["借条原件", "银行转账"],
+    "issues": ["借贷关系是否成立"],
+    "rules": ["出借人举证"],
+    "procedure": "二审"
+  },
+  "context": "民间借贷纠纷中，出借人向借款人交付借条原件并完成银行转账。争议焦点是借贷关系是否成立，适用出借人举证规则。",
+  "seed": {
+    "id": "fixture-c1-appeal-1234",
+    "case_number": "（2021）京01民终1234号",
+    "name": "受控借贷纠纷二审案",
+    "court": "北京市第一中级人民法院",
+    "judgment_date": "2021-06-10",
+    "url": "https://example.invalid/cases/seed-1234",
+    "body": "北京市第一中级人民法院\n民事判决书\n（2021）京01民终1234号\n本院认为：出借人通过银行转账交付借款并持有借条的，借贷关系成立。出借人持借条原件并出具银行转账凭证，借贷关系成立。\n判决如下：驳回上诉，维持原判。\n本判决为终审判决。",
+    "effect": "effective",
+    "level": "ordinary",
+    "cause": "民间借贷纠纷",
+    "legal_relationship": "民间借贷",
+    "party_roles": ["原告", "被告"],
+    "key_facts": ["借条", "转账"],
+    "issues": ["借贷关系是否成立"],
+    "rules": ["借款交付"],
+    "procedure": "二审"
+  },
+  "seedContext": "民间借贷纠纷中，原告向被告交付借款。争议焦点是民间借贷关系是否成立，以及是否完成借款交付。"
+}

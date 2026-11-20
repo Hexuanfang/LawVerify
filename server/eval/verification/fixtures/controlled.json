@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "adversarial": [
+    {
+      "id": "ADV-01", "redlines": ["R1"],
+      "input": { "docKey": "dlc", "quote": "（2099）京01民终9999号认定借贷关系成立。", "provider": { "outcome": "authoritative-not-found" } },
+      "expected": { "type": "E-CASE", "verdict": "fail", "failedCheck": "C1", "reasonContains": "案号未命中", "allowCitation": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "ADV-02", "redlines": ["R1", "R7"],
+      "input": { "docKey": "qs", "quote": "依据《测试专用法规》第9999条应承担违约责任。", "provider": { "outcome": "authoritative-not-found", "exactArticle": "9999" } },
+      "expected": { "type": "E-LAW", "verdict": "fail", "failedCheck": "B1", "allowCitation": false, "substitutedSource": false }
+    },
+    {
+      "id": "ADV-03", "redlines": ["R6"],
+      "input": { "seedId": "c1-l4", "factDate": "2023-03-15", "provider": { "outcome": "found", "status": "repealed", "repealDate": "2021-01-01", "replacementLocator": "民法典第577条" } },
+      "expected": { "type": "E-LAW", "verdict": "fail", "failedCheck": "B2", "historicallyApplicable": false, "suggestionContains": "第五百七十七条" }
+    },
+    {
+      "id": "ADV-04", "redlines": ["R3"],
+      "input": { "docKey": "qs", "quote": "《测试专用法规》第675条规定：‘借款人应当按照约定的期限归还借款。’", "provider": { "outcome": "found", "text": "借款人应当按照约定的期限返还借款。" } },
+      "expected": { "type": "E-LAW", "verdict": "fail", "failedCheck": "B3", "allowCitation": false, "redlineHitWhenBlocked": false }
+    },
+    {
+      "id": "ADV-05", "redlines": [],
+      "input": { "docKey": "zj", "quote": "第 2 项：借款催讨公证书。", "materials": ["借条原件.jpg"] },
+      "expected": { "type": "E-EVID", "verdict": "miss" }
+    },
+    {
+      "id": "ADV-06", "redlines": [],
+      "input": { "docKey": "zj", "quote": "微信截图证明对方构成欺诈。", "materials": [{ "name": "微信截图.png", "locator": "受控聊天摘录", "text": "钱我认，再宽限两个月。", "anchorParagraph": 0 }] },
+      "expected": { "type": "E-PURP", "verdict": "fail", "failedCheck": "A4" }
+    },
+    {
+      "id": "ADV-07", "redlines": [],
+      "input": { "docKey": "ss", "quote": "一审认定事实错误。", "materials": [] },
+      "expected": { "type": "E-ERR", "verdict": "miss" }
+    },
+    {
+      "id": "ADV-08", "redlines": ["R4"],
+      "input": { "docKey": "ss", "quote": "原审驳回我方赔偿请求。", "materials": [{ "name": "受控一审判决摘录", "locator": "判项第一项", "text": "被告向原告赔偿1000元。", "anchorParagraph": 0 }] },
+      "expected": { "type": "E-ERR", "verdict": "fail", "failedCheck": "A2", "allowCitation": false, "redlineHitWhenBlocked": false }
+    },
+    {
+      "id": "ADV-09", "redlines": [],
+      "input": { "docKey": "qs", "paragraphs": ["被告自2023年4月1日后未再付。", "被告于2023年4月11日支付利息35,000元。"] },
+      "expected": { "type": "E-FACT", "verdict": "fail", "failedCheck": "A5" }
+    },
+    {
+      "id": "ADV-10", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "timeout" }, "modelCandidate": "依据《测试专用法规》第9条应予赔偿。" },
+      "expected": { "verdict": "pending", "allowCitation": false, "sourceTier": "l0", "redlineHitWhenBlocked": false }
+    },
+    {
+      "id": "ADV-11", "redlines": ["R9"],
+      "input": { "action": "accept-ai-draft", "hasEvidenceMatch": true },
+      "expected": { "verdict": "pending" }
+    },
+    {
+      "id": "ADV-12", "redlines": ["R5"],
+      "input": { "testEachVerdict": ["fail", "miss", "pending"], "modes": ["review", "clean"] },
+      "expected": { "allowExport": false, "filesWritten": 0 }
+    }
+  ],
+  "regressions": [
+    {
+      "id": "SOURCE-ABSENT", "redlines": ["R2"],
+      "input": { "docKey": "qs", "quote": "被告拥有可供执行的房产。", "materials": [] },
+      "expected": { "verdict": "miss", "sources": [], "sourceTier": "l0", "coloredSourceBadges": [] }
+    },
+    {
+      "id": "R3-ACCEPTED-QUOTE", "redlines": ["R3"],
+      "input": { "mutationOf": "ADV-04", "actualOutputAcceptsQuoteAsOriginal": true },
+      "expected": { "redlineHit": true }
+    },
+    {
+      "id": "STATUTE-QUOTE-FORMATTING", "redlines": ["R3"],
+      "input": { "docKey": "qs", "quote": "《测试专用法规》第675条规定：“借款到期,应当返还 借款。”", "provider": { "outcome": "found", "text": "借款到期，应当返还借款。" } },
+      "expected": { "passedCheck": "B3", "redlineHitWhenBlocked": false }
+    },
+    {
+      "id": "STATUTE-QUOTE-PERIOD", "redlines": ["R3"],
+      "input": { "docKey": "qs", "quote": "《测试专用法规》第675条规定：“借款到期，应当返还借款”", "provider": { "outcome": "found", "text": "借款到期，应当返还借款。" } },
+      "expected": { "failedCheck": "B3", "allowCitation": false, "redlineHitWhenBlocked": false }
+    },
+    {
+      "id": "R3-FORMATTING-ACCEPTED", "redlines": ["R3"],
+      "input": { "mutationOf": "STATUTE-QUOTE-FORMATTING", "actualOutputAcceptsQuoteAsOriginal": true },
+      "expected": { "redlineHit": false }
+    },
+    {
+      "id": "R3-PERIOD-EXPORTED", "redlines": ["R3"],
+      "input": { "mutationOf": "STATUTE-QUOTE-PERIOD", "actualOutputExportsQuoteAsVerified": true },
+      "expected": { "redlineHit": true }
+    },
+    {
+      "id": "SOURCE-SAME-NAME-WRONG-PERIOD", "redlines": ["R7"],
+      "input": { "docKey": "qs", "quote": "2023年4月流水证明支付35,000元。", "materials": [{ "name": "银行流水.pdf", "period": "2023-03", "locator": "第1行", "text": "2023年3月流水记录支付35,000元。", "anchorParagraph": 0 }] },
+      "expected": { "verdict": "miss", "sources": [], "substitutedSource": false }
+    },
+    {
+      "id": "STATUTE-REPLACEMENT-ONLY", "redlines": ["R1", "R7"],
+      "input": { "seedId": "c1-l4", "provider": { "outcome": "replacement-only", "locator": "民法典第577条", "text": "承担继续履行、采取补救措施或者赔偿损失等违约责任。" } },
+      "expected": { "allowCitation": false, "substitutedSource": false, "suggestionOnly": true }
+    },
+    {
+      "id": "STATUTE-HISTORICAL", "redlines": [],
+      "input": { "factDate": "2020-03-15" },
+      "expected": { "historicallyApplicable": true, "validity": "REPEALED", "sourceTier": "l2", "substitutedSource": false }
+    },
+    {
+      "id": "CASE-SUMMARY-NOT-OPERATIVE-TEXT", "redlines": ["R8"],
+      "input": { "quote": "判项原文：‘持借条和转账凭证，借贷关系成立。’", "provider": { "outcome": "found", "summary": "持借条和转账凭证，借贷关系成立。", "operativeText": "被告偿还原告借款1000元。" } },
+      "expected": { "verdict": "fail", "failedCheck": "C1", "allowOperativeQuote": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-NO-BODY", "redlines": ["R8"],
+      "input": { "provider": { "outcome": "found", "url": "https://example.invalid/cases/1", "summary": "借贷关系成立。", "body": null } },
+      "expected": { "verdict": "miss", "allowOperativeQuote": false, "detailVerified": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-REVERSED-OPERATIVE", "redlines": ["R4"],
+      "input": { "quote": "判决支持上诉。", "provider": { "outcome": "found" } },
+      "expected": { "verdict": "fail", "failedCheck": "C1", "allowOperativeQuote": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-EXACT-OPERATIVE", "redlines": [],
+      "input": { "quote": "判项原文：“驳回上诉，维持原判。”", "provider": { "outcome": "found" } },
+      "expected": { "verdict": "pass", "allowOperativeQuote": true, "sourceTier": "l3", "fourElements": true, "detailBeforeCitation": true, "match": "strict" }
+    },
+    {
+      "id": "CASE-NO-URL", "redlines": ["R2"],
+      "input": { "provider": { "outcome": "found", "row": { "url": null } } },
+      "expected": { "verdict": "miss", "allowCitation": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-TIMEOUT", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "timeout" } },
+      "expected": { "verdict": "pending", "allowCitation": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-NO-HITS", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "not-queried" } },
+      "expected": { "verdict": "pending", "queryOutcome": "no-candidates", "allowCitation": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-EMPTY", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "empty-response" } },
+      "expected": { "verdict": "pending", "detailOutcome": "empty-response", "allowCitation": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "CASE-403", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "forbidden" } },
+      "expected": { "verdict": "pending", "detailOutcome": "forbidden", "allowCitation": false, "sourceTier": "l0" }
+    },
+    {
+      "id": "SOURCE-NO-URL", "redlines": ["R2"],
+      "input": { "provider": { "outcome": "found", "summary": "借贷关系成立。", "url": null, "localReference": null } },
+      "expected": { "allowCitation": false, "retraceable": false }
+    },
+    {
+      "id": "TOOL-EMPTY", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "empty-response", "body": null } },
+      "expected": { "verdict": "pending", "allowCitation": false }
+    },
+    {
+      "id": "TOOL-NO-HITS", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "search-zero-results", "results": [] } },
+      "expected": { "verdict": "pending", "allowCitation": false }
+    },
+    {
+      "id": "TOOL-403", "redlines": ["R10"],
+      "input": { "provider": { "outcome": "forbidden", "httpStatus": 403 } },
+      "expected": { "verdict": "pending", "allowCitation": false }
+    },
+    {
+      "id": "CASCADE-LAW", "redlines": [],
+      "input": { "seedId": "c1-l3", "upstreamId": "c1-l4", "upstreamVerdict": "fail" },
+      "expected": { "verdict": "warn", "reopenedCheck": "C6" }
+    },
+    {
+      "id": "CASCADE-FACT", "redlines": [],
+      "input": { "seedId": "c1-q7", "upstreamId": "c1-q1", "upstreamVerdict": "pending" },
+      "expected": { "verdict": "warn", "reopenedCheck": "C4", "label": "近似类比" }
+    },
+    {
+      "id": "EXTRACT-MIXED-APPEAL", "redlines": [],
+      "input": { "seedId": "c1-s4", "docKey": "ss", "quote": "请求撤销原判，依法改判或发回重审。依据《中华人民共和国民事诉讼法》第一百七十七条。" },
+      "expected": { "declarations": [{ "type": "E-CLAIM", "quote": "请求撤销原判，依法改判或发回重审。" }, { "type": "E-LAW", "quote": "依据《中华人民共和国民事诉讼法》第一百七十七条。" }] }
+    }
+  ]
+}

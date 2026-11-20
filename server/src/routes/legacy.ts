@@ -1,4 +1,5 @@
 import { saveDocumentContent } from '../document-editing.js'
+import { createDocumentFileRouter } from '../office/document-file-routes.js'
 import { Router, type Request, type Response } from 'express'
 import { getEvidenceParsing } from '../evidence-parsing.js'
 import { documentText, parseDocument } from '../infrastructure/document-jobs.js'
@@ -11,7 +12,9 @@ import { env } from '../config/env.js'
 import { sendLegacyError } from '../core/api-response.js'
 import { AppError } from '../core/app-error.js'
 import { storeObjectFromPath } from '../infrastructure/object-storage.js'
-import { runWithWorkspaceAccount } from '../store.js'
+import { readWorkspace, rememberCaseFile, runWithWorkspaceAccount } from '../store.js'
+import { evidenceObjectKey } from '../infrastructure/workspace-case-files.js'
+import { runExclusiveWorkspaceMutation } from '../infrastructure/workspace-lock.js'
 import { rememberCaseAgentCredential } from '../case-agent-billing.js'
 import { rememberCloudAiToken } from '../integrations/cloud-ai.js'
 import { getAssistantCapabilities, transcribeAssistantAudio, withAssistantModel, withRequestAbortSignal } from '../integrations/llm-service.js'
@@ -246,6 +249,8 @@ export function createLegacyRouter() {
     void proxyCloudRequest(request, response)
   })
 
+  router.use('/documents', createDocumentFileRouter())
+
   router.use('/certificates', async (request, _response, next) => {
     if (request.method !== 'POST' || !/^\/(?:generate(?:\/stream)?|[^/]+\/rewrite(?:\/stream)?)\/?$/.test(request.path)) return next()
     try { await withAssistantModel(request.body?.model, () => next()) } catch (error) { next(error) }
@@ -285,8 +290,7 @@ export function createLegacyRouter() {
   })
 
   router.get('/workspace', async (_request, response) => {
-    const result = await bootstrap()
-    sendWorkspacePayload(response, result)
+    response.json(await bootstrap({ sanitizeForClient: true }))
   })
 
   router.post('/billing/recharge', async (request, response) => {
@@ -385,36 +389,43 @@ export function createLegacyRouter() {
   })
 
   router.post('/evidences/assets/upload', reserveUpload, upload.array('files', 200), async (request, response) => {
-    const files = Array.isArray(request.files) ? request.files : []
-    const manifest = typeof request.body?.manifest === 'string'
-      ? JSON.parse(request.body.manifest) as Array<{ relativePath?: string; fileName?: string; sourceMimeType?: string }>
-      : []
-
-    const assets = []
-    for (const [index, file] of files.entries()) {
-      const manifestItem = manifest[index] ?? {}
-      const stored = await storeObjectFromPath({
-        path: (file as Partial<UploadedFile>).path!,
-        size: file.size,
-        originalname: file.originalname,
-        mimetype: file.mimetype,
-        contentHash: (file as Partial<UploadedFile>).contentHash!,
-      }, {
-        bucket: 'evidence',
-        fileName: manifestItem.fileName?.trim() || file.originalname,
-      })
-
-      assets.push({
-        relativePath: manifestItem.relativePath?.trim() || file.originalname,
-        fileName: manifestItem.fileName?.trim() || file.originalname,
-        storageKey: stored.key,
-        storageUrl: stored.url,
-        sourceMimeType: manifestItem.sourceMimeType?.trim() || file.mimetype || undefined,
-        contentHash: stored.contentHash,
-      })
+    const files = (Array.isArray(request.files) ? request.files : []) as UploadedFile[]
+    try {
+      const caseId = z.string().trim().min(1).optional().parse(request.body?.caseId)
+      const manifest = typeof request.body?.manifest === 'string'
+        ? JSON.parse(request.body.manifest) as Array<{ relativePath?: string; fileName?: string; sourceMimeType?: string }>
+        : []
+      const storeFiles = async () => {
+        if (caseId) await readWorkspace()
+        const assets = []
+        for (const [index, file] of files.entries()) {
+          const item = manifest[index] ?? {}
+          const fileName = item.fileName?.trim() || file.originalname
+          const stored = await storeObjectFromPath(file, {
+            bucket: 'evidence',
+            fileName,
+            beforeStore: caseId ? key => {
+              const normalized = evidenceObjectKey(key)
+              if (!normalized) throw new AppError('材料扩展名不受支持。', 400, 'INVALID_EVIDENCE_FILE')
+              rememberCaseFile(caseId, `evidence:${normalized}`)
+            } : undefined,
+          })
+          assets.push({
+            relativePath: item.relativePath?.trim() || file.originalname,
+            fileName,
+            storageKey: stored.key,
+            storageUrl: stored.url,
+            sourceMimeType: item.sourceMimeType?.trim() || file.mimetype || undefined,
+            contentHash: stored.contentHash,
+          })
+        }
+        return assets
+      }
+      const assets = await (caseId ? runExclusiveWorkspaceMutation(storeFiles) : storeFiles())
+      response.json({ assets })
+    } finally {
+      await Promise.allSettled(files.map(file => unlink(file.path)))
     }
-
-    response.json({ assets })
   })
 
   router.post('/evidences/replace', async (request, response) => {
@@ -559,6 +570,7 @@ export function createLegacyRouter() {
         certificateId: request.params.certificateId,
         evidenceIds: Array.isArray(request.body?.evidenceIds) ? request.body.evidenceIds : [],
         prompt: typeof request.body?.prompt === 'string' ? request.body.prompt : '',
+        selection: request.body?.selection,
       }, async (event) => {
         if (event.type === 'done') {
           sendStreamEvent(response, 'done', {
@@ -621,7 +633,7 @@ export function createLegacyRouter() {
     try {
       const result = await autoLinkCertificate(request.params.certificateId, (text) => {
         if (!response.destroyed) sendStreamEvent(response, 'progress', { text })
-      }, { signal: abortController.signal })
+      }, { signal: abortController.signal, scope: request.query.scope === 'dirty' ? 'dirty' : undefined })
       if (!response.destroyed) {
         // 只回传联动改写过的文书与本案记忆：
         // 全量工作区快照有十几 MB，会超过客户端流式接收的上限。
@@ -650,7 +662,7 @@ export function createLegacyRouter() {
 
   router.post('/certificates/:certificateId/auto-link', async (request, response) => {
     try {
-      const result = await autoLinkCertificate(request.params.certificateId)
+      const result = await autoLinkCertificate(request.params.certificateId, undefined, { scope: request.query.scope === 'dirty' ? 'dirty' : undefined })
       sendWorkspacePayload(response, result)
     } catch (error) {
       const message = error instanceof Error ? error.message : '自动联动失败'

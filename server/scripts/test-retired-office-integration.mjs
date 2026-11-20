@@ -9,13 +9,12 @@ env.WORKSPACE_DATA_DIR = path.join(directory, 'data')
 env.STORAGE_LOCAL_ROOT = path.join(directory, 'storage')
 env.FRONTEND_DIST_DIR = path.join(directory, 'frontend')
 env.KNOWLEDGE_RAG_MODE = 'local'
-const { createApp, closeParsingWorkers } = await import('../src/app.ts')
+const { createApp } = await import('../src/app.ts')
 
 test('文书服务独立启动，已退役的 Office 接口返回 404', async (t) => {
   const { app } = createApp()
   const server = app.listen(0, '127.0.0.1')
   t.after(async () => {
-    await closeParsingWorkers()
     await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
   })
   await new Promise(resolve => server.once('listening', resolve))

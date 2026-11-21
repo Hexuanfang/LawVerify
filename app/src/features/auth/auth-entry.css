@@ -45,9 +45,12 @@
 .lv-secret { position: relative; }
 .lv-secret input { padding-right: 47px; }
 .lv-secret button { position: absolute; right: 2px; top: 2px; bottom: 2px; width: 40px; display: grid; place-items: center; border: 0; background: transparent; color: var(--lv-muted); }
+.lv-code { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.lv-code button { padding: 0 11px; border: 1px solid var(--lv-line); border-radius: 7px; background: #f7f6f1; color: var(--lv-green); font-size: 13px; }
 .lv-submit { display: flex; align-items: center; justify-content: center; gap: 13px; margin-top: 5px; min-height: 46px; border: 0; border-radius: 7px; background: var(--lv-green); color: #fff; font-weight: 600; }
 .lv-submit:hover { background: #345448; }
 .lv-entry button:disabled { opacity: .65; cursor: wait; }
+.lv-entry .lv-code button:disabled, .lv-entry .lv-submit[disabled] { cursor: not-allowed; }
 .lv-entry :is(input, button, summary):focus-visible { outline: 2px solid #668477; outline-offset: 2px; box-shadow: none; }
 .lv-register { border-top: 1px solid var(--lv-line); margin-top: 24px; padding-top: 18px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px; font-size: 13px; color: var(--lv-muted); }
 .lv-register button { font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }

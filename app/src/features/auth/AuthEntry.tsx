@@ -43,13 +43,15 @@ function PasswordField({ registering }: { registering: boolean }) {
 export default function AuthEntry(props: Props) {
   const [method, setMethod] = useState<'email' | 'phone'>('email')
   const [registering, setRegistering] = useState(false)
-  const phoneLogin = !registering && method === 'phone'
+  const phoneMode = method === 'phone'
+  const action = registering ? '注册' : '登录'
+  const formKey = registering ? 'register' : method
   const firstField = useRef<HTMLInputElement>(null)
-  useEffect(() => { firstField.current?.focus({ preventScroll: true }) }, [registering, method])
+  useEffect(() => { firstField.current?.focus({ preventScroll: true }) }, [formKey])
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (props.busy || phoneLogin) return
+    if (props.busy || phoneMode) return
     const data = new FormData(event.currentTarget)
     const field = (name: string) => String(data.get(name) ?? '')
     const email = field('email')
@@ -80,35 +82,42 @@ export default function AuthEntry(props: Props) {
         </section>
         <section className="lv-card" data-lawverify-auth-entry aria-labelledby="lv-form-title">
           <h2 id="lv-form-title">{registering ? '创建账号' : '登录工作台'}</h2>
-          <p className="lv-hint">{registering ? '使用邮箱注册 LawVerify 账号。' : '使用 LawVerify 账号，继续处理案件。'}</p>
-          {!registering && <div className="lv-methods" role="group" aria-label="登录方式">
+          <p className="lv-hint">{registering ? '创建 LawVerify 账号，开始使用工作台。' : '使用 LawVerify 账号，继续处理案件。'}</p>
+          <div className="lv-methods" role="group" aria-label={`${action}方式`}>
             {(['email', 'phone'] as const).map(value => <button key={value} type="button"
               aria-pressed={method === value} disabled={props.busy}
               onClick={() => { props.onClearError(); setMethod(value) }}>
-              {value === 'email' ? '邮箱登录' : '手机号登录'}
+              {value === 'email' ? '邮箱' : '手机号'}{action}
             </button>)}
-          </div>}
-          <form onSubmit={submit} key={registering ? 'register' : method}>
+          </div>
+          <form onSubmit={submit} key={formKey}>
             <fieldset disabled={props.busy}>
               {registering && <>
                 <label>机构名称<input ref={firstField} name="organizationName" autoComplete="organization" required minLength={2} placeholder="输入律所或团队名称" /></label>
                 <label>姓名或昵称<input name="ownerName" autoComplete="name" required minLength={2} placeholder="请输入姓名或昵称" /></label>
               </>}
-              {phoneLogin
-                ? <label>手机号<input ref={firstField} name="phone" type="tel" autoComplete="username"
-                    inputMode="tel" placeholder="输入账号关联的手机号" /></label>
-                : <label>邮箱<input ref={registering ? undefined : firstField} name="email" type="email"
+              {phoneMode
+                ? <label key="phone">手机号<input name="phone" type="tel" autoComplete="tel" disabled
+                    placeholder={registering ? '输入注册手机号' : '输入账号关联的手机号'} /></label>
+                : <label key="email">邮箱<input ref={registering ? undefined : firstField} name="email" type="email"
                     autoComplete={registering ? 'email' : 'username'} required placeholder="输入注册邮箱" /></label>}
-              <PasswordField registering={registering} />
+              {phoneMode ? <div className="lv-field">
+                <label htmlFor="lv-verification-code">验证码</label>
+                <div className="lv-code">
+                  <input id="lv-verification-code" name="verificationCode" inputMode="numeric" autoComplete="one-time-code"
+                    placeholder="输入短信验证码" disabled />
+                  <button type="button" disabled>发送验证码</button>
+                </div>
+              </div> : <PasswordField registering={registering} />}
               {registering && <label>邀请码（选填）<input name="inviteCode" maxLength={16} pattern="[A-Fa-f0-9]{16}" placeholder="输入 16 位邀请码" /></label>}
               {props.error && <p className="lv-error" role="alert">{props.error}</p>}
-              {phoneLogin && <p className="lv-hint" role="status">云端账号服务尚未启用手机号登录，请使用邮箱登录。</p>}
-              <button className="lv-submit" type="submit" disabled={phoneLogin}>{props.busy ? '正在提交…' : registering ? '注册并进入工作台' : '进入工作台'} <span aria-hidden="true">→</span></button>
+              {phoneMode && <p className="lv-hint" role="status">手机号{action}暂未开放，请使用邮箱{action}。</p>}
+              <button className="lv-submit" type="submit" disabled={phoneMode}>{props.busy ? '正在提交…' : registering ? '注册并进入工作台' : '进入工作台'} <span aria-hidden="true">→</span></button>
             </fieldset>
           </form>
           <div className="lv-register">
             {registering ? '已有账号？' : '还没有账号？'}
-            <button type="button" disabled={props.busy} onClick={() => { props.onClearError(); setRegistering(!registering) }}>
+            <button type="button" disabled={props.busy} onClick={() => { props.onClearError(); setMethod('email'); setRegistering(!registering) }}>
               {registering ? '返回登录' : '注册账号'}
             </button>
             <button type="button" onClick={props.onWebsiteRegister}>前往官网注册 ↗</button>

@@ -1,7 +1,19 @@
 import { availableParallelism, cpus, freemem, totalmem } from 'node:os'
+import { execFileSync } from 'node:child_process'
 
 const MiB = 1024 ** 2
 const minimumWorkerMB = 1024
+
+export function availableMacMemory(statistics, fallback, totalBytes) {
+  const pageSize = Number(/page size of (\d+) bytes/.exec(statistics)?.[1])
+  const pages = ['free', 'inactive', 'speculative'].map(name =>
+    Number(new RegExp(`^Pages ${name}:\\s*(\\d+)\\.`, 'm').exec(statistics)?.[1]))
+  if (!Number.isSafeInteger(pageSize) || pageSize <= 0
+    || pages.some(value => !Number.isSafeInteger(value) || value < 0)) return fallback
+  const available = pages.reduce((sum, value) => sum + value, 0) * pageSize
+  if (!Number.isSafeInteger(available) || available > totalBytes) return fallback
+  return Math.max(fallback, available)
+}
 
 function cpuTimes() {
   let idle = 0
@@ -17,6 +29,8 @@ export function createResourceSampler() {
   let previous = cpuTimes()
   let sampledAt = performance.now()
   let cpuLoad = 0.65
+  let memorySampledAt = -Infinity
+  let macMemory
   return () => {
     const now = performance.now()
     if (now - sampledAt >= 500) {
@@ -26,7 +40,21 @@ export function createResourceSampler() {
       previous = current
       sampledAt = now
     }
-    return { cores: availableParallelism(), totalBytes: totalmem(), freeBytes: freemem(), cpuLoad }
+    const totalBytes = totalmem()
+    const freeBytes = freemem()
+    if (process.platform === 'darwin' && now - memorySampledAt >= 5000) {
+      // 空闲页不含可回收缓存；读取系统计数并缓存，失败时保守回退。
+      try {
+        macMemory = availableMacMemory(execFileSync('/usr/bin/vm_stat', [], {
+          encoding: 'utf8', timeout: 1000,
+        }), freeBytes, totalBytes)
+      } catch {
+        macMemory = undefined
+      }
+      memorySampledAt = now
+    }
+    return { cores: availableParallelism(), totalBytes,
+      freeBytes: process.platform === 'darwin' ? Math.max(freeBytes, macMemory ?? 0) : freeBytes, cpuLoad }
   }
 }
 

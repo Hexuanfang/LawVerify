@@ -339,7 +339,7 @@ async function reviewLaterCases(declaration: Declaration, lookupCase: (number: s
 }
 
 export async function verifyCaseDeclarations(certificate: CaseCertificate, declarations: Declaration[], adapter: CaseAdapter, signal?: AbortSignal,
-  frozen?: ReadonlySet<string>) {
+  { frozen, parallel = false }: { frozen?: ReadonlySet<string>; parallel?: boolean } = {}) {
   const cache = new Map<string, Promise<CaseLookup>>()
   const lookupCase = (caseNumber: string) => {
     const key = normalizeCaseNumber(caseNumber)
@@ -351,15 +351,17 @@ export async function verifyCaseDeclarations(certificate: CaseCertificate, decla
     return lookup
   }
   const paragraphs = new Map(certificate.paragraphs.map(item => [item.id, item.text]))
-  const cases: Declaration[] = []
-  for (const declaration of declarations) {
-    if (declaration.type !== 'E-CASE') continue
+  const subjects = declarations.filter(declaration => declaration.type === 'E-CASE')
+  const verify = async (declaration: Declaration) => {
     signal?.throwIfAborted()
-    if (frozen?.has(declaration.id)) { cases.push(declaration); continue }
+    if (frozen?.has(declaration.id)) return declaration
     const lookup = hasCaseNumberFormat(normalizeCaseNumber(declaration.quote)) ? await lookupCase(declaration.quote) : undefined
     const checked = checkCase(declaration, paragraphs.get(declaration.location.paragraphId) ?? '', declarations, certificate.docKey, lookup)
-    cases.push(await reviewLaterCases(checked, lookupCase))
+    return reviewLaterCases(checked, lookupCase)
   }
+  const cases: Declaration[] = []
+  if (parallel) cases.push(...await Promise.all(subjects.map(verify)))
+  else for (const declaration of subjects) cases.push(await verify(declaration))
   const verified = new Map(groupCases(cases, certificate).map(item => [item.id, item]))
   return declarations.map(item => frozen?.has(item.id) ? item : verified.get(item.id) ?? item)
 }

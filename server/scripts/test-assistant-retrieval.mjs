@@ -35,6 +35,52 @@ const declarations = [
   checkContext('E-FOCUS', '借款期限届满后是否应偿还本金？', 1),
 ]
 
+test('类案语义检索并行核验不同案号，保持原检索顺序及详情状态', async () => {
+  const rows = [judgment, ...[124, 125].map(suffix => {
+    const nextNumber = number.replace('123号', `${suffix}号`)
+    return { ...judgment, id: `detail-case-${suffix}`, case_number: nextNumber,
+      body: judgment.body.replace(number, nextNumber), url: `https://rmfyalk.court.gov.cn/case/detail-${suffix}` }
+  })]
+  let active = 0
+  let peak = 0
+  const caseAdapter = createLegalCaseAdapter('local-fixture', async request => {
+    if (request.action === 'semantic') return { items: rows }
+    if (request.action === 'keyword') {
+      peak = Math.max(peak, ++active)
+      await new Promise(resolve => setImmediate(resolve))
+      active--
+      return { items: rows.filter(row => row.case_number === request.case_number) }
+    }
+    return request.id === rows[1].id ? { outcome: 'timeout' } : { items: rows.filter(row => row.id === request.id) }
+  })
+  const result = await runRetrievalSkill('case-mcp', { caseId, query: '民间借贷偿还本金', workspace: emptyWorkspace, declarations, caseAdapter })
+  assert.equal(peak, rows.length)
+  assert.deepEqual(result.cards.map(card => card.caseVerification.caseNumber), rows.map(row => row.case_number))
+  assert.deepEqual(result.cards.map(card => card.status), ['verified', 'pending', 'verified'])
+})
+
+test('法条语义检索并行核对不同条文，保留仍待核的结果', async () => {
+  const rows = [statute, { ...statute, id: 'civil-676', article_number: '第六百七十六条' }]
+  let active = 0
+  let peak = 0
+  const statuteAdapter = createLegalStatuteAdapter(async request => {
+    if (request.action === 'semantic') return { items: rows }
+    if (request.action === 'search_article') {
+      peak = Math.max(peak, ++active)
+      await new Promise(resolve => setImmediate(resolve))
+      active--
+      return { items: rows.filter(row => row.article_number === request.article_number) }
+    }
+    return request.id === rows[1].id ? { outcome: 'timeout' } : { items: rows.filter(row => row.id === request.id) }
+  })
+  const result = await runRetrievalSkill('statute-mcp', {
+    caseId, query: '民间借贷偿还本金', factDate: '2023-02-01', workspace: emptyWorkspace, statuteAdapter,
+  })
+  assert.equal(peak, rows.length)
+  assert.deepEqual(result.cards.map(card => card.label), rows.map(row => `《${row.law_name}》${row.article_number}`))
+  assert.deepEqual(result.cards.map(card => card.status), ['verified', 'pending'])
+})
+
 test('卷内检索提供当前案件材料的原始摘录、定位和材料引用', async () => {
   const input = {
     caseId, query: '退还12000元', workspace: {

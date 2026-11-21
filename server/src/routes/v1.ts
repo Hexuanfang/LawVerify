@@ -12,6 +12,7 @@ import { listAuditLogs } from '../commercial/audit-service.js'
 import { createUploadedEvidenceRecord } from '../commercial/file-service.js'
 import { createMember, listMembers } from '../commercial/organization-service.js'
 import { sendSuccess } from '../core/api-response.js'
+import { AppError } from '../core/app-error.js'
 import { authenticate, requirePermission } from '../middleware/authenticate.js'
 import { storeObject } from '../infrastructure/object-storage.js'
 import { isDatabaseEnabled } from '../infrastructure/postgres.js'
@@ -441,10 +442,22 @@ export function createV1Router() {
 
   router.post('/assistant/skills/:skillId', async (request, response) => {
     const body = assistantTargetSchema.extend({ query: z.string().trim().max(400).optional(), factDate: z.iso.date().optional() }).parse(request.body)
+    const skill = request.params.skillId
+    const authoritySearch = skill === 'case-mcp' || skill === 'statute-mcp'
+    const deadline = AbortSignal.timeout(authoritySearch ? 30_000 : 15_000)
     const controller = new AbortController()
     response.once('close', () => { if (!response.writableEnded) controller.abort() })
-    const result = await executeAssistantSkill(request.params.skillId, body, AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]))
-    if (!response.destroyed) sendSuccess(response, result)
+    try {
+      const result = await executeAssistantSkill(skill, body, AbortSignal.any([controller.signal, deadline]))
+      if (!response.destroyed) sendSuccess(response, result)
+    } catch (error) {
+      if (controller.signal.aborted) return
+      if (deadline.aborted && error === deadline.reason) {
+        const label = skill === 'case-mcp' ? '类案检索' : skill === 'statute-mcp' ? '法条检索' : '助手请求'
+        throw new AppError(`${label}等待超时，请稍后重试。`, 504, 'ASSISTANT_SKILL_TIMEOUT')
+      }
+      throw error
+    }
   })
 
   router.post('/assistant/documents/:certificateId/recheck', async (request, response) => {

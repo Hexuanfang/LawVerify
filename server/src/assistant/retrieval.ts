@@ -230,7 +230,7 @@ async function searchStatutes(input: RetrievalInput, query: string): Promise<Ret
   const declarations = unique.map((item, index) => declaration(`assistant-statute-${index}`, 'E-LAW', statuteLabel(item), index, prefix.length))
   const paragraphs = declarations.map(item => ({ id: item.id, text: `${prefix}${item.quote}` }))
   const checked = await verifyLegalDeclarations({ paragraphs, docKey: input.docKey }, [...context, ...declarations], workspace,
-    adapter, signal, officialStatuteAdapter)
+    adapter, signal, officialStatuteAdapter, undefined, { parallel: true })
   const byId = new Map(checked.map(item => [item.id, item]))
   const cards = declarations.map((item): RetrievalCard => {
     const found = byId.get(item.id)!
@@ -288,7 +288,7 @@ async function searchCases(input: RetrievalInput, query: string): Promise<Retrie
     return items.length ? { ...indexed, outcome: 'found', items } : indexed
   } }
   const checked = applyDeclarationDependencies(await verifyCaseDeclarations({ paragraphs, docKey: input.docKey },
-    [...context, ...declarations], verifiedAdapter, signal))
+    [...context, ...declarations], verifiedAdapter, signal, { parallel: true }))
   const byId = new Map(checked.map(item => [item.id, item]))
   const cards = declarations.flatMap<RetrievalCard>(item => {
     const found = byId.get(item.id)!

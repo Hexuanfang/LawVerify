@@ -30,6 +30,45 @@ async function seed() {
   await writeWorkspace(state)
 }
 
+test('助手法条和类案检索耗尽等待时间时返回超时状态，空查询仍返回参数错误', async t => {
+  const { createApp } = await import('../src/app.ts')
+  const account = 't7-timeout@test.invalid'
+  await runWithWorkspaceAccount(account, seed)
+  const originalTimeout = AbortSignal.timeout
+  t.mock.method(AbortSignal, 'timeout', milliseconds =>
+    originalTimeout(milliseconds === 15000 || milliseconds === 30000 ? 25 : milliseconds))
+  const originalFetch = globalThis.fetch
+  const provider = 'http://assistant-case-timeout.invalid/mcp'
+  const previous = { AI_GATEWAY_MODE: env.AI_GATEWAY_MODE, YUANDIAN_API_KEY: env.YUANDIAN_API_KEY, YUANDIAN_MCP_URL: env.YUANDIAN_MCP_URL }
+  Object.assign(env, { AI_GATEWAY_MODE: 'direct', YUANDIAN_API_KEY: 'test-only', YUANDIAN_MCP_URL: provider })
+  t.after(() => Object.assign(env, previous))
+  t.mock.method(globalThis, 'fetch', (url, init) => {
+    if (String(url) !== provider) return originalFetch(url, init)
+    return new Promise((_, reject) => {
+      const signal = init.signal
+      if (signal.aborted) reject(signal.reason)
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+  })
+  const server = createApp().app.listen(0, '127.0.0.1')
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  await new Promise(resolve => server.once('listening', resolve))
+  const request = (skill, query) => fetch(`http://127.0.0.1:${server.address().port}/api/v1/assistant/skills/${skill}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-workspace-account': account },
+    body: JSON.stringify({ ...target, query }),
+  })
+  for (const skill of ['case-mcp', 'statute-mcp']) {
+    const invalid = await request(skill, '')
+    assert.equal(invalid.status, 400)
+    assert.equal((await invalid.json()).error.code, 'ASSISTANT_QUERY_REQUIRED')
+    const timeout = await request(skill, '民间借贷')
+    const { error } = await timeout.json()
+    assert.equal(timeout.status, 504)
+    assert.equal(error.code, 'ASSISTANT_SKILL_TIMEOUT')
+    assert.match(error.message, /超时/u)
+  }
+})
+
 test('卷内检索空结果无采纳候选，已核摘录只在确认后新增为待核段落', () => runWithWorkspaceAccount('t7-execution@test.invalid', async () => {
   await seed()
   const baseline = await readWorkspace()

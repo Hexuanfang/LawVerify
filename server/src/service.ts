@@ -5728,7 +5728,7 @@ export async function createCloudWorkspaceSession(payload: CreateCloudWorkspaceS
 
   return runWithWorkspaceAccount(email, async () => {
     const workspace = await readWorkspace()
-    workspace.user = {
+    const user = {
       ...workspace.user,
       email,
       name: payload.name?.trim() || workspace.user.name,
@@ -5736,7 +5736,11 @@ export async function createCloudWorkspaceSession(payload: CreateCloudWorkspaceS
       title: payload.role?.trim() || workspace.user.title,
     }
 
-    await writeWorkspace(workspace)
+    if (user.email !== workspace.user.email || user.name !== workspace.user.name
+      || user.organization !== workspace.user.organization || user.title !== workspace.user.title) {
+      workspace.user = user
+      await writeWorkspace(workspace)
+    }
     return withToken<{
       user: WorkspaceState['user']
     }>(workspace)
@@ -7914,7 +7918,7 @@ export async function autoLinkCertificate(
     const withReviews = sameRules ? carryDeclarationReviews(previous, evidenceVerified) : evidenceVerified
     const legalVerified = await verifyLegalDeclarations(merged, withReviews, {
       knowledgeStatutes: latestWorkspace.knowledgeStatutes, knowledgeCases: latestWorkspace.knowledgeCases,
-    }, statuteAdapter, signal, officialStatuteAdapter, caseAdapter, new Set(confirmed.keys()))
+    }, statuteAdapter, signal, officialStatuteAdapter, caseAdapter, { frozen: new Set(confirmed.keys()) })
     throwIfLinkageAborted(signal)
     try {
       await runExclusiveWorkspaceMutation(async () => {

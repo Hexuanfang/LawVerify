@@ -287,7 +287,8 @@ async function suggestReplacement(law: Declaration, locator: StatuteLocator, dec
 
 export async function verifyLegalDeclarations(certificate: LegalCertificate, declarations: Declaration[], workspace: LegalWorkspace,
   adapter?: StatuteAdapter, signal?: AbortSignal, officialAdapter?: StatuteAdapter,
-  caseAdapter = createWorkspaceCaseAdapter(workspace.knowledgeCases), frozen?: ReadonlySet<string>): Promise<Declaration[]> {
+  caseAdapter = createWorkspaceCaseAdapter(workspace.knowledgeCases),
+  { frozen, parallel = false }: { frozen?: ReadonlySet<string>; parallel?: boolean } = {}): Promise<Declaration[]> {
   const workspaceAdapter = workspaceStatuteAdapter(workspace.knowledgeStatutes)
   const primary = adapter ?? workspaceAdapter
   const official = officialAdapter ?? (adapter && workspace.knowledgeStatutes.length ? workspaceAdapter : undefined)
@@ -303,19 +304,18 @@ export async function verifyLegalDeclarations(certificate: LegalCertificate, dec
   }
   const checked: Declaration[] = []
   const details = new Map<string, Extract<StatuteDetailResult, { outcome: 'found' }>['item']>()
-  for (const declaration of declarations) {
+  const verify = async (declaration: Declaration) => {
     signal?.throwIfAborted()
     const paragraph = paragraphs.get(declaration.location.paragraphId)
-    if (declaration.type === 'E-LAW' && paragraph && !frozen?.has(declaration.id)) {
-      const locator = statuteLocator(declaration, paragraph, declarations)
-      const tracks = locator && await lookup(locator)
-      if (tracks?.result.outcome === 'found' && !tracks.conflicted) details.set(declaration.id, tracks.result.item)
-      const law = checkStatute(declaration, paragraph, declarations, certificate.docKey, locator, tracks)
-      checked.push(locator ? await suggestReplacement(law, locator, declarations, certificate, paragraph.text, primary, workspaceAdapter, lookup, signal) : law)
-    } else {
-      checked.push(declaration)
-    }
+    if (declaration.type !== 'E-LAW' || !paragraph || frozen?.has(declaration.id)) return declaration
+    const locator = statuteLocator(declaration, paragraph, declarations)
+    const tracks = locator && await lookup(locator)
+    if (tracks?.result.outcome === 'found' && !tracks.conflicted) details.set(declaration.id, tracks.result.item)
+    const law = checkStatute(declaration, paragraph, declarations, certificate.docKey, locator, tracks)
+    return locator ? suggestReplacement(law, locator, declarations, certificate, paragraph.text, primary, workspaceAdapter, lookup, signal) : law
   }
+  if (parallel) checked.push(...await Promise.all(declarations.map(verify)))
+  else for (const declaration of declarations) checked.push(await verify(declaration))
   // 未冻结法条的位阶判定仍可能需要同句的已确认法条作为对照。
   if (frozen?.size && details.size) {
     const fresh = checked.filter(item => details.has(item.id))
@@ -344,5 +344,5 @@ export async function verifyLegalDeclarations(certificate: LegalCertificate, dec
     if (B6.outcome === 'warn' && ['pass', 'note'].includes(declaration.verdict)) return { ...next, verdict: 'warn', reason: B6.reason }
     return next
   })
-  return verifyCaseDeclarations(certificate, withBasis, caseAdapter, signal, frozen)
+  return verifyCaseDeclarations(certificate, withBasis, caseAdapter, signal, { frozen, parallel })
 }

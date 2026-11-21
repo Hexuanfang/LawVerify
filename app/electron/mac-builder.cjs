@@ -1,6 +1,10 @@
 const { build } = require('../package.json')
 
 const signed = process.env.LAWVERIFY_MAC_SIGNED === '1'
+if (signed && process.platform === 'darwin') {
+  // 签名扫描内置 Python 大量文件时排队重试，避免耗尽文件句柄。
+  require('graceful-fs').gracefulify(require('node:fs'))
+}
 const { electronDist: _electronDist, win: _win, nsis: _nsis, ...shared } = build
 
 // Download the matching Darwin runtime instead of reusing the host's Electron.

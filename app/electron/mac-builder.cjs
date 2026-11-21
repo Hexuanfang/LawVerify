@@ -1,8 +1,8 @@
 const { build } = require('../package.json')
 
 const signed = process.env.LAWVERIFY_MAC_SIGNED === '1'
-if (signed && process.platform === 'darwin') {
-  // 签名扫描内置 Python 大量文件时排队重试，避免耗尽文件句柄。
+if (process.platform === 'darwin') {
+  // 正式签名和 ad-hoc 完整性处理均需扫描 Python 文件，统一排队避免耗尽句柄。
   require('graceful-fs').gracefulify(require('node:fs'))
 }
 const { electronDist: _electronDist, win: _win, nsis: _nsis, ...shared } = build

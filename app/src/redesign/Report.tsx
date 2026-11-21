@@ -4,33 +4,24 @@ import { Brand } from './Home'
 import { VERIFICATION_STEPS, verificationRowState } from './verificationProgress'
 import { useApp } from './AppContext'
 import { STATUS_NAMES, type ReviewElement } from './model'
-import { groupReview } from './reviewOverview'
+import { reportSourceLabels as sourceLabels, reviewReportSummary } from './reviewOverview'
 import { CaseReportButton } from './CaseReportButton'
 import { caseCitations, describeCaseReportRow } from './caseResearchReport'
 import { wordExportReadiness } from './workflow'
 import { formatVerificationCalculation, VERIFICATION_ACTION_LABELS, verificationImpacts, verificationReportMetadata, verifiedCaseMemory, verifiedDocumentDiagnostics } from './verificationMemory'
 
-const sourceLabels = { l1: 'L1 原材料', l2: 'L2 法条', l3: 'L3 案例' }
-
 export function Report() {
   const app = useApp()
-  const { required, pending, warnings, passed } = groupReview(app.elements)
   const cases = caseCitations(app.elements, app.workspace?.knowledgeCases ?? [])
   const diagnostics = app.workspace && app.certificate ? verifiedDocumentDiagnostics(app.workspace, app.certificate) : []
   const calculations = app.workspace && app.certificate ? verifiedCaseMemory(app.workspace, app.certificate.caseId, app.certificate.id)
     .flatMap(item => item.calculation ? [{ item, calculation: item.calculation }] : []) : []
-  const warningCount = warnings.length + diagnostics.length
   const completed = app.documentReview.total - app.documentReview.unreviewed
   const stale = Boolean(app.certificate?.linkageStale)
   const impacts = app.certificate ? verificationImpacts(app.certificate, app.elements) : []
   const metadata = app.certificate ? verificationReportMetadata(app.certificate) : undefined
   const allowExport = Boolean(!app.busy && app.workspace && app.certificate && wordExportReadiness(app.workspace, app.certificate.id).allowed)
-  const summary = required.length ? '需修改后复检' : stale || pending.length ? '待完成核验' : allowExport ? '可以导出' : '暂无核验结果'
-  const guidance = required.length ? `${required.length} 项不通过或缺源，请先返回文书处理。`
-    : stale ? '材料或正文已更新，请重新核验。'
-    : pending.length ? `${pending.length} 项待人工核验，请先处理待办。`
-    : allowExport ? warningCount ? `仍有 ${warningCount} 项预警，导出报告会保留这些记录。` : '可生成审阅版或清洁版 Word。'
-    : '导入文书并完成核验后查看报告。'
+  const { required, summary, guidance, groups, counts } = reviewReportSummary(app.elements, stale, allowExport, diagnostics.length)
   const jump = (element: ReviewElement) => {
     app.setFilter('all')
     app.select(element.id)
@@ -40,7 +31,7 @@ export function Report() {
     app.setAssistantRequest({ mode: 'case', prompt: `请结合卷内材料归纳《${app.certificate?.title || '当前文书'}》的核验风险与优先处理事项。` })
     app.setPage('ws')
   }
-  const audits = app.audits.filter(item => item.certificateId === app.docId)
+  const audits = app.audits.filter(item => item.certificateId ? item.certificateId === app.docId : item.caseId === app.project?.id)
   const verificationAudits = app.certificate?.verification?.audit ?? []
   return (
     <div className="page active" id="pg-report">
@@ -76,18 +67,13 @@ export function Report() {
             <CaseReportButton rows={cases} /></section>
         </div>
         <div className="stats report-source-stats" aria-label="信源分类">
-          {(['l1', 'l2', 'l3'] as const).map(source => (
+          {counts.map(({ source, count }) => (
             <div className="stat" key={source}>
-              <b>{app.elements.filter(element => element.sources.some(item => item.st === source)).length}</b><span>{sourceLabels[source]}</span>
+              <b>{count}</b><span>{sourceLabels[source]}</span>
             </div>
           ))}
         </div>
-        {([
-          ['必须处理', required, true],
-          ['待核验', pending, true],
-          ['建议复核', warnings, false],
-          ['通过与标注', passed, false],
-        ] as const).map(([title, elements, open]) => (
+        {groups.map(([title, elements, open]) => (
           <details key={title} className="report-section" open={open}>
             <summary><h2>{title}</h2><span>{elements.length} 项</span></summary>
             {elements.map(element => <div key={element.id}>
@@ -153,6 +139,7 @@ export function Report() {
                 onClick={() => app.setDrawer(source)}>{source.loc || '查看关联出处'}</Button>)}
             </li>
           })}</ul> : <p className="empty-inline">当前文书暂无关联案例。</p>}
+          {cases.length > 0 && <CaseReportButton rows={cases} />}
         </details>
         <details className="report-section">
           <summary><h2>人工操作与核验记录</h2><span>{audits.length + verificationAudits.length} 条</span></summary>
@@ -164,7 +151,7 @@ export function Report() {
               {item.sources?.map((source, index) => <p key={index}>出处 · {source.name} {source.locator}</p>)}
               {!!item.affected?.length && <p>涉及 {item.affected.length} 项声明</p>}
             </div>)}
-            {audits.map(item => <p key={item.id}><time>{new Date(item.t).toLocaleString('zh-CN')}</time> {item.msg}</p>)}
+            {audits.map(item => <p key={item.id}><time dateTime={item.t}>{new Date(item.t).toLocaleString('zh-CN')}</time> {item.account} · {item.msg}</p>)}
             {!audits.length && !verificationAudits.length && '暂无人工操作。'}
           </div>
         </details>

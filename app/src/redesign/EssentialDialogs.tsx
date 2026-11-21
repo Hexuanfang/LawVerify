@@ -15,7 +15,8 @@ export function EssentialDialogs() {
         </div>)}
       </DialogContent>
     </Dialog>
-    {app.referenceTarget && <ReferenceEditor key={app.referenceTarget.id} />}
+    {app.referenceTarget && <ReferenceEditor key={app.referenceTarget.id} target={app.referenceTarget}
+      onClose={() => app.setReferenceTarget(null)} />}
     <Dialog open={Boolean(app.confirmation)} onOpenChange={open => { if (!open && !app.busy) app.setConfirmation(null) }}>
       <DialogContent className="fm-box new-form"><DialogHeader><DialogTitle>确认本段全部声明</DialogTitle>
         <DialogDescription>现有审阅记录按段落保存。本次将同时确认下列全部声明，请逐项核对出处。</DialogDescription></DialogHeader>

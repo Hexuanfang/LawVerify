@@ -43,6 +43,7 @@ export function CaseReportButton({ rows, query, children, autoFocus, requireConf
       }
       await exportCaseResearchReport(metadata, rows)
       app.toast('已导出案例检索报告')
+      await app.auditAssistantAction(certificate?.id, requireConfirmation ? '律师确认并导出助手案例检索报告' : '律师导出案例检索报告')
     } catch (cause) {
       app.setError(cause instanceof Error ? cause.message : '案例报告导出失败。')
     } finally {

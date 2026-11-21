@@ -33,3 +33,12 @@ test('省略工具名的续问使用上一次检索模式，明确的新指令�
   assert.deepEqual(assistantIntent('再查法条《民法典》第577条', cases), { skill: 'statute-mcp', query: '《民法典》第577条' })
   assert.equal(assistantIntent('还有吗？'), undefined)
 })
+
+test('无显式新技能的续问沿用上一轮非检索技能', () => {
+  assert.deepEqual(assistantIntent('那按时间顺序展开', { skill: 'risk', query: '付款证据' }),
+    { skill: 'risk', query: '那按时间顺序展开', continuation: true })
+  assert.deepEqual(assistantIntent('再精简一点', { skill: 'draft', query: '起草一份答辩状' }),
+    { skill: 'draft', query: '再精简一点', continuation: true })
+  assert.deepEqual(assistantIntent('再改写选区', { skill: 'draft', query: '起草一份答辩状' }),
+    { skill: 'rewrite', query: '' })
+})

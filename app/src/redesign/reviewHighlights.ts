@@ -4,7 +4,8 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { matchesFilter, STATUS_NAMES, type ReviewElement } from './model'
 
-type ReviewState = { elements: ReviewElement[]; selected: string; filter: string }
+type ReviewState = { elements: ReviewElement[]; selected: string; filter: string; editing?: boolean;
+  active?: { anchor: ReviewElement; mark: HTMLElement } }
 const reviewKey = new PluginKey<{ review: ReviewState; decorations: DecorationSet }>('lawverifyInlineReview')
 const blocks = new Set(['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'table', 'tableRow'])
 const cells = new Set(['tableCell', 'tableHeader'])
@@ -49,19 +50,42 @@ function buildDecorations(doc: ProseMirrorNode, review: ReviewState) {
     if (!elements?.length) return
     let index = textPositions(node, position)
     const original = elements[0].original.text
-    if (index.text !== original) index = textPositions(node, position, false)
+    if (index.text !== original && index.text.trim() !== original) index = textPositions(node, position, false)
     // 修改后的正文不再展示旧核验结果，保存并重核后由最新数据重新装饰。
-    if (index.text !== original) return
+    if (index.text !== original && index.text.trim() !== original) return
+    const offset = index.text === original ? 0 : index.text.length - index.text.trimStart().length
     for (const element of elements) {
-      if (index.text.slice(element.start, element.end) !== element.quote) continue
+      const anchorStart = offset + element.start
+      const anchorEnd = offset + element.end
+      if (index.text.slice(anchorStart, anchorEnd) !== element.quote) continue
       const classes = `mk mk-${element.src} st-${element.verdict} ${matchesFilter(element.verdict, review.filter) ? 'hit' : ''} ${review.selected === element.id ? 'sel' : ''}`
       const title = `${element.type} · ${STATUS_NAMES[element.verdict]}\n${element.sources.map(source => `${source.name} ${source.loc}`).join('\n') || '未找到出处'}`
+      const editable = review.editing && element.declaration && !/[\r\n\t]/u.test(element.quote)
       for (const piece of index.pieces) {
-        const start = Math.max(element.start, piece.start)
-        const end = Math.min(element.end, piece.end)
+        const start = Math.max(anchorStart, piece.start)
+        const end = Math.min(anchorEnd, piece.end)
         if (start < end) decorations.push(Decoration.inline(piece.position + start - piece.start, piece.position + end - piece.start,
-          { class: classes, 'data-el': element.id, title }))
+          { nodeName: 'mark', class: classes, 'data-el': element.id, title,
+            ...(editable && { 'data-inline-declaration': element.id, ...(start === anchorStart && { tabindex: '0' }) }) }))
       }
+    }
+    const active = review.active
+    if (!active || active.anchor.paragraphId !== node.attrs.documentId) return
+    const anchorStart = offset + active.anchor.start
+    const anchorEnd = offset + active.anchor.end
+    if (index.text.slice(anchorStart, anchorEnd) !== active.anchor.quote) return
+    const first = index.pieces.find(piece => piece.start <= anchorStart && piece.end > anchorStart)
+    if (!first) return
+    decorations.push(Decoration.widget(first.position + anchorStart - first.start, () => {
+      const root = document.createElement('span')
+      root.append(active.mark)
+      return root
+    }, { key: `edit-${active.anchor.id}`, ignoreSelection: true, stopEvent: () => true, side: -1 }))
+    for (const piece of index.pieces) {
+      const start = Math.max(anchorStart, piece.start)
+      const end = Math.min(anchorEnd, piece.end)
+      if (start < end) decorations.push(Decoration.inline(piece.position + start - piece.start, piece.position + end - piece.start,
+        { nodeName: 'span', class: 'declaration-editor-replaced', 'aria-hidden': 'true' }))
     }
   })
   return DecorationSet.create(doc, decorations)

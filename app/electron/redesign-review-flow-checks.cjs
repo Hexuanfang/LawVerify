@@ -4,7 +4,8 @@ const path = require('node:path')
 
 module.exports = async function checkReviewFlow({ evaluate, wait, clickText, screenshot, verification, selectReviewedFixture, saved, reload, enter }) {
   await evaluate(`new Promise((resolve, reject) => {
-    const request = indexedDB.open('lawverify-review-history', 1)
+    const request = indexedDB.open('lawverify-review-history')
+    request.onupgradeneeded = () => request.result.createObjectStore('audits', { keyPath: 'id' })
     request.onsuccess = () => {
       const transaction = request.result.transaction('audits', 'readwrite')
       transaction.objectStore('audits').add({ id: 'other-account', account: 'other@test.invalid', certificateId: 'qa-document', paragraphId: 'p1', elementId: 'qa-document:p1:paragraph', t: new Date().toISOString(), msg: '其他账号记录' })
@@ -320,7 +321,7 @@ module.exports.checkWordExport = async function checkWordExport({
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.document-editor-tools button')).find(button=>button.textContent.trim()==='导出原格式').disabled"), true)
     await clickText('.document-editor-notice button', '使用已保存正文')
 
-    await clickText('.workspace-document-heading button', '在线编辑')
+    await clickText('.workspace-document-heading button', '整篇排版')
     await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
     await evaluate(`(() => {
       const editor = document.querySelector('.whole-document-content');
@@ -476,7 +477,7 @@ module.exports.checkWordExport = async function checkWordExport({
   await switchTo(caseReportTitle)
   const activeBadge = ".workspace-doc-strip [aria-selected=true] .workspace-doc-badge"
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(activeBadge)}).title`), '2 项待处理')
-  await wait("document.querySelector('.review-todo-tabs button[aria-selected=true]')?.textContent === '待办 2'")
+  await wait("document.querySelector('.review-todo-tabs button[aria-selected=true]')?.textContent === '待办 3'")
   assert.equal(await evaluate("document.querySelectorAll('.review-todo-card').length"), 3)
   await evaluate("document.querySelector('.review-todo-card[data-type=E-FACT]').click()")
   await wait(`document.querySelector('.whole-document-content [data-el="${caseReportId}-declaration"].sel')`)
@@ -535,9 +536,10 @@ module.exports.checkWordExport = async function checkWordExport({
   await wait(`${result(selectedCase.title)}.querySelector('input[type=checkbox]')`)
   assert.equal(await evaluate(`${result(blockedCase.title)}.querySelector('input[type=checkbox]') === null`), true)
   await evaluate(`${result(selectedCase.title)}.querySelector('input[type=checkbox]').click()`)
-  await clickText('.workspace-ai-modes button', '案例报告')
+  await openSkills()
+  await clickText('.workspace-ai-menu [role=menuitemradio]', '案例报告')
   await fillPrompt('')
-  await wait("document.querySelector('[aria-label=\"案例报告\"]').getAttribute('aria-pressed') === 'true'")
+  await wait("document.querySelector('.workspace-ai-more[data-active] b')?.textContent === '案例报告'")
   assert.equal(await evaluate("document.querySelector('.assistant-composer button[type=submit]').disabled"), false)
   await evaluate("document.querySelector('.assistant-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))")
   await wait("document.querySelector('.assistant-case-report')")

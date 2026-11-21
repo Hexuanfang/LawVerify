@@ -33,7 +33,7 @@ async function check({ evaluate, wait, clickText, screenshot, window }) {
   const overviewVisible = "document.querySelector('.review-todos:not([hidden])')"
   await wait(overviewVisible)
   assert.equal(await evaluate("document.querySelector('.review-todos-count strong').textContent"), '3')
-  assert.equal(await evaluate("document.querySelector('.review-todos-progress progress').value"), 4)
+  assert.equal(await evaluate("document.querySelector('.review-todos-progress progress').value"), 3)
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-todo-card'), item => item.dataset.verdict)"),
     ['fail', 'miss', 'pending', 'warn'])
   assert.match(await evaluate("document.querySelector('.review-todo-fix').textContent"), /35,000元/)
@@ -51,7 +51,7 @@ async function check({ evaluate, wait, clickText, screenshot, window }) {
   await clickText('.review-detail-bar button', '返回待办')
   await wait(overviewVisible)
   assert.equal(await evaluate(`document.querySelector('${buttons}[aria-selected=true]').textContent`), '已通过 1')
-  await clickText(buttons, '待办 3')
+  await clickText(buttons, '待办 4')
   await evaluate("document.querySelector('.review-todo-warnings summary').click()")
   await clickText('.review-todo-warnings button', '查看全部预警')
   assert.equal(await evaluate(`document.querySelector('${buttons}[aria-selected=true]').textContent`), '预警 2')

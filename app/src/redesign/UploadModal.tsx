@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { api } from '../api'
 import { useApp } from './AppContext'
 import { importDocument } from './services'
-import { supportsDocumentFile } from './documentFile'
+import { documentFileAccept, documentFileHint, supportsDocumentFile } from './documentFile'
 import type { DocKey } from '../types'
 import { DocumentTypeSelect } from './DocumentTypeSelect'
 import { DirectoryLinksModal } from './DirectoryLinksModal'
@@ -27,7 +27,7 @@ export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
   const finishImport = () => setup ? setup.onImported() : app.setDocumentCase(null)
   const select = (files: File[]) => {
     if (files.some(file => !supportsDocumentFile(file.name))) {
-      app.toast('文书仅支持 Word（.doc、.docx）或 TXT。')
+      app.toast(documentFileHint)
       return
     }
     setDocuments(current => [
@@ -50,14 +50,14 @@ export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
         return
       }
       const caseId = project.id
+      const parseOrder = [...documents].sort((left, right) => left.size - right.size)
       if (verifyAfter) {
         app.setCaseIdForUpload(caseId, '')
         finishImport()
         await app.verify([], async (signal, report) => {
           if (app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready')
             await api.updateCase(caseId, { status: 'in_review' })
-          const result: Array<{ id: string; title: string }> = []
-          for (const [index, file] of documents.entries()) {
+          for (const [index, file] of parseOrder.entries()) {
             signal.throwIfAborted()
             report(
               '导入第 ' + (index + 1) + '/' + documents.length + ' 份 · ' + (imported.current.has(file) ? '已导入文书' : '正在解析文书') + ' ' + file.name,
@@ -67,28 +67,27 @@ export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
               const saved = await importDocument(caseId, file, signal, undefined, docKeys.get(file))
               imported.current.set(file, saved.certificate.id)
             }
-            result.push({ id: imported.current.get(file)!, title: file.name.replace(/\.[^.]+$/, '') })
           }
-          return result
+          return documents.map(file => ({ id: imported.current.get(file)!, title: file.name.replace(/\.[^.]+$/, '') }))
         })
         return
       }
-      let nextDoc = project.docs[0] ?? ''
       const saved = await app.run(async () => {
         if (app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready')
           await api.updateCase(caseId, { status: 'in_review' })
-        for (const [index, file] of documents.entries()) {
+        for (const [index, file] of parseOrder.entries()) {
           if (!imported.current.has(file)) {
             const result = await importDocument(caseId, file, undefined, message => {
               setProgress('第 ' + (index + 1) + '/' + documents.length + ' 份 · ' + message + ' ' + file.name)
             }, docKeys.get(file))
             imported.current.set(file, result.certificate.id)
           }
-          nextDoc = imported.current.get(file)!
         }
         setProgress('正在刷新案件工作区，完成后打开文书…')
       })
       if (saved) {
+        const lastFile = documents.at(-1)
+        const nextDoc = lastFile ? imported.current.get(lastFile)! : project.docs[0] ?? ''
         app.setCaseIdForUpload(caseId, nextDoc)
         finishImport()
         app.toast('文书已导入，可直接编辑或稍后核验')
@@ -116,10 +115,10 @@ export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
           <DirectoryLinksModal embeddedCaseId={setup.caseId} disabled={importing} />
         </section>}
         {!draftOnly && <section className="case-files-document" aria-labelledby="case-files-document-heading">
-          <div className="case-files-card-head"><h3 id="case-files-document-heading">待核验文书</h3><span>Word / TXT</span></div>
+          <div className="case-files-card-head"><h3 id="case-files-document-heading">待核验文书</h3><span>Word / TXT / Markdown</span></div>
           <label className={`dz ${busy ? 'disabled' : ''}`} onDragOver={event => event.preventDefault()}
         onDrop={event => { event.preventDefault(); if (!busy) select(Array.from(event.dataTransfer.files)) }}>
-        <input type="file" multiple disabled={busy} className="sr-only" aria-label="上传已撰写文书" accept=".doc,.docx,.txt"
+        <input type="file" multiple disabled={busy} className="sr-only" aria-label="上传已撰写文书" accept={documentFileAccept}
           onChange={event => { select(Array.from(event.target.files ?? [])); event.target.value = '' }} />
         <FileUp size={23} aria-hidden="true" />
         <b>拖拽或点击选择文书</b>

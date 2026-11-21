@@ -1,7 +1,7 @@
 import { DocumentEditor } from './DocumentEditor'
 import { useApp } from './AppContext'
 
-export function DocumentPaper({ editing }: { editing: boolean }) {
+export function DocumentPaper({ editing }: { editing: '' | 'declarations' | 'document' }) {
   const app = useApp()
   return app.certificate ? <DocumentEditor key={app.certificate.id} editing={editing} /> : (
     <article className="doc-paper"><div className="empty-doc">

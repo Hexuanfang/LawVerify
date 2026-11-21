@@ -1,5 +1,11 @@
 import type { ReviewElement, Source } from './model'
-import type { AppState } from '../types'
+import type { AppState, Certificate } from '../types'
+
+export function currentReviewFinding(certificate: Certificate | undefined, element: ReviewElement) {
+  const dirty = certificate?.verification?.dirty
+  if ((certificate?.linkageStale && !dirty) || dirty?.declarationIds.includes(element.id) || dirty?.paragraphIds.includes(element.paragraphId)) return undefined
+  return element.declaration
+}
 
 export function groupReview(elements: ReviewElement[]) {
   const required: ReviewElement[] = []
@@ -19,6 +25,27 @@ export function groupReview(elements: ReviewElement[]) {
     todo,
     processed: elements.length - todo.length,
   }
+}
+
+export const reportSourceLabels = { l1: 'L1 原材料', l2: 'L2 法条', l3: 'L3 案例' }
+
+export function reviewReportSummary(elements: ReviewElement[], stale: boolean, allowExport: boolean, diagnostics: number) {
+  const { required, pending, warnings, passed } = groupReview(elements)
+  const warningCount = warnings.length + diagnostics
+  const summary = required.length ? '需修改后复检' : stale || pending.length ? '待完成核验' : allowExport ? '可以导出' : '暂无核验结果'
+  const guidance = required.length ? `${required.length} 项不通过或缺源，请先返回文书处理。`
+    : stale ? '材料或正文已更新，请重新核验。'
+    : pending.length ? `${pending.length} 项待人工核验，请先处理待办。`
+    : allowExport ? warningCount ? `仍有 ${warningCount} 项预警，导出报告会保留这些记录。` : '可生成审阅版或清洁版 Word。'
+    : '导入文书并完成核验后查看报告。'
+  const groups = [
+    ['必须处理', required, true], ['待核验', pending, true],
+    ['建议复核', warnings, false], ['通过与标注', passed, false],
+  ] as const
+  const counts = (['l1', 'l2', 'l3'] as const).map(source => ({
+    source, count: elements.filter(element => element.sources.some(item => item.st === source)).length,
+  }))
+  return { required, summary, guidance, groups, counts }
 }
 
 export function documentBadge(elements: ReviewElement[]) {
@@ -53,10 +80,11 @@ export function linkedAuthorities(elements: ReviewElement[], workspace?: Pick<Ap
       const group = groups.get(key) ?? { tier: source.st, name: source.name, version: statute?.law.version, locations: new Map() }
       const locationKey = JSON.stringify([source.loc, source.quote])
       const previous = group.locations.get(locationKey)
-      const manual = source.reason === '人工挂靠出处' || Boolean(element.original.references?.some(reference =>
-        reference.reason === '人工挂靠出处' && reference.targetId === source.targetId && (reference.locator ?? '') === source.loc
-        && (reference.sentenceIndex === undefined || reference.sentenceIndex === element.sentenceIndex)))
+      const matchingReferences = element.original.references?.filter(reference => reference.targetId === source.targetId
+        && (reference.locator ?? '') === source.loc && (reference.sentenceIndex === undefined || reference.sentenceIndex === element.sentenceIndex))
+      const manual = source.reason === '人工挂靠出处' || Boolean(matchingReferences?.some(reference => reference.reason === '人工挂靠出处'))
       const mcp = /MCP/iu.test(`${entry?.sourceType ?? ''} ${judgment?.provider ?? ''}`)
+        || Boolean(matchingReferences?.some(reference => reference.reason === '检索挂靠出处' || reference.reason === '起草检索出处'))
       group.locations.set(locationKey, { source: previous?.source ?? source, manual: manual || !!previous?.manual, mcp: mcp || !!previous?.mcp })
       groups.set(key, group)
     }

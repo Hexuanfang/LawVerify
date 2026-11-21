@@ -17,9 +17,12 @@ import {
 } from 'docx'
 import type { CertificateExportContext } from './export-context'
 import type { AppState, Certificate } from './types'
-import { requireWordExportSnapshot } from './redesign/workflow'
+import { requireWordExportSnapshot, reviewReadiness } from './redesign/workflow'
+import { caseRoleLabels } from '../../server/src/intelligence/case-roles'
 import { STATUS_NAMES, type ReviewElement } from './redesign/model'
-import { readReviewAudits } from './redesign/review-audit-store'
+import { reportSourceLabels, reviewReportSummary } from './redesign/reviewOverview'
+import { caseCitations, caseReportOverview, describeCaseReportRow } from './redesign/caseResearchReport'
+import { readCaseAssistantAudits, readReviewAudits } from './redesign/review-audit-store'
 import { formatVerificationCalculation, VERIFICATION_ACTION_LABELS, verificationImpacts, verificationReportMetadata,
   verifiedCaseMemory, verifiedDocumentDiagnostics } from './redesign/verificationMemory'
 import {
@@ -107,6 +110,17 @@ function formatDateTime(date: Date) {
 }
 
 async function cleanReportSections(workspace: AppState, certificate: Certificate, elements: ReviewElement[]) {
+  const diagnostics = verifiedDocumentDiagnostics(workspace, certificate)
+  const report = reviewReportSummary(elements, Boolean(certificate.linkageStale), true, diagnostics.length)
+  const review = reviewReadiness(workspace, certificate.caseId, certificate.id)
+  const cases = caseCitations(elements, workspace.knowledgeCases ?? [])
+  const caseLines = cases.flatMap(row => {
+    const item = describeCaseReportRow(row)
+    return [
+      [item.title, item.caseNumber, item.court, item.judgmentDate, item.source, item.status].filter(Boolean).join(' · '),
+      ...item.details.map(detail => [detail.text, detail.url].filter(Boolean).join('　')),
+    ]
+  })
   const metadata = verificationReportMetadata(certificate)
   const metadataLines = metadata ? [
     `核验规则版本 ${metadata.profileVersion}`,
@@ -127,12 +141,23 @@ async function cleanReportSections(workspace: AppState, certificate: Certificate
     item.affected?.length ? `涉及 ${item.affected.length} 项声明` : '',
   ].filter(Boolean))
   const account = sessionStorage.getItem('lawverify-login-account') || workspace.user.email
-  const localAudits = await readReviewAudits(account, certificate.id)
-    .then(items => items.map(item => `${formatDateTime(new Date(item.t))} · ${item.account} · ${item.msg}`))
+  const localAudits = await Promise.all([readReviewAudits(account, certificate.id), readCaseAssistantAudits(account, certificate.caseId)])
+    .then(results => results.flat().sort((left, right) => left.t.localeCompare(right.t))
+      .map(item => `${formatDateTime(new Date(item.t))} · ${item.account} · ${item.msg}`))
     .catch(() => ['本机人工操作记录暂无法读取。'])
   return [
+    { title: '核验结论', lines: [report.summary, report.guidance, `人工审阅 ${review.total - review.unreviewed} / ${review.total} 段`] },
     { title: '核验时间与版本', lines: metadataLines },
+    { title: '信源分类', lines: report.counts.map(({ source, count }) => `${reportSourceLabels[source]} · ${count} 项声明`) },
+    ...report.groups.map(([title, items]) => ({ title: `${title} · ${items.length} 项`, lines: items.length
+      ? items.flatMap(element => [
+        [STATUS_NAMES[element.verdict], element.quote].join(' · '), element.reason,
+        ...(element.ignored ? ['律师已忽略此预警'] : []),
+        ...[element.declaration?.review?.note, element.original.note].filter((note): note is string => Boolean(note)),
+        ...element.sources.map(source => [reportSourceLabels[source.st], source.name, source.loc].filter(Boolean).join(' · ')),
+      ].filter(Boolean)) : ['暂无'] })),
     { title: '联动影响', lines: impacts },
+    { title: '案例检索报告预览', lines: cases.length ? [caseReportOverview(cases), ...caseLines] : ['当前文书暂无关联案例。'] },
     { title: '人工操作与核验记录', lines: [...audits, ...localAudits] },
   ].filter(section => section.lines.length > 0)
 }
@@ -472,7 +497,7 @@ export async function exportCertificateToWord(workspace: AppState, certificateId
     })) },
     caseFolder: workspace.cases.find(item => item.id === certificate.caseId) ?? null,
     evidences: workspace.evidences.filter(item => item.caseId === certificate.caseId),
-    roleLabel: certificate.role === 'defendant' ? '被告' : '原告',
+    roleLabel: caseRoleLabels[certificate.role] ?? '',
     operator: workspace.user.name || workspace.user.email,
     exportedAt: new Date(),
   }

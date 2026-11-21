@@ -167,7 +167,7 @@ export function WorkspaceMaterials() {
                     aria-label={`${row.name} · ${source.loc || '查看出处'}`} onClick={() => app.setDrawer(source)}>
                     <span className="material-description material-text">{source.loc || '查看出处'}</span>
                     {manual && <span className="material-origin">手动</span>}
-                    {mcp && <span className="material-origin">MCP</span>}
+                    {mcp && <span className="material-origin">检索</span>}
                   </button>
                 ))}
               </div>

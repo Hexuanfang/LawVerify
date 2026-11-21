@@ -1,7 +1,10 @@
 import { api } from '../api'
 
+export const documentFileAccept = '.doc,.docx,.txt,.md,.markdown'
+export const documentFileHint = '文书支持 Word（.doc、.docx）、TXT 或 Markdown（.md、.markdown）。'
+
 export function supportsDocumentFile(name: string) {
-  return /\.(docx?|txt)$/i.test(name)
+  return /\.(docx?|txt|md|markdown)$/i.test(name)
 }
 
 export async function downloadDocumentFile(id: string) {

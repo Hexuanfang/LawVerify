@@ -19,7 +19,7 @@ module.exports = async function checkCaseAssistant({ evaluate, wait, clickText, 
   await clickText('.topbar button', '案件记忆')
   await wait("document.querySelector('.case-memory-card')")
   await clickText('.case-memory-card button', '设置立场')
-  await wait("document.querySelector('.assistant-composer strong')?.textContent === '代理立场'")
+  await wait("document.querySelector('.workspace-ai-hello')?.textContent.includes('说明代理哪一方、希望达成什么目标')")
   await send('我代理原告测试原告，要求追偿本金。')
   await wait("document.querySelector('.case-assistant-proposal')")
   await fill('.case-assistant-proposal input', '编辑后的代理当事人')
@@ -32,7 +32,7 @@ module.exports = async function checkCaseAssistant({ evaluate, wait, clickText, 
     assert.equal(position.party, '编辑后的代理当事人')
     assert.deepEqual(position.goals, ['追偿本金及利息', '申请财产保全'])
   })
-  assert.equal(await evaluate("document.querySelector('.assistant-composer strong').textContent"), '自动路由')
+  assert.equal(await evaluate("document.querySelectorAll('.workspace-ai-modes button[aria-pressed=true], .workspace-ai-more[data-active]').length"), 0)
   await send('请分析借款交付的证据。')
   await wait("document.querySelector('.case-assistant-history')?.textContent.includes('请分析借款交付的证据。')")
   await saved(async state => {

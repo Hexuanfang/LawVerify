@@ -377,7 +377,7 @@
 .workspace-ai-header .seal { border-radius: 10px !important; }
 .workspace-ai-header-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .workspace-ai-header-actions button { width: 30px; height: 30px; color: var(--ink-2); }
-.workspace-ai-modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; padding: 0 14px 9px; flex-shrink: 0; }
+.workspace-ai-modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 0 14px 9px; flex-shrink: 0; }
 .workspace-ai-modes .workspace-ai-card { --tool-color: var(--ink); min-width: 0; height: auto; min-height: 66px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; overflow: hidden; padding: 7px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 13px; line-height: 1.3; }
 .workspace-ai-card > span { font-size: 15px; line-height: 1.15; }
 .workspace-ai-card small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); font-size: 11px; }
@@ -386,7 +386,8 @@
 .workspace-ai-modes .workspace-ai-card:hover { border-color: var(--ink-3); }
 .workspace-ai-modes .workspace-ai-card[aria-pressed=true] { border-color: var(--tool-color); background: var(--tool-color); color: var(--surface); }
 .workspace-ai-card[aria-pressed=true] small { color: var(--surface); }
-.workspace-ai-more { align-self: center; }
+.workspace-ai-more-icons { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; }
+.workspace-ai-more b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .workspace-ai-modes .workspace-ai-more:is([data-active], [data-state=open]) { border-color: var(--brand-blue); background: var(--c-l2-bg); color: var(--brand-ink); }
 .workspace-ai-body { flex: 1; min-height: 0; overflow: auto; padding: 0 14px 8px; scrollbar-width: thin; }
 .workspace-ai-body:has(.workspace-ai-hello) { display: grid; place-items: center; }
@@ -401,14 +402,17 @@
 .workspace-ai-panel .assistant-composer textarea { display: block; min-height: calc(1lh + 16px); max-height: min(152px, 22dvh); padding: 6px 5px; resize: none; overflow-y: auto; border: 0; outline: 0; background: transparent; box-shadow: none; field-sizing: content; font-size: 13.5px; line-height: 1.6; }
 .workspace-ai-composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding-left: 5px; }
 .workspace-ai-composer-footer small { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; color: var(--ink-2); font-size: 11px; }
-.workspace-ai-selected-skill { padding: 2px 6px; border: 1px solid var(--brand-blue); border-radius: 5px; background: var(--c-l2-bg); color: var(--brand-ink); white-space: nowrap; }
 .workspace-ai-composer-footer span { white-space: nowrap; }
 .workspace-ai-composer-footer kbd { padding: 1px 4px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--surface-2); font: inherit; }
 .workspace-ai-send { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--ink); color: var(--surface); }
 .workspace-ai-send:disabled { background: var(--line-2); color: var(--ink-2); opacity: .75; }
-.workspace-ai-spinner { animation: workspace-ai-spin .9s linear infinite; }
+.workspace-ai-spinner,
+.material-parsing-status[data-status=processing] { animation: workspace-ai-spin .9s linear infinite; }
 @keyframes workspace-ai-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .workspace-ai-spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-ai-spinner,
+  .material-parsing-status[data-status=processing] { animation: none; }
+}
 .workspace-ai-quote { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; padding: 2px 5px 2px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
 .workspace-ai-quote small { flex-shrink: 0; }
 .workspace-ai-quote-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

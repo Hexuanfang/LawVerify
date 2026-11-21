@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import type { CasePositionDraft } from '../types'
+import type { AssistantDocumentContext } from '../../../server/src/assistant/context'
+import { caseRoleLabels } from '../../../server/src/intelligence/case-roles'
 import { useApp } from './AppContext'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
@@ -8,10 +10,6 @@ import { Textarea } from './components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import './case-assistant.css'
 
-const roleLabels: Record<CasePositionDraft['role'], string> = {
-  plaintiff: '原告', defendant: '被告', third_party: '第三人',
-  applicant: '申请人', respondent: '被申请人', other: '其他',
-}
 const positionFields = { goals: '办案目标', admissions: '认可事项', disputes: '争议事项', boundaries: '办案约束' } as const
 
 export function useCaseAssistant(onPositionConfirmed: () => void) {
@@ -52,10 +50,10 @@ export function useCaseAssistant(onPositionConfirmed: () => void) {
     }
   }
 
-  const send = (prompt: string, quote: string | undefined, editPosition: boolean) => {
-    const text = quote ? `${prompt}\n\n当前文书选段：${quote}` : prompt
-    return perform(() => api.caseAgentMessage(caseId, text, editPosition ? 'position' : 'question'), result => {
+  const send = (prompt: string, editPosition: boolean, lawyerNote: string | undefined, context: AssistantDocumentContext) => {
+    return perform(() => api.caseAgentMessage(caseId, prompt, editPosition ? 'position' : 'question', undefined, lawyerNote, context), result => {
       setProposal(result.proposal ? { position: result.proposal, version: result.positionVersion } : null)
+      void app.auditAssistantAction(app.certificate?.id, editPosition ? 'AI 整理代理立场' : 'AI 回答案件问题')
     })
   }
 
@@ -89,7 +87,7 @@ export function useCaseAssistant(onPositionConfirmed: () => void) {
         <Select value={proposal.position.role} disabled={pending || app.busy}
           onValueChange={role => setProposal({ ...proposal, position: { ...proposal.position, role: role as CasePositionDraft['role'] } })}>
           <SelectTrigger aria-label="诉讼地位"><SelectValue /></SelectTrigger>
-          <SelectContent>{Object.entries(roleLabels).map(([id, label]) => <SelectItem key={id} value={id}>{label}</SelectItem>)}</SelectContent>
+          <SelectContent>{Object.entries(caseRoleLabels).map(([id, label]) => <SelectItem key={id} value={id}>{label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       {(Object.keys(positionFields) as Array<keyof typeof positionFields>).map(field => <label key={field}>

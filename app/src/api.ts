@@ -212,6 +212,7 @@ type CertificateStreamHandlers<T = CertificateStreamDonePayload> = {
 
 export interface AssistantDraftPreview {
   candidateId: string
+  authorityNotice?: string
   certificate: Pick<import('./types').Certificate, 'id' | 'title' | 'paragraphs'>
   draft: { type: 'draft-doc'; docType: string; items: Array<{ type: string; quote: string;
     loc: import('../../server/src/intelligence/verification/protocol').DeclarationLocation;
@@ -1021,9 +1022,10 @@ export const api = {
     return request<{ text: string }>('/api/assistant/transcriptions', { method: 'POST', body: form, signal })
   },
   caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question',
-    options?: import('./AssistantControls').AssistantSelection) {
+    options?: import('./AssistantControls').AssistantSelection, lawyerNote?: string,
+    context?: import('../../server/src/assistant/context').AssistantDocumentContext) {
     return request<WorkspaceResponse & { reply: string; proposal?: CasePositionDraft; positionVersion: number }>(
-      `/api/cases/${caseId}/agent/message`, { method: 'POST', body: JSON.stringify({ message, intent, options }) },
+      `/api/cases/${caseId}/agent/message`, { method: 'POST', body: JSON.stringify({ message, intent, options, lawyerNote, context }) },
     )
   },
   confirmCasePosition(caseId: string, position: CasePositionDraft, expectedVersion: number) {
@@ -1234,11 +1236,13 @@ export const api = {
   },
   previewAssistantDraft(payload: {
     docKey?: DocKey; model?: string; caseId: string; certificateId?: string; evidenceIds: string[];
-    role: 'plaintiff' | 'defendant'; focus: string; prompt?: string
+    role: RoleType; focus: string; prompt?: string; lawyerNote?: string;
+    selection?: import('../../server/src/intelligence/verification/rewrite-selection').RewriteSelection
+    context?: import('../../server/src/assistant/context').AssistantDocumentContext
   }, handlers: CertificateStreamHandlers<AssistantDraftPreview>, signal?: AbortSignal) {
     return streamRequest('/api/v1/assistant/draft/stream', { method: 'POST', body: JSON.stringify(payload), signal }, handlers)
   },
-  adoptAssistantCandidate(candidateId: string, target: { caseId: string; certificateId?: string }) {
+  adoptAssistantCandidate(candidateId: string, target: { caseId: string; certificateId?: string; declarationId?: string }) {
     return requestV1<{ certificateId: string; paragraphId?: string; elementId?: string }>(`/api/v1/assistant/candidates/${encodeURIComponent(candidateId)}/adopt`, {
       method: 'POST', body: JSON.stringify({ ...target, confirmed: true }),
     })
@@ -1280,6 +1284,8 @@ export const api = {
     certificateId: string
     evidenceIds: string[]
     prompt: string
+    lawyerNote?: string
+    context?: import('../../server/src/assistant/context').AssistantDocumentContext
     selection: import('../../server/src/intelligence/verification/rewrite-selection').RewriteSelection
   }, handlers: CertificateStreamHandlers, signal?: AbortSignal) {
     return streamRequest(`/api/certificates/${payload.certificateId}/rewrite/stream`, {
@@ -1288,6 +1294,8 @@ export const api = {
         model: payload.model,
         evidenceIds: payload.evidenceIds,
         prompt: payload.prompt,
+        lawyerNote: payload.lawyerNote,
+        context: payload.context,
         selection: payload.selection,
       }),
       signal,

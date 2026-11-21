@@ -10,12 +10,13 @@ const root = path.resolve(__dirname, '..')
 const c1 = require('../../server/eval/verification/fixtures/seed/documents.json').find(item => item.id === 'c1-qs')
 const layoutOnly = process.env.LAWVERIFY_REDESIGN_LAYOUT_ONLY === '1'
 const editorOnly = process.env.LAWVERIFY_REDESIGN_EDITOR_ONLY === '1'
+const inlineOnly = process.env.LAWVERIFY_REDESIGN_INLINE_ONLY === '1'
 const exportOnly = editorOnly || process.env.LAWVERIFY_REDESIGN_EXPORT_ONLY === '1'
 const assistantOnly = process.env.LAWVERIFY_REDESIGN_ASSISTANT_ONLY === '1'
 const evidenceTreeOnly = process.env.LAWVERIFY_REDESIGN_EVIDENCE_TREE_ONLY === '1'
 const reviewTodosOnly = process.env.LAWVERIFY_REDESIGN_REVIEW_TODOS_ONLY === '1'
 const caseDeleteOnly = process.env.LAWVERIFY_REDESIGN_CASE_DELETE_ONLY === '1'
-const directory = path.join(root, 'tmp', `redesign-qa-${Date.now()}`)
+const directory = path.join(root, 'tmp', `redesign-qa-${Date.now()}-${randomUUID().slice(0, 8)}`)
 fs.mkdirSync(directory, { recursive: true })
 app.setPath('userData', path.join(directory, 'electron-profile'))
 app.disableHardwareAcceleration()
@@ -103,7 +104,7 @@ app.whenReady().then(async () => {
         workspace.evidences.push(...files.map(([parent, fileName], index) => ({
           ...workspace.evidences[0], id: `qa-tree-${index}`, name: fileName, fileName, directoryId,
           number: `证据${index + 2}`, relativePath: `${folder}/${parent}${fileName}`.replaceAll('/', index === 3 ? '\\' : '/'),
-          parsing: { status: index === 3 ? 'review_required' : 'ready', revision: 'qa', sourceKey: 'qa', mode: 'auto', engineVersion: 'qa', updatedAt: '2026-11-15' },
+          parsing: { status: ['queued', 'processing', 'ready', 'review_required', 'failed'][index], revision: 'qa', sourceKey: 'qa', mode: 'auto', engineVersion: 'qa', updatedAt: '2026-11-15' },
         })))
       }
       workspace.certificates = [{ id: 'qa-document', caseId: 'qa-case', title: '民事起诉状', role: 'plaintiff', focus: '', createdAt: '2026-11-15', linkageInputKey: linkageMaterialFingerprint(workspace.evidences, workspace.evidenceInsights), paragraphIds: ['p1', 'p2', 'p3'], paragraphs: [
@@ -320,7 +321,8 @@ app.whenReady().then(async () => {
     console.log('Cold startup loading: '+JSON.stringify([...loadingMessages]))
     authSampling = false
     await evaluate('document.fonts.ready.then(() => true)')
-    await window.webContents.insertCSS('* { animation:none!important; transition:none!important; }')
+    const staticElements = evidenceTreeOnly ? '*:not(.material-parsing-status)' : '*'
+    await window.webContents.insertCSS(`${staticElements} { animation:none!important; transition:none!important; }`)
     assert.equal(await evaluate("document.querySelector('.case-name').textContent"), '王某诉李某民间借贷纠纷')
     const saved = fn => runWithWorkspaceAccount(account, async () => fn(await readWorkspace()))
     const reload = async () => { await evaluate('location.reload()'); await wait("document.querySelector('#pg-home .case-name')") }
@@ -329,6 +331,37 @@ app.whenReady().then(async () => {
       await wait("document.querySelector('#pg-home')")
       await evaluate(`Array.from(document.querySelectorAll('.case-card')).find(item => item.textContent.includes(${JSON.stringify(name)})).click()`)
       await wait("document.querySelector('#pg-ws')")
+    }
+    if (inlineOnly) {
+      await enter('王某诉李某民间借贷纠纷')
+      await clickText('.workspace-document-heading button', '在线编辑')
+      await wait("document.querySelector('mark[data-inline-declaration]')")
+      assert.equal(await evaluate("document.querySelector('.whole-document-content').contentEditable"), 'false')
+      await evaluate("document.querySelector('mark[data-inline-declaration]').click()")
+      await wait("document.activeElement.matches('mark.declaration-editor-mark[contenteditable]')")
+      await evaluate(`(() => {
+        const mark = document.activeElement;
+        getSelection().collapse(mark.lastChild, mark.lastChild.length);
+        document.execCommand('insertText', false, '已补充。');
+      })()`)
+      await wait("document.querySelector('.document-editor-status').textContent.includes('声明已保存 · 待重核')")
+      const editedParagraph = await saved(state => state.certificates.find(doc => doc.id === 'qa-document').paragraphs[0])
+      assert.equal(editedParagraph.text, c1.paragraphs[1] + '已补充。')
+      assert.match(editedParagraph.richText, /<strong><u>500,000元<\/u><\/strong>/u)
+      await evaluate(`(() => {
+        const mark = document.querySelector('.declaration-editor-mark');
+        mark.focus();
+        getSelection().collapse(mark.lastChild, mark.lastChild.length);
+        document.execCommand('insertText', false, '已复核。');
+        document.querySelector('.workspace-edit-toggle').click();
+      })()`)
+      await wait("!document.querySelector('.declaration-editor-mark')")
+      await wait("document.querySelector('.whole-document-content').textContent.includes('已补充。已复核。')")
+      assert.equal(await saved(state => state.certificates.find(doc => doc.id === 'qa-document').paragraphs[0].text),
+        c1.paragraphs[1] + '已补充。已复核。')
+      process.stdout.write('PASS 声明级编辑自动保存、离开前提交和原排版保留\n')
+      window.destroy(); await new Promise(resolve => server.close(resolve)); app.exit(0)
+      return
     }
     if (reviewTodosOnly) {
       await enter('王某诉李某民间借贷纠纷')
@@ -350,7 +383,17 @@ app.whenReady().then(async () => {
       assert.equal(await evaluate(`document.querySelectorAll('${fileRows}').length`), 6)
       assert.equal(await evaluate("document.querySelectorAll('.material-branch .material-branch .material-branch .material-branch .mat-it').length"), 1)
       assert.equal(await evaluate("document.querySelectorAll('.material-tree [data-status=review_required]').length"), 1)
-      assert.equal(await evaluate("document.querySelectorAll('.material-tree [data-status=ready]').length"), 4)
+      assert.equal(await evaluate("document.querySelectorAll('.material-tree [data-status=ready]').length"), 1)
+      const animatedStatuses = `Array.from(document.querySelectorAll('.material-tree .material-parsing-status'))
+        .filter(icon => getComputedStyle(icon).animationName !== 'none' && getComputedStyle(icon).animationIterationCount === 'infinite')
+        .map(icon => icon.dataset.status)`
+      const debuggerClient = window.webContents.debugger
+      debuggerClient.attach()
+      await debuggerClient.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+      assert.deepEqual(await evaluate(animatedStatuses), ['processing'])
+      await debuggerClient.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+      assert.deepEqual(await evaluate(animatedStatuses), [])
+      debuggerClient.detach()
       await screenshot('evidence-tree')
       await evaluate("document.querySelector('.material-folder[title=\"02 付款凭证\"]').click()")
       assert.equal(await evaluate(`document.querySelectorAll('${fileRows}').length`), 4)
@@ -541,6 +584,9 @@ app.whenReady().then(async () => {
     await screenshot('workspace-todos')
     await wait("document.querySelector('.whole-document-content[contenteditable=false]')")
     await clickText('.workspace-document-heading button', '在线编辑')
+    await wait("document.querySelector('mark[data-inline-declaration]')")
+    await clickText('.workspace-document-heading button', '完成编辑')
+    await clickText('.workspace-document-heading button', '整篇排版')
     await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
     assert.equal(await evaluate("document.querySelector('.workspace-edit-toggle').getAttribute('aria-pressed')"), 'true')
     assert.equal(await evaluate("document.activeElement.classList.contains('whole-document-content')"), true)
@@ -602,20 +648,23 @@ app.whenReady().then(async () => {
     if (layoutOnly) {
       await clickText('.workspace-doc-strip button', 'AI 助手')
       await wait("document.querySelector('.workspace-ai-panel .assistant-composer')")
-      assert.equal(await evaluate("document.querySelectorAll('.workspace-ai-modes button[aria-pressed] small').length"), 4)
+      assert.equal(await evaluate("document.querySelectorAll('.workspace-ai-modes > button').length"), 4)
+      assert.equal(await evaluate("document.querySelector('.workspace-ai-modes > button:nth-child(4)').textContent.trim()"), '更多技能')
+      assert.equal(await evaluate("document.querySelector('.workspace-ai-composer-footer strong')"), null)
       assert.equal(await evaluate("document.querySelectorAll('.workspace-ai-panel textarea').length"), 1)
       assert.doesNotMatch(await evaluate("document.querySelector('.workspace-ai-panel').textContent"), /语音|Skills|默认模型|代理设置与案件记忆/)
       await evaluate("window.__assistantComposer = document.querySelector('.assistant-composer textarea')")
       await clickText('.workspace-ai-modes button', '查法条')
       assert.equal(await evaluate("window.__assistantComposer === document.querySelector('.assistant-composer textarea')"), true)
-      assert.equal(await evaluate("document.querySelector('.assistant-composer strong').textContent"), '法条')
+      assert.equal(await evaluate("document.querySelector('.workspace-ai-card[data-mode=law]').getAttribute('aria-pressed')"), 'true')
       await clickText('.workspace-ai-modes button', '查法条')
-      assert.equal(await evaluate("document.querySelector('.assistant-composer strong').textContent"), '自动路由')
+      assert.equal(await evaluate("document.querySelector('.workspace-ai-card[data-mode=law]').getAttribute('aria-pressed')"), 'false')
       await wait("!document.querySelector('.new-toast')")
       await screenshot('assistant-auto')
       await evaluate(`document.querySelector('.workspace-ai-more').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))`)
       await wait("document.querySelector('.workspace-ai-menu[role=menu]')")
       assert.equal(await evaluate("document.querySelector('.workspace-ai-menu').dataset.side"), 'bottom')
+      assert.equal(await evaluate("!!document.querySelector('.workspace-ai-menu [role=menuitemradio][aria-label=案例报告]')"), true)
       await screenshot('assistant-more')
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
       await wait("!document.querySelector('.workspace-ai-menu[role=menu]')")
@@ -750,6 +799,7 @@ app.whenReady().then(async () => {
       await evaluate("document.querySelector('.workspace-ai-more').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'mouse'}))")
       await wait("document.querySelector('.workspace-ai-menu [role=menuitemradio]')")
       await clickText('.workspace-ai-menu [role=menuitemradio]', '改写润色')
+      await wait("document.querySelector('.workspace-ai-more b')?.textContent === '改写润色'")
       await fill('#workspace-ai-prompt', '调整叙述，不改变事实')
       const originalRequests = documentMock.requests.length
       await evaluate(`(() => {
@@ -787,15 +837,15 @@ app.whenReady().then(async () => {
       await screenshot('rewrite-rechecked')
       await evaluate("document.querySelector('[aria-label=\"移除引用\"]').click()")
       await wait("!document.querySelector('.workspace-ai-quote')")
-      await wait("document.querySelectorAll('.workspace-ai-modes button[aria-pressed]').length === 4")
+      await wait("document.querySelectorAll('.workspace-ai-modes > button').length === 4")
       await clickText('.workspace-ai-modes button', '查法条')
-      await wait("document.querySelector('.assistant-composer strong').textContent==='法条'")
+      await wait("document.querySelector('.workspace-ai-card[data-mode=law][aria-pressed=true]')")
       await clickText('.workspace-ai-modes button', '查类案')
-      await wait("document.querySelector('.assistant-composer strong').textContent==='案例'")
+      await wait("document.querySelector('.workspace-ai-card[data-mode=similar][aria-pressed=true]')")
       await screenshot('assistant-modes')
       await clickText('.workspace-ai-modes button', '起草文书')
       await clickText('.assistant-composer button', '发送')
-      await wait("document.querySelector('.document-assistant [role=alert]')?.textContent.includes('确认原告或被告代理立场')")
+      await wait("document.querySelector('.document-assistant [role=alert]')?.textContent.includes('确认代理立场')")
       await evaluate("Array.from(document.querySelectorAll('.workspace-doc-strip [role=tab]')).find(item=>item.textContent.includes('民事起诉状')).dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))")
       await wait("document.querySelector('.ctool h1')?.textContent === '民事起诉状' && !document.querySelector('.workspace-ai-panel')")
       await runWithWorkspaceAccount(account, async () => {

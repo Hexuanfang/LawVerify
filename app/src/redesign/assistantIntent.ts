@@ -2,7 +2,7 @@ import type { AnalysisSkillId } from '../../../server/src/assistant/analysis'
 import type { RetrievalSkillId } from '../../../server/src/assistant/retrieval'
 
 type AssistantSkillId = AnalysisSkillId | RetrievalSkillId | 'draft' | 'rewrite' | 'case-report'
-type RetrievalTurn = { skill: RetrievalSkillId; query: string }
+type AssistantTurn = { skill: AssistantSkillId; query: string }
 
 const lawCitation = /^(《[^》]+》|(?:中华人民共和国)?(?:民法典|合同法|民事诉讼法|劳动合同法|公司法|民法通则|民法总则))\s*第\s*[\d０-９零〇一二三四五六七八九十百千万两]+\s*条/u
 const articleNumber = /^第\s*[\d０-９零〇一二三四五六七八九十百千万两]+\s*条/u
@@ -12,7 +12,7 @@ const draftDocument = /^(?:撰写|写|拟写?|生成|补写)(?=.{0,50}(?:起诉�
 
 const commands: ReadonlyArray<readonly [AssistantSkillId, RegExp]> = [
   ['case-report', /^(?:(?:生成|预览|导出)?案例(?:检索)?报告|导出案例|打包案例)/u],
-  ['draft', /^起草/u],
+  ['draft', /^(?:起草|补写|续写)/u],
   ['draft', draftDocument],
   ['statute-mcp', /^(?:(?:查询|检索|搜索|查(?:阅|找|一下)?)\s*(?:法条|法规|条文)|(?:法条|法规|条文)(?=[：:\s]|$))/u],
   ['case-mcp', /^(?:(?:查询|检索|搜索|查(?:找|一下)?)\s*(?:类案|案例|判例|案号)|(?:案号|类案|案例|判例)(?=[：:\s]|$))/u],
@@ -35,10 +35,15 @@ function statuteQuery(query: string) {
   return query.replace(/第\s*[\d０-９零〇一二三四五六七八九十百千万两]+\s*条/gu, article => article.replace(/\s/gu, ''))
 }
 
-export function assistantIntent(text: string, previous?: RetrievalTurn): { skill: AssistantSkillId; query: string } | undefined {
+export function assistantIntent(text: string, previous?: AssistantTurn): (AssistantTurn & { continuation?: true }) | undefined {
   const instruction = text.trim().replace(/^(?:请\s*)?(?:帮我\s*)?/u, '')
   const followUp = /^(?:那(?:么|就)?\s*(?:再)?|还有|另外再?|再(?!审))\s*[，,：:]?\s*/u.exec(instruction)
   const command = instruction.slice(followUp?.[0].length ?? 0)
+  // “再精简一点”修订刚生成的草稿，明确指定选区的改写指令仍优先。
+  if (followUp && (previous?.skill === 'draft' || previous?.skill === 'rewrite')
+    && /^(?:精简|简洁|简短|润色|严谨)(?:一?点|些)?[。！!？?]*$/u.test(command)) {
+    return { skill: previous.skill, query: text.trim(), continuation: true }
+  }
   for (const [skill, rule] of commands) {
     const match = rule.exec(command)
     if (!match) continue
@@ -59,6 +64,7 @@ export function assistantIntent(text: string, previous?: RetrievalTurn): { skill
     return
   }
 
+  if (!isRetrievalTurn(previous.skill)) return { skill: previous.skill, query: text.trim(), continuation: true }
   const detail = subject.replace(/[吗呢么]?[？?。！!]+$|[吗呢么]$/u, '').trim()
   if (!detail || /^(?:别的|其他的|更多(?:的)?|类似的|看(?:看|一看))$/u.test(detail)) return { skill: previous.skill, query: '' }
   const lawName = previous.skill === 'statute-mcp' && articleNumber.test(detail) ? lawCitation.exec(previous.query)?.[1] : undefined

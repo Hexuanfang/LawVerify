@@ -383,7 +383,7 @@ export function FormModal() {
                 <div className="new-case-memory-fields">
                   <div className="case-basic-fields">
                     {field('stance', '代理立场（可由案件助手整理后确认）', true)}
-                    {field('note', '律师笔记（保存在本机）', true)}
+                    {field('note', '律师笔记（本机保存，用作 AI 助手上下文）', true)}
                   </div>
                   {field('court', '受诉法院 / 案件说明')}
                 </div>

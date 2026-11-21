@@ -1,4 +1,4 @@
-export type RoleType = 'plaintiff' | 'defendant'
+export type RoleType = import('../../server/src/intelligence/case-roles').CaseRole
 export type PointLogType = 'consume' | 'recharge' | 'refund' | 'adjust' | 'freeze' | 'unfreeze'
 export type PointActionType =
   | 'document_parse'
@@ -180,6 +180,8 @@ export interface ParagraphReference {
   label: string
   locator: string
   quote: string
+  sourceUrl?: string
+  caseDetails?: Pick<import('../../server/src/intelligence/verification/protocol').CaseVerification, 'caseNumber' | 'court' | 'judgmentDate'>
   sentenceIndex?: number
   sentenceText?: string
   note?: string
@@ -348,7 +350,7 @@ export interface Certificate {
   officeFile?: {
     id: string
     fileName: string
-    format: 'doc' | 'docx' | 'txt'
+    format: 'doc' | 'docx' | 'txt' | 'md' | 'markdown'
     version: number
     sha256: string
     contentHash: string
@@ -415,7 +417,7 @@ export interface CaseFolder {
 
 export interface CasePositionDraft {
   party: string
-  role: 'plaintiff' | 'defendant' | 'third_party' | 'applicant' | 'respondent' | 'other'
+  role: RoleType
   goals: string[]
   admissions: string[]
   disputes: string[]

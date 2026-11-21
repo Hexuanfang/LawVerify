@@ -26,6 +26,7 @@ export function richTextIndex(root: Node, separators = true) {
       if (separators && node instanceof HTMLElement && containers.has(node.tagName)
         && child.nodeType === Node.TEXT_NODE && !child.textContent?.trim()) return
       if (child instanceof HTMLElement && excluded.has(child.tagName)) return
+      if (child instanceof HTMLElement && child.classList.contains('ProseMirror-trailingBreak')) return
       if (separators && previous) {
         const currentTag = child instanceof HTMLElement ? child.tagName : ''
         const previousTag = previous instanceof HTMLElement ? previous.tagName : ''

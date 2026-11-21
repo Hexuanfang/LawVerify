@@ -26,6 +26,8 @@ export type Source = {
   name: string
   loc: string
   quote: string
+  url?: string
+  caseDetails?: NonNullable<CertificateParagraph['references']>[number]['caseDetails']
   reason?: string
   relation?: string
   main?: boolean
@@ -83,7 +85,7 @@ export function paragraphElements(
         const material = materials.get(source.id)
         return material && source.version === (material.contentHash ?? material.sourceFingerprint) && (!material.parsing || material.parsing.status === 'ready')
       }).map(source => ({
-        st: source.tier, targetId: source.id, name: source.name, loc: source.locator ?? '', quote: source.quote ?? '',
+        st: source.tier, targetId: source.id, name: source.name, loc: source.locator ?? '', quote: source.quote ?? '', url: source.url,
       }))
       const stale = paragraph.text.slice(start, end) !== item.quote || sources.length !== item.sources.length
       const invalidated = dirty.has(item.id)
@@ -95,7 +97,8 @@ export function paragraphElements(
             loc: link.locator, quote: link.quote, reason: '人工挂靠出处' }] : []
         }),
         ...(paragraph.references ?? []).flatMap(reference => isManual(reference.id) ? [{ st: reference.type === 'statute' ? 'l2' as const : 'l3' as const,
-          targetId: reference.targetId, name: reference.sourceTitle, loc: reference.locator, quote: reference.quote, reason: '人工挂靠出处' }] : []),
+          targetId: reference.targetId, name: reference.sourceTitle, loc: reference.locator, quote: reference.quote, url: reference.sourceUrl,
+          caseDetails: reference.caseDetails, reason: reference.reason ?? '人工挂靠出处' }] : []),
       ]
       const visibleSources = stale ? [] : [...manual, ...(invalidated ? [] : sources.filter(source =>
         !manual.some(other => other.st === source.st && other.targetId === source.targetId && other.loc === source.loc && other.quote === source.quote)))]
@@ -199,6 +202,8 @@ export function paragraphElements(
           loc: reference.locator ?? '',
           quote: reference.quote ?? '',
           reason: reference.reason,
+          url: reference.sourceUrl,
+          caseDetails: reference.caseDetails,
         })),
       ]
       const claims = claimsInParagraph.filter(

@@ -97,7 +97,7 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
     onProgress?.(completed, directory.files.length)
   }
 
-  for (const item of directory.files) {
+  for (const item of [...directory.files].sort((left, right) => left.size - right.size)) {
     if (!stillAuthorized()) return current
     const relativePath = `${directory.name}--${directory.id}/${item.relativePath}`
     const existing = indexed.get(relativePath)

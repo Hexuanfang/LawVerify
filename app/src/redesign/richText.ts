@@ -19,7 +19,10 @@ export function replaceRichText(
     throw new Error('无法在富文本中唯一定位文书正文，请刷新后核对再修改。')
 
   // 声明编辑已有精确范围。重复文字的共同前后缀可能对应另一次出现。
-  const change = edit ?? changedTextRange(original, replacement)
+  const relative = edit && changedTextRange(original.slice(edit.start, edit.end), edit.replacement)
+  const change = edit && relative
+    ? { start: edit.start + relative.start, end: edit.start + relative.end, replacement: relative.replacement }
+    : changedTextRange(original, replacement)
   const from = index.pointAt(base + change.start)
   const to = index.pointAt(base + change.end)
   const range = dom.createRange()

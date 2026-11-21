@@ -28,7 +28,7 @@ import { exportDocument } from './services'
 import { useWorkspace } from './useWorkspace'
 import { replaceRichText } from './richText'
 import { verificationStep } from './verificationProgress'
-import { appendReviewAudit, readReviewAudits, type ReviewAudit } from './review-audit-store'
+import { appendReviewAudit, readCaseAssistantAudits, readReviewAudits, type ReviewAudit } from './review-audit-store'
 
 type VerificationPreparation = (signal: AbortSignal, report: (message: string, title: string) => void) => Promise<Array<{ id: string; title: string }>>
 
@@ -60,6 +60,8 @@ function useAppState() {
     mode: 'case' | 'document' | 'law' | 'similar' | 'report' | 'rewrite'
     prompt?: string
     quote?: string
+    anchor?: import('../../../server/src/intelligence/verification/rewrite-selection').RewriteSelection
+    declarationIds?: string[]
     position?: boolean
   } | null>(null)
   const [confirmation, setConfirmation] = useState<ReviewElement | null>(null)
@@ -78,13 +80,17 @@ function useAppState() {
   const account = sessionStorage.getItem('lawverify-login-account') || ''
   useEffect(() => {
     let live = true
-    if (account && docId) void readReviewAudits(account, docId).then(items => {
+    if (account && (docId || caseId)) void Promise.all([
+      docId ? readReviewAudits(account, docId) : [],
+      caseId ? readCaseAssistantAudits(account, caseId) : [],
+    ]).then(results => {
+      const items = results.flat()
       if (live) setAudits(current => [...items, ...current.filter(item => !items.some(saved => saved.id === item.id))])
     }).catch(() => {
       if (live) setError('本机操作记录读取失败，请重新打开文书后重试。')
     })
     return () => { live = false }
-  }, [account, docId, setError])
+  }, [account, docId, caseId, setError])
   const [proc, setProc] = useState<{ step: number; message: string; error: string; done: boolean; title?: string }>({
     step: 0,
     message: '',
@@ -164,6 +170,7 @@ function useAppState() {
     const audit: ReviewAudit = {
       id: crypto.randomUUID(), account, t: new Date().toISOString(), msg: text,
       elementId: target.id, paragraphId: target.paragraphId, certificateId: target.certificateId,
+      caseId: project?.id,
     }
     try {
       await appendReviewAudit(audit)
@@ -173,8 +180,8 @@ function useAppState() {
     }
   }
   const auditAssistantAction = (certificateId: string | undefined, text: string, target?: { id: string; paragraphId: string }) => {
-    if (!certificateId || !account) return
-    return addAudit({ certificateId, id: target?.id ?? '', paragraphId: target?.paragraphId ?? '' }, text)
+    if (!project || !account) return
+    return addAudit({ certificateId: certificateId ?? '', id: target?.id ?? '', paragraphId: target?.paragraphId ?? '' }, text)
   }
   const reviewDeclaration = async (target: ReviewElement, action: Pick<DeclarationReviewAction, 'type' | 'note' | 'checks'>, message: string) => {
     if (!target.declaration || !await prepareDocument()) return false
@@ -251,24 +258,27 @@ function useAppState() {
     )
       await addAudit(target, '取消整段确认并记录驳回意见')
   }
-  const edit = async (target: Pick<ReviewElement, 'id' | 'certificateId' | 'paragraphId' | 'start' | 'end' | 'quote' | 'original' | 'sentenceIndex'>, text: string) => {
+  const edit = async (target: Pick<ReviewElement, 'id' | 'certificateId' | 'paragraphId' | 'start' | 'end' | 'quote' | 'original' | 'sentenceIndex'>,
+    text: string, quiet = false) => {
     if (!text.trim()) {
       toast('声明不能为空')
-      return false
+      return undefined
     }
     const original = target.original
     if (original.text.slice(target.start, target.end) !== target.quote) {
       toast('原声明定位已变化，请刷新后重试')
-      return false
+      return undefined
     }
+    if (text === target.quote) return original
     const nextText =
       original.text.slice(0, target.start) +
       text +
       original.text.slice(target.end)
     if (nextText === original.text && text !== target.quote) {
       toast('未找到原声明，请刷新文书后重试')
-      return false
+      return undefined
     }
+    let updatedParagraph: typeof original | undefined
     const saved = await run(async () => {
       const nextRanges = statementRanges(nextText)
       const shiftedAnchor = <
@@ -314,12 +324,12 @@ function useAppState() {
           : updated
       })
       await invalidateCaseReview()
-      await api.updateParagraph(
+      const { workspace: updated } = await api.updateParagraph(
         target.certificateId,
         target.paragraphId,
         {
           text: nextText,
-          richText: replaceRichText(original.richText, original.text, nextText),
+          richText: replaceRichText(original.richText, original.text, nextText, { start: target.start, end: target.end, replacement: text }),
           verified: false,
           links,
           link: links[0],
@@ -328,12 +338,13 @@ function useAppState() {
         { text: original.text, richText: original.richText,
           links: original.links?.length ? original.links : original.link ? [original.link] : [], references: original.references ?? [] },
       )
+      updatedParagraph = updated.certificates.find(item => item.id === target.certificateId)?.paragraphs.find(item => item.id === target.paragraphId)
       if (!workspace?.certificates.find(item => item.id === target.certificateId)?.verification) {
         await api.reviewParagraph(target.certificateId, target.paragraphId)
       }
-    }, '声明已保存，可重新核验')
+    }, quiet ? undefined : '声明已保存，可重新核验')
     if (saved) await addAudit(target, '修改声明，待重新核验')
-    return saved
+    return saved ? updatedParagraph : undefined
   }
   const applyAssistantRewrite = async (target: Pick<ReviewElement, 'id' | 'certificateId' | 'paragraphId' | 'start' | 'end' | 'quote' | 'original'>,
     candidate: string, version: string) => {
@@ -548,7 +559,7 @@ function useAppState() {
         target.declaration ? { id: crypto.randomUUID(), declarationId: target.id, revision: target.verificationRevision ?? null,
           reviewRevision: target.declaration.review?.revision ?? null, sourceIds } : undefined)
     }, '引用已保存，请重新审阅本段')
-    if (saved) { if (!target.declaration) await addAudit(target, '维护段落引用'); setReferenceTarget(null) }
+    if (saved && !target.declaration) await addAudit(target, '维护段落引用')
     return saved
   }
   const exportWord = async (mode: Parameters<typeof exportDocument>[2]) => {

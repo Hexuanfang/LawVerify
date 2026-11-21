@@ -5,7 +5,7 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
     if (!await evaluate("Boolean(document.querySelector('#pg-ws'))")) await enter('必要工作流测试')
     await wait("document.querySelector('.whole-document-content')")
     if (await evaluate("document.querySelector('.workspace-edit-toggle').getAttribute('aria-pressed') === 'false'")) {
-      await clickText('.workspace-document-heading button', '在线编辑')
+      await clickText('.workspace-document-heading button', '整篇排版')
     }
   }
   const selectBlock = async (index, position = 'all') => {

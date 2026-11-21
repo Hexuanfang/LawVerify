@@ -6,14 +6,23 @@ import { Textarea } from './components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog'
 import { useApp } from './AppContext'
-import { statementRanges } from './model'
+import { statementRanges, type ReviewElement } from './model'
 
-export function ReferenceEditor() {
+export function ReferenceEditor({ target, onClose, suggested }: {
+  target: ReviewElement
+  onClose: () => void
+  suggested?: EvidenceLink | ParagraphReference
+}) {
   const app = useApp()
-  const target = app.referenceTarget!
   const paragraph = target.original
-  const [links, setLinks] = useState<EvidenceLink[]>((paragraph.links?.length ? paragraph.links : paragraph.link ? [paragraph.link] : []).map(item => ({ ...item })))
-  const [references, setReferences] = useState<ParagraphReference[]>((paragraph.references ?? []).map(item => ({ ...item })))
+  const [links, setLinks] = useState(() => [
+    ...(paragraph.links?.length ? paragraph.links : paragraph.link ? [paragraph.link] : []),
+    ...(suggested && 'evidenceId' in suggested ? [suggested] : []),
+  ])
+  const [references, setReferences] = useState(() => [
+    ...(paragraph.references ?? []),
+    ...(suggested && 'targetId' in suggested ? [suggested] : []),
+  ])
   const [kind, setKind] = useState('evidence')
   const [sourceId, setSourceId] = useState('')
   const [locator, setLocator] = useState('')
@@ -51,7 +60,8 @@ export function ReferenceEditor() {
   }
   const save = async () => {
     if ([...links, ...references].some(item => visible(item.id) && (!item.locator.trim() || !item.quote.trim()))) { setError('请补齐引用的定位与引文，或移除无效引用。'); return }
-    await app.saveReferences(target, { links, link: links[0], references })
+    if (suggested && !await app.prepareDocument()) return
+    if (await app.saveReferences(target, { links, link: links[0], references })) onClose()
   }
   const fields = (item: EvidenceLink | ParagraphReference, index: number, isLink: boolean) => {
     const patch = (value: Partial<EvidenceLink & ParagraphReference>) => {
@@ -75,9 +85,11 @@ export function ReferenceEditor() {
         </SelectContent></Select>}
     </div>
   }
-  return <Dialog open onOpenChange={open => { if (!open && !app.busy) app.setReferenceTarget(null) }}>
+  return <Dialog open onOpenChange={open => { if (!open && !app.busy) onClose() }}>
     <DialogContent className="fm-box new-form essential-reference-dialog" onInteractOutside={event => event.preventDefault()}>
-      <DialogHeader><DialogTitle>管理引用</DialogTitle><DialogDescription>新增引用挂靠当前声明。请填写真实出处的定位与引文，保存后重新核验。</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{suggested ? '关联检索结果' : '管理引用'}</DialogTitle>
+        <DialogDescription>{suggested ? '请核对检索结果的定位和原文，保存后该引用待重新核验。'
+          : '新增引用挂靠当前声明。请填写真实出处的定位与引文，保存后重新核验。'}</DialogDescription></DialogHeader>
       <blockquote>{target.quote}</blockquote>
       <div className="essential-reference-list">{links.map((item, index) => visible(item.id) && fields(item, index, true))}{references.map((item, index) => visible(item.id) && fields(item, index, false))}
         {![...links, ...references].some(item => visible(item.id)) && <p>当前声明暂无引用，可在下方添加。</p>}</div>
@@ -92,7 +104,7 @@ export function ReferenceEditor() {
       <Textarea aria-label="新增引用原文" placeholder="核对后填写真实引文" value={quote} onChange={event => setQuote(event.target.value)} />
       <Button className="btn btn-gh" disabled={app.busy} onClick={add}>添加到待保存引用</Button>
       {error && <p className="text-fail" role="alert">{error}</p>}
-      <div className="fm-ft"><Button className="btn btn-gh" disabled={app.busy} onClick={() => app.setReferenceTarget(null)}>取消</Button>
+      <div className="fm-ft"><Button className="btn btn-gh" disabled={app.busy} onClick={onClose}>取消</Button>
         <Button className="btn btn-pri" disabled={app.busy} onClick={() => void save()}>保存引用</Button></div>
     </DialogContent>
   </Dialog>

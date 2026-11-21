@@ -20,6 +20,7 @@ const { createApp } = await import('../src/app.ts')
 const { rememberCaseAgentCredential } = await import('../src/case-agent-billing.ts')
 const { autoLinkCertificate } = await import('../src/service.ts')
 const { readWorkspace, writeWorkspace, runWithWorkspaceAccount } = await import('../src/store.ts')
+const { closeDocumentParser } = await import('../src/infrastructure/document-jobs.ts')
 
 // 只拦截模型与账户服务，其余请求（含本地 HTTP）都走真实链路。
 const originalFetch = globalThis.fetch
@@ -58,6 +59,7 @@ globalThis.fetch = async (input, init = {}) => {
 // fetch 的 mock 要覆盖整个文件：单个用例结束时恢复会让后续用例打真实网络。
 after(async () => {
   globalThis.fetch = originalFetch
+  await closeDocumentParser()
   rmSync(root, { recursive: true, force: true })
 })
 

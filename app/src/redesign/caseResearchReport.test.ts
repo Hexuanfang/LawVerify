@@ -94,3 +94,18 @@ test('实际导出的 DOCX 保留预览中的来源与核验状态', async () =>
     assert.ok(value.includes(marker), `DOCX 缺少 ${marker}`)
   }
 })
+
+test('已核案例呈现案由、四要素比对、裁判要旨与文书回查状态', () => {
+  const entry = { id: 'linked', title: '关联案例', caseNumber: '（2024）京01民终18号', cause: '民间借贷纠纷',
+    holdingSummary: '确认还款义务。' } as KnowledgeCase
+  const documents = [{ id: entry.id, caseNumber: entry.caseNumber, provider: 'fixture', url: 'https://example.invalid/judgment' }]
+  const element = { quote: '引用声明', verdict: 'warn', sources: [{ st: 'l3', name: entry.title, targetId: entry.id }],
+    declaration: { checks: { C3: { reason: '案由匹配。主体匹配。关键事实待核。争议未匹配。' } } },
+    caseVerification: { allowCitation: true, detailOutcome: 'found', effect: 'effective', match: 'analogous', documents },
+  } as unknown as ReviewElement
+  const [row] = caseCitations([element], [entry])
+  const preview = describeCaseReportRow(row)
+  for (const marker of ['民间借贷纠纷', '主体匹配', '关键事实待核', '争议未匹配', '确认还款义务', '已取得裁判原文']) {
+    assert.ok(preview.details.some(detail => detail.text.includes(marker)) || preview.documentStatus.includes(marker), marker)
+  }
+})

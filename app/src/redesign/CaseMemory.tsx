@@ -10,6 +10,7 @@ import { Textarea } from './components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { groupReview } from './reviewOverview'
 import { caseNoteKey } from './caseNotes'
+import { caseRoleLabels } from '../../../server/src/intelligence/case-roles'
 import { STATUS_NAMES } from './model'
 
 const views = [
@@ -108,6 +109,7 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
   const snapshots = verifiedCaseMemory(workspace, project.id)
   const calculations = snapshots.flatMap(item => item.calculation && item.verdict !== 'fail' && item.verdict !== 'miss'
     ? [{ item, calculation: item.calculation }] : [])
+  const assistantAudits = app.audits.filter(item => item.caseId === project.id && !item.certificateId)
   const sourceButtons = (sources: typeof snapshots[number]['sources']) => sources.map((source, index) => <Button size="sm" variant="outline" key={`${source.id}:${index}`}
     onClick={() => app.setDrawer({ st: 'l1', targetId: source.id, name: source.name, loc: source.locator ?? '', quote: source.quote ?? '' })}>{source.name} · {source.locator}</Button>)
   const ask = (prompt: string) => <Button size="sm" variant="ghost" onClick={() => onAssistant(prompt)}><Sparkles size={14} />问 AI</Button>
@@ -151,13 +153,13 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
             </div>
           </MemoryCard>
           <MemoryCard title="代理立场" action={<Button variant="outline" size="sm" onClick={() => onAssistant()}>{position ? '调整立场' : '设置立场'}</Button>}>
-            <p>{position ? `代理当事人 · ${position.party}` : '尚未确认代理立场。'}</p>
+            <p>{position ? `代理当事人 · ${position.party}（${caseRoleLabels[position.role]}）` : '尚未确认代理立场。'}</p>
             {position && <MemoryList values={position.goals} empty="暂无办案目标。" />}
             <Button size="sm" variant="outline" onClick={onDraft}><Sparkles size={14} />按立场起草</Button>
           </MemoryCard>
           <MemoryCard title="律师笔记" action={<Button size="sm" variant="outline" onClick={saveNote}>保存笔记</Button>}>
             <Textarea aria-label="律师笔记" placeholder="记录本案的工作思路…" value={note} maxLength={20000} onChange={event => setNote(event.target.value)} />
-            <small>笔记保存在本机。</small>
+            <small>笔记保存在本机，使用 AI 助手问答、起草或改写时自动作为案件上下文发送给模型。</small>
           </MemoryCard>
           <MemoryCard title="文书进度">
             {project.docs.length ? <ul className="case-memory-documents">{project.docs.map(id => {
@@ -231,6 +233,11 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
           <MemoryCard title="资金往来（待核对）"><MemoryList values={memory?.paymentFlow} /></MemoryCard>
         </TabsContent>
         <TabsContent value="risks" className="case-memory-grid">
+          {assistantAudits.length > 0 && <MemoryCard title="案件助手操作记录" wide>
+            <ul className="case-memory-list">{assistantAudits.map(item => <li key={item.id}>
+              <time dateTime={item.t}>{new Date(item.t).toLocaleString('zh-CN')}</time> · {item.account} · {item.msg}
+            </li>)}</ul>
+          </MemoryCard>}
           <MemoryCard title="核验待办" wide action={ask('请梳理本案核验风险，列出优先处理及补证事项。')}>
             <ul className="case-memory-list">{todo.map(item => <li key={item.id}>
               <button type="button" className="case-memory-link" onClick={() => focus(item.certificateId, item.id)}>

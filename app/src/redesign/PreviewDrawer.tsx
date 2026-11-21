@@ -175,7 +175,10 @@ export function PreviewDrawer() {
               </div>
             ) : (
               <div className="pv-paper">
+                {source?.caseDetails && <p>{[source.caseDetails.caseNumber, source.caseDetails.court, source.caseDetails.judgmentDate].filter(Boolean).join(' · ')}</p>}
                 <p>{source?.quote || '关联出处已不存在，请重新关联。'}</p>
+                {source?.url && /^https?:\/\//iu.test(source.url) &&
+                  <a className="source-file-actions" href={source.url} target="_blank" rel="noreferrer">打开来源 ↗</a>}
               </div>
             )}
           </div>

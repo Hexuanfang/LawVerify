@@ -85,7 +85,7 @@ export function CaseDeleteDialog({ target, onClose }: { target: CaseDeleteTarget
       savePendingDeletion(owner, id, { id, name, docs, cleanupOnly: true })
       try {
         await window.lawVerifyDesktop?.clearCaseDirectories?.({ account, caseId: id })
-        await Promise.all([removeCaseDrafts(account, docs), removeCaseReviewAudits(account, docs)])
+        await Promise.all([removeCaseDrafts(account, docs), removeCaseReviewAudits(account, docs, id)])
         localStorage.removeItem(caseNoteKey(userId, id))
         const recent = `lawverify-new-last:${userId}`
         let savedCaseId: string | undefined

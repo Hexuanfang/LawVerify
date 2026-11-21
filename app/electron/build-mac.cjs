@@ -36,7 +36,7 @@ function run(commandArgs) {
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
 
-for (const task of ['build', 'build:server', 'verify:workspace']) {
+for (const task of ['build', 'build:server']) {
   run([process.env.npm_execpath, 'run', task])
 }
 const runtimeSource = env.LAWVERIFY_PARSER_RUNTIME_SOURCE
@@ -45,6 +45,7 @@ for (const target of arch === 'all' ? ['arm64', 'x64'] : [arch]) {
   env.LAWVERIFY_PARSER_RUNTIME_SOURCE = env[`LAWVERIFY_PARSER_RUNTIME_SOURCE_${target.toUpperCase()}`]
     || (arch === 'all' ? path.join(appRoot, '..', 'tmp', `parser-runtime-${target}`) : runtimeSource || '')
   run([process.env.npm_execpath, 'run', 'prepare:desktop'])
+  run([process.env.npm_execpath, 'run', 'verify:workspace'])
   run(['node_modules/electron-builder/cli.js', '--config', 'electron/mac-builder.cjs',
     '--mac', 'dmg', 'zip', '--publish', 'never', `--${target}`])
   run(['electron/verify-mac.cjs', '--arch', target, ...(signed ? ['--signed'] : [])])

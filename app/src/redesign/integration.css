@@ -448,6 +448,21 @@
 .case-memory-list { padding-left: 16px; list-style: revert; }
 .case-memory-list li + li { margin-top: 5px; }
 .case-memory-card > button { justify-self: start; }
+.case-memory-card .case-memory-position-text { white-space: pre-wrap; color: var(--ink); }
+[data-slot=dialog-content].case-position-dialog { display: block; width: min(720px, calc(100% - 24px)); max-width: none; max-height: calc(100dvh - 24px); overflow: auto; padding: 0; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-lg); }
+.case-position-header, .case-position-body, .case-position-footer { padding: 16px clamp(12px, 3vw, 22px); }
+.case-position-header { border-bottom: 1px solid var(--line); text-align: left; }
+.case-position-header h2 { color: var(--ink); font-size: 20px; line-height: 1.35; }
+.case-position-header p { color: var(--ink-2); font-size: 13px; }
+.case-position-body { display: grid; gap: 12px; }
+.case-position-party { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 10px; }
+.case-position-body label { display: grid; gap: 6px; min-width: 0; color: var(--ink); font-size: 13px; font-weight: 600; }
+.case-position-body :is(input, select, textarea) { color: var(--ink); background: var(--surface-2); border: 1px solid var(--line-2); font-weight: 400; }
+.case-position-body select { width: 100%; height: 36px; padding-inline: 8px; border-radius: 6px; }
+.case-position-body textarea { display: block; height: clamp(145px, 37dvh, 400px); resize: vertical; padding: 12px; font-size: 15px; line-height: 1.65; }
+.case-position-body [role=alert] { color: var(--st-bad); font-size: 13px; }
+.case-position-footer { position: sticky; bottom: 0; display: flex; flex-flow: row wrap; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--line); background: var(--surface); }
+.case-position-footer button { border-radius: 999px; }
 .case-memory-metrics, .case-memory-links { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; }
 .case-memory-metrics { padding-top: 10px; border-top: 1px solid var(--line); gap: 8px 16px; }
 .case-memory-metrics button { display: inline-flex; align-items: center; gap: 4px; color: var(--c-l2); text-align: left; }

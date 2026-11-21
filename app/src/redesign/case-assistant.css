@@ -3,8 +3,3 @@
 .case-assistant-message { max-width: 100%; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
 .case-assistant-message p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .case-assistant-message-user { align-self: flex-end; max-width: 90%; color: var(--surface); background: var(--ink); border-color: var(--ink); border-radius: 12px 12px 3px 12px; }
-.case-assistant-proposal { margin-block: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.case-assistant-proposal h3 { margin-bottom: 8px; font-size: 14px; font-weight: 600; }
-.case-assistant-proposal label, .case-assistant-role { display: grid; gap: 4px; margin-bottom: 8px; color: var(--ink-2); }
-.case-assistant-proposal [role=alert] { color: var(--st-bad); }
-.case-assistant-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

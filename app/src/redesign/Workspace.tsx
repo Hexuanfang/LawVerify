@@ -4,6 +4,7 @@ import profile from '../../../server/src/intelligence/verification/doc-element-p
 import { declarationEditRange } from '../../../server/src/intelligence/verification/review-status.ts'
 import { Check, ChevronDown, PanelLeft, PanelRight, Pencil, Sparkles } from 'lucide-react'
 import { api } from '../api'
+import { whenUiIdle } from '../redesign-loader'
 import { Button } from './components/ui/button'
 import { Textarea } from './components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from './components/ui/tabs'
@@ -29,8 +30,10 @@ import { VERIFICATION_ACTION_LABELS, verificationImpacts } from './verificationM
 import { lastSelectedAnchor } from './rewriteAnchor'
 import type { Certificate } from '../types'
 
-const CaseMemory = lazy(() => import('./CaseMemory').then(module => ({ default: module.CaseMemory })))
-const WorkspaceAssistant = lazy(() => import('./WorkspaceAssistant').then(module => ({ default: module.WorkspaceAssistant })))
+const loadCaseMemory = () => import('./CaseMemory')
+const loadWorkspaceAssistant = () => import('./WorkspaceAssistant')
+const CaseMemory = lazy(() => loadCaseMemory().then(module => ({ default: module.CaseMemory })))
+const WorkspaceAssistant = lazy(() => loadWorkspaceAssistant().then(module => ({ default: module.WorkspaceAssistant })))
 
 function Topbar({ memory, onMemory }: { memory: boolean; onMemory: () => void }) {
   const app = useApp()
@@ -462,6 +465,7 @@ export function Workspace() {
   const rightOpen = !narrow || Boolean(selected && selected !== reviewPane.selected) || reviewPane.open === true
   const leftOpen = !narrow || (materialsOpen && !rightOpen)
 
+  useEffect(() => whenUiIdle(() => { void Promise.all([loadCaseMemory(), loadWorkspaceAssistant()]).catch(() => {}) }), [])
   useEffect(() => {
     const media = window.matchMedia('(max-width: 880px)')
     const update = (event: MediaQueryListEvent) => setNarrow(event.matches)
@@ -564,7 +568,7 @@ export function Workspace() {
           setAssistantRequest({ mode: 'document' })
         }} onAssistant={prompt => {
           setMemoryCase(null)
-          setAssistantRequest({ mode: 'case', prompt, position: !prompt })
+          setAssistantRequest({ mode: 'case', prompt })
         }} />
       </Suspense>}
       <div className={`workspace-content ${memory ? 'workspace-content-hidden' : ''}`}>

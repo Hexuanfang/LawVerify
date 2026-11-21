@@ -62,7 +62,6 @@ function useAppState() {
     quote?: string
     anchor?: import('../../../server/src/intelligence/verification/rewrite-selection').RewriteSelection
     declarationIds?: string[]
-    position?: boolean
   } | null>(null)
   const [confirmation, setConfirmation] = useState<ReviewElement | null>(null)
   const [page, setPage] = useState<Page>('home')

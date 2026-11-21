@@ -98,7 +98,7 @@ export function useDocumentAssistant(quote?: string, selection?: RewriteSelectio
     const target = supplement ? supplementTarget : rewriteTarget
     setError('')
     setNotice('')
-    if (mode === 'generate' && !draftRole) { setError('请先在「案件记忆」中确认代理立场。'); return }
+    if (mode === 'generate' && !draftRole) { setError('请先在「案件记忆」中填写并保存代理立场。'); return }
     if (mode === 'generate' && !evidenceIds.length) { setError('请先为案件链接原材料。'); return }
     if (supplement && !target) { setError('请在已保存的当前文书中重新选择补写位置。'); return }
     if (mode === 'rewrite' && (!rewriteTarget || !currentInstruction)) { setError('请从当前文书选择可唯一定位的选段，并填写改写要求。'); return }
@@ -172,7 +172,7 @@ export function useDocumentAssistant(quote?: string, selection?: RewriteSelectio
                   void app.auditAssistantAction(rewriteTarget.certificateId, 'AI 生成选区改写候选', rewriteTarget)
                 } }, abort.signal)
             } else {
-              if (!draftRole) throw new Error('请先确认代理立场。')
+              if (!draftRole) throw new Error('请先保存代理立场。')
               const targetId = certificate?.id
               const selection = supplement && target
                 ? { paragraphId: target.paragraphId, start: target.start, quote: target.quote } : undefined

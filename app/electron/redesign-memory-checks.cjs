@@ -37,7 +37,7 @@ module.exports = async function checkMemoryCalculation({ evaluate, wait, clickTe
     await wait("document.querySelector('.case-memory-tabs')")
   }
   await openMemory()
-  assert.match(await evaluate("document.querySelector('.case-memory-grid[data-state=active]').textContent"), /代理当事人 · 测试原告/)
+  assert.match(await evaluate("document.querySelector('.case-memory-grid[data-state=active]').textContent"), /测试原告（原告）/)
   await clickText('.case-memory-tabs [role=tab]', '事实时间线')
   await wait(`Array.from(document.querySelectorAll('.case-memory-grid[data-state=active] .case-memory-timeline li')).some(item => item.textContent.includes(${JSON.stringify(datedEvent)}) && item.textContent.includes(${JSON.stringify(date)}))`)
   await wait(`Array.from(document.querySelectorAll('.case-memory-grid[data-state=active] .case-memory-timeline li')).some(item => item.textContent.includes(${JSON.stringify(undatedEvent)}) && item.textContent.includes('日期待核'))`)

@@ -237,16 +237,12 @@ export function FormModal() {
     }
   }
   if (newCaseId) {
-    const stance = values.stance?.trim()
     return <UploadModal setup={{ caseId: newCaseId, task,
-      onImported: () => {
-        if (stance) app.setAssistantRequest({ mode: 'case', prompt: stance, position: true })
-        app.setForm(null)
-      },
+      onImported: () => app.setForm(null),
       onContinue: () => {
-        if (task === 'draft' || stance) {
+        if (task === 'draft') {
           app.setCaseIdForUpload(newCaseId, '')
-          app.setAssistantRequest(stance ? { mode: 'case', prompt: stance, position: true } : { mode: 'document' })
+          app.setAssistantRequest({ mode: 'document' })
         } else app.enter(newCaseId)
         app.setForm(null)
       },
@@ -381,10 +377,7 @@ export function FormModal() {
               <details className="edit-case-more">
                 <summary>案件记忆与更多信息 <small>选填</small></summary>
                 <div className="new-case-memory-fields">
-                  <div className="case-basic-fields">
-                    {field('stance', '代理立场（可由案件助手整理后确认）', true)}
-                    {field('note', '律师笔记（本机保存，用作 AI 助手上下文）', true)}
-                  </div>
+                  {field('note', '律师笔记（本机保存，用作 AI 助手上下文）', true)}
                   {field('court', '受诉法院 / 案件说明')}
                 </div>
               </details>

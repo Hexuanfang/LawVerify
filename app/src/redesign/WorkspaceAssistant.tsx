@@ -75,7 +75,6 @@ export function WorkspaceAssistant() {
   const [tool, setTool] = useState<Tool>(requestTools[request.mode])
   const [prompt, setPrompt] = useState(request.prompt ?? '')
   const [quote, setQuote] = useState(request.quote)
-  const [positionIntent, setPositionIntent] = useState(Boolean(request.position))
   const [turn, setTurn] = useState<Turn>()
   const [cards, setCards] = useState<LookupCard[]>([])
   const [reportSupplements, setReportSupplements] = useState<CaseReportSupplement[]>([])
@@ -117,12 +116,11 @@ export function WorkspaceAssistant() {
     setTool(requestTools[request.mode])
     setPrompt(request.prompt ?? '')
     setQuote(request.quote)
-    setPositionIntent(Boolean(request.position))
   }
 
   const documents = useDocumentAssistant(quote, anchor)
   const draftStarter = documents.draftRole ? draftStarters[documents.draftRole] : undefined
-  const conversation = useCaseAssistant(() => setPositionIntent(false))
+  const conversation = useCaseAssistant()
   const waiting = pending || documents.running || conversation.pending
   const disabled = app.busy || waiting
   const selectedMoreMode = moreModes.find(option => option.id === tool)
@@ -193,12 +191,12 @@ export function WorkspaceAssistant() {
     const previous = previousSkill.current
     const scopedPrevious = previous?.caseId === caseId && previous.certificateId === certificateId ? previous : undefined
     const continuation = tool === 'auto' || tool === scopedPrevious?.skill ? scopedPrevious : undefined
-    const routed = positionIntent ? undefined : assistantIntent(text, continuation)
+    const routed = assistantIntent(text, continuation)
     const skill = tool !== 'auto' ? tool : routed?.skill
     if (!skill) {
       previousSkill.current = undefined
       setTurn(undefined)
-      if (await conversation.send(text, positionIntent, lawyerNote, documentContext)) setPrompt('')
+      if (await conversation.send(text, lawyerNote, documentContext)) setPrompt('')
       return
     }
     const query = routed?.skill === skill ? routed.query : text
@@ -231,7 +229,6 @@ export function WorkspaceAssistant() {
   }
 
   const toggleMode = (id: (typeof modes)[number]['id'] | 'case-report', starter: string) => {
-    setPositionIntent(false)
     setTool(tool === id ? 'auto' : id)
     if (tool === id && prompt === starter) setPrompt('')
     if (tool !== id && (!prompt.trim() || prompt === supplementStarter || prompt === draftStarter
@@ -300,8 +297,8 @@ export function WorkspaceAssistant() {
     }
   }
 
-  const placeholder = (tool === 'draft' && quote ? '描述要在选区后补写的内容…' : placeholders[tool]) ?? (positionIntent ? '说明代理哪一方和办案目标…'
-    : quote ? '描述你想怎么处理这段文字…' : '描述你想起草、查找或核验的内容…')
+  const placeholder = (tool === 'draft' && quote ? '描述要在选区后补写的内容…' : placeholders[tool])
+    ?? (quote ? '描述你想怎么处理这段文字…' : '描述你想起草、查找或核验的内容…')
 
   return <section className={'workspace-ai-panel' + (expanded ? ' is-expanded' : '')} aria-label="AI 助手" aria-busy={waiting}>
     <header className="workspace-ai-header">
@@ -335,7 +332,6 @@ export function WorkspaceAssistant() {
             {moreModes.map(({ id, icon, label, group, starter }) => <DropdownMenuRadioItem key={id} value={id} aria-label={label}
               onSelect={() => {
                 if (id === 'case-report') { toggleMode(id, starter); return }
-                setPositionIntent(false)
                 if (tool === id) {
                   setTool('auto')
                   if (prompt === starter) setPrompt('')
@@ -354,7 +350,7 @@ export function WorkspaceAssistant() {
     <div className="workspace-ai-body" ref={scroll} role="log" aria-label="对话记录">
       {!turn && !conversation.hasResult && <div className="workspace-ai-hello">
         <h3>{quote ? '这段文字，想怎么处理？' : '需要我做什么？'}</h3>
-        <p>{positionIntent ? '说明代理哪一方、希望达成什么目标。' : quote
+        <p>{quote
           ? '选中文段已附在输入框上方。可以直接描述，或从「更多技能」选择改写润色。'
           : '点上方能力锁定模式，再点一次取消；也可以直接说。'}</p>
         {conversation.stance && <p className="workspace-ai-stance">当前立场 · {conversation.stance}</p>}

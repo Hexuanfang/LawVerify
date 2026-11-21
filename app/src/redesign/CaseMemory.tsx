@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, RefreshCw, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import type { Evidence } from '../types'
@@ -12,6 +12,7 @@ import { groupReview } from './reviewOverview'
 import { caseNoteKey } from './caseNotes'
 import { caseRoleLabels } from '../../../server/src/intelligence/case-roles'
 import { STATUS_NAMES } from './model'
+import { CasePositionDialog } from './CasePositionDialog'
 
 const views = [
   ['brief', '办案速览'],
@@ -102,14 +103,18 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
     try { return localStorage.getItem(noteKey) ?? '' } catch { return '' }
   })
   const [view, setView] = useState('brief')
+  const [positionTrigger, setPositionTrigger] = useState<HTMLButtonElement | null>(null)
+  const positionButton = useRef<HTMLButtonElement>(null)
   const timelineMaterials = view === 'timeline' ? workspace.evidences.filter(item => item.caseId === project.id) : []
   const timelineKey = JSON.stringify([noteKey, timelineMaterials.map(item => [item.id, item.name, item.fileName, item.duplicateOf,
     item.contentHash, item.sourceFingerprint, item.anchorHint, item.parsing?.revision, item.parsing?.artifactKey, item.parsing?.status])])
-  const { todo } = groupReview(Object.values(project.els).flat())
-  const snapshots = verifiedCaseMemory(workspace, project.id)
-  const calculations = snapshots.flatMap(item => item.calculation && item.verdict !== 'fail' && item.verdict !== 'miss'
-    ? [{ item, calculation: item.calculation }] : [])
-  const assistantAudits = app.audits.filter(item => item.caseId === project.id && !item.certificateId)
+  const { todo } = useMemo(() => groupReview(Object.values(project.els).flat()), [project.els])
+  const snapshots = useMemo(() => verifiedCaseMemory(workspace, project.id), [workspace, project.id])
+  const calculations = view === 'amounts' ? snapshots.flatMap(item => item.calculation && item.verdict !== 'fail' && item.verdict !== 'miss'
+    ? [{ item, calculation: item.calculation }] : []) : []
+  const assistantAudits = view === 'risks' ? app.audits.filter(item => item.caseId === project.id && !item.certificateId) : []
+  const verdicts = useMemo(() => view === 'evidence' ? new Map(Object.entries(project.els).map(([id, elements]) =>
+    [id, new Map(elements.map(item => [item.id, item.verdict]))])) : undefined, [project.els, view])
   const sourceButtons = (sources: typeof snapshots[number]['sources']) => sources.map((source, index) => <Button size="sm" variant="outline" key={`${source.id}:${index}`}
     onClick={() => app.setDrawer({ st: 'l1', targetId: source.id, name: source.name, loc: source.locator ?? '', quote: source.quote ?? '' })}>{source.name} · {source.locator}</Button>)
   const ask = (prompt: string) => <Button size="sm" variant="ghost" onClick={() => onAssistant(prompt)}><Sparkles size={14} />问 AI</Button>
@@ -152,10 +157,18 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
               <button type="button" onClick={() => setView('risks')}><b>{todo.length}</b> 项待处理 <ArrowRight size={12} /></button>
             </div>
           </MemoryCard>
-          <MemoryCard title="代理立场" action={<Button variant="outline" size="sm" onClick={() => onAssistant()}>{position ? '调整立场' : '设置立场'}</Button>}>
-            <p>{position ? `代理当事人 · ${position.party}（${caseRoleLabels[position.role]}）` : '尚未确认代理立场。'}</p>
-            {position && <MemoryList values={position.goals} empty="暂无办案目标。" />}
-            <Button size="sm" variant="outline" onClick={onDraft}><Sparkles size={14} />按立场起草</Button>
+          <MemoryCard title="代理立场" action={<Button ref={positionButton} variant="outline" size="sm" disabled={!folder}
+            onClick={event => setPositionTrigger(event.currentTarget)}>{position ? '编辑立场' : '填写立场'}</Button>}>
+            <p>代理对象、办案目标和写作约束，AI 起草时自动参考。</p>
+            {position ? <p className="case-memory-position-text">{[
+              `${position.party}（${caseRoleLabels[position.role]}）`, ...position.goals,
+              ...(position.boundaries.length ? ['写作约束：', ...position.boundaries] : []),
+            ].join('\n')}</p> : <Button size="sm" variant="ghost" disabled={!folder}
+              onClick={event => setPositionTrigger(event.currentTarget)}>＋ 填写立场，起草更贴案</Button>}
+            <div className="case-memory-links">
+              <Button size="sm" variant="outline" onClick={onDraft}><span aria-hidden="true">✍️</span>按立场起草</Button>
+              <Button size="sm" variant="outline" onClick={() => onAssistant()}><Sparkles size={14} />追问本案</Button>
+            </div>
           </MemoryCard>
           <MemoryCard title="律师笔记" action={<Button size="sm" variant="outline" onClick={saveNote}>保存笔记</Button>}>
             <Textarea aria-label="律师笔记" placeholder="记录本案的工作思路…" value={note} maxLength={20000} onChange={event => setNote(event.target.value)} />
@@ -191,12 +204,12 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
             <MemoryList values={memory?.timeline} ordered />
           </MemoryCard>}
         </TabsContent>
-        <TabsContent value="evidence" className="case-memory-grid">
+        <TabsContent value="evidence" className="case-memory-grid">{view === 'evidence' && <>
           <MemoryCard title="证据支持矩阵" wide action={ask('请梳理本案证据支持关系和需要补证的事项。')}>
             {snapshots.length ? <table className="case-memory-evidence-table" aria-label="证据支持矩阵">
               <thead><tr><th scope="col">文书声明</th><th scope="col">卷内出处</th><th scope="col">核验状态</th></tr></thead>
               <tbody>{snapshots.map(item => {
-                const verdict = project.els[item.certificateId]?.find(element => element.id === item.id)?.verdict ?? item.verdict
+                const verdict = verdicts?.get(item.certificateId)?.get(item.id) ?? item.verdict
                 return <tr key={item.id}>
                   <td><button type="button" className="case-memory-link" onClick={() => focus(item.certificateId, item.id)}>{item.quote}</button><small>{item.certificateTitle}</small></td>
                   <td><div className="case-memory-links">{sourceButtons(item.sources)}</div></td>
@@ -218,7 +231,7 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
             ))}</ul> : <p className="review-view-empty">暂无证据地图。</p>}
           </MemoryCard>
           <MemoryCard title="证据薄弱点" wide><MemoryList values={memory?.evidenceWeaknesses} /></MemoryCard>
-        </TabsContent>
+        </>}</TabsContent>
         <TabsContent value="amounts" className="case-memory-grid">
           <MemoryCard title="核验复算" wide action={ask('请复核本案关键金额，逐项列出计算口径、算式和证据。')}>
             {calculations.length ? <ul className="case-memory-list">{calculations.map(({ item, calculation }) => (
@@ -232,7 +245,7 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
           <MemoryCard title="关键金额（待核对）"><MemoryList values={memory?.keyAmounts} /></MemoryCard>
           <MemoryCard title="资金往来（待核对）"><MemoryList values={memory?.paymentFlow} /></MemoryCard>
         </TabsContent>
-        <TabsContent value="risks" className="case-memory-grid">
+        <TabsContent value="risks" className="case-memory-grid">{view === 'risks' && <>
           {assistantAudits.length > 0 && <MemoryCard title="案件助手操作记录" wide>
             <ul className="case-memory-list">{assistantAudits.map(item => <li key={item.id}>
               <time dateTime={item.t}>{new Date(item.t).toLocaleString('zh-CN')}</time> · {item.account} · {item.msg}
@@ -247,8 +260,10 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
           </MemoryCard>
           <MemoryCard title="程序风险"><MemoryList values={memory?.proceduralRisks} /></MemoryCard>
           <MemoryCard title="矛盾与待查问题"><MemoryList values={[...(memory?.contradictions ?? []), ...(memory?.openQuestions ?? [])]} /></MemoryCard>
-        </TabsContent>
+        </>}</TabsContent>
       </Tabs>
     </div>
+    {positionTrigger && folder && <CasePositionDialog folder={folder} onClose={() => setPositionTrigger(null)}
+      restoreFocus={() => (positionTrigger.isConnected ? positionTrigger : positionButton.current)?.focus()} />}
   </main>
 }

@@ -845,7 +845,7 @@ app.whenReady().then(async () => {
       await screenshot('assistant-modes')
       await clickText('.workspace-ai-modes button', '起草文书')
       await clickText('.assistant-composer button', '发送')
-      await wait("document.querySelector('.document-assistant [role=alert]')?.textContent.includes('确认代理立场')")
+      await wait("/确认代理立场|填写并保存代理立场/.test(document.querySelector('.document-assistant [role=alert]')?.textContent ?? '')")
       await evaluate("Array.from(document.querySelectorAll('.workspace-doc-strip [role=tab]')).find(item=>item.textContent.includes('民事起诉状')).dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))")
       await wait("document.querySelector('.ctool h1')?.textContent === '民事起诉状' && !document.querySelector('.workspace-ai-panel')")
       await runWithWorkspaceAccount(account, async () => {

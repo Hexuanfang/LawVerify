@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Evidence, EvidenceParsing } from './domain.js'
 import { AppError } from './core/app-error.js'
@@ -50,19 +50,45 @@ async function readArtifact(evidence: Evidence): Promise<ParsedArtifact | null> 
   }
 }
 
-async function inputPath(evidence: Evidence, staged: string | null, signal: AbortSignal) {
-  if (evidence.storageKey) {
-    const root = path.resolve(getStorageRoot())
-    const resolved = path.resolve(root, evidence.storageKey)
-    const relative = path.relative(root, resolved)
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('原件位置超出存储目录')
-    return resolved
+function storedInputPath(storageKey: string) {
+  const root = path.resolve(getStorageRoot())
+  const resolved = path.resolve(root, storageKey)
+  const relative = path.relative(root, resolved)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('原件位置超出存储目录')
+  return resolved
+}
+
+function inlineInput(evidence: Evidence) {
+  return (evidence.sourceDataUrl || evidence.previewDataUrl || '').match(/^data:[^;,]+;base64,([\s\S]+)$/)?.[1]
+}
+
+async function inputSize(evidence: Evidence) {
+  try {
+    if (evidence.storageKey) {
+      const file = await stat(storedInputPath(evidence.storageKey))
+      if (file.isFile()) return file.size
+    } else {
+      const encoded = inlineInput(evidence)
+      if (encoded) return Buffer.byteLength(encoded.replace(/\s/g, ''), 'base64')
+    }
+  } catch {
+    // 仍由解析流程记录丢失或无法读取的原件。
   }
-  const data = evidence.sourceDataUrl || evidence.previewDataUrl || ''
-  const match = data.match(/^data:[^;,]+;base64,([\s\S]+)$/)
-  if (!match || !staged) throw new Error('当前材料没有可读取的本地原件')
+  return Infinity
+}
+
+export async function sortEvidenceParsingBatch(evidences: Evidence[]) {
+  if (evidences.length < 2) return evidences
+  const sized = await Promise.all(evidences.map(async evidence => ({ evidence, size: await inputSize(evidence) })))
+  return sized.sort((left, right) => left.size - right.size).map(item => item.evidence)
+}
+
+async function inputPath(evidence: Evidence, staged: string | null, signal: AbortSignal) {
+  if (evidence.storageKey) return storedInputPath(evidence.storageKey)
+  const encoded = inlineInput(evidence)
+  if (!encoded || !staged) throw new Error('当前材料没有可读取的本地原件')
   await mkdir(path.dirname(staged), { recursive: true })
-  await writeFile(staged, Buffer.from(match[1], 'base64'), { signal })
+  await writeFile(staged, Buffer.from(encoded, 'base64'), { signal })
   return staged
 }
 
@@ -99,9 +125,12 @@ export async function ensureEvidenceParsed(evidenceId: string, options: Evidence
   const source = snapshot.evidences.find(item => item.id === evidenceId)
   if (!source) return undefined
   // 同一证据 ID 的原件替换后必须得到新任务，不能复用旧原件尚未完成的 Promise。
-  const key = JSON.stringify([getCurrentWorkspaceAccount(), evidenceId, sourceKey(source)])
+  const keyParts = [getCurrentWorkspaceAccount(), evidenceId, sourceKey(source)]
+  const pdf = /\.pdf$/i.test(source.fileName)
+  if (pdf) keyParts.push(options.mode ?? source.parsing?.mode ?? 'auto')
+  const key = JSON.stringify(keyParts)
   const existing = pending.get(key)
-  if (existing && !options.force) return existing
+  if (existing && (!options.force || pdf)) return existing
   const task = performParsing(evidenceId, options).finally(() => { if (pending.get(key) === task) pending.delete(key) })
   pending.set(key, task)
   return task
@@ -130,6 +159,10 @@ async function performParsing(evidenceId: string, options: EvidenceParsingOption
     const task = { controller, finished }
     const artifactKey = `${revision}.json`
     const output = artifactPath(artifactKey)
+    const checkpointKey = /\.pdf$/i.test(evidence.fileName)
+      ? `${hash(JSON.stringify(['pdf-segments-v1', evidence.id, evidence.parsing!.sourceKey, evidence.parsing!.mode]))}.json`
+      : undefined
+    const checkpoint = checkpointKey ? artifactPath(checkpointKey) : undefined
     const inputName = evidence.storageKey ? null : parseInputName(revision, evidence.fileName)
     const staged = inputName ? path.join(accountDirectory(), 'inputs', inputName) : null
     let saved = false
@@ -137,6 +170,7 @@ async function performParsing(evidenceId: string, options: EvidenceParsingOption
       const current = await mutateCurrent(evidenceId, revision, item => {
         // 在创建任何文件前登记归属，并在同一工作区锁内登记正在运行的任务。
         rememberCaseFile(item.caseId, `parse:${artifactKey}`)
+        if (checkpointKey) rememberCaseFile(item.caseId, `parse:${checkpointKey}`)
         if (inputName) rememberCaseFile(item.caseId, `parse-input:${inputName}`)
         activeParsing.set(task, caseScope(item.caseId))
         item.parsing!.status = 'processing'
@@ -145,7 +179,8 @@ async function performParsing(evidenceId: string, options: EvidenceParsingOption
       if (!current) return undefined
       controller.signal.throwIfAborted()
       const artifact = await runDocumentParsing(await inputPath(evidence, staged, controller.signal), output,
-        evidence.fileName, evidence.sourceMimeType, evidence.parsing!.mode, controller.signal, options.batchSize)
+        evidence.fileName, evidence.sourceMimeType, evidence.parsing!.mode, controller.signal, options.batchSize,
+        checkpoint)
       const parsed = await mutateCurrent(evidenceId, revision, item => {
         item.parsing = { ...item.parsing!, artifactKey, engineVersion: artifact.engineVersion,
           warnings: artifact.warnings, status: artifact.reviewRequired ? 'review_required' : 'ready', updatedAt: now() }
@@ -165,7 +200,8 @@ async function performParsing(evidenceId: string, options: EvidenceParsingOption
         item.summaryStatus = 'idle'
       })
     } finally {
-      await Promise.allSettled([...(staged ? [staged] : []), ...(!saved ? [output] : [])].map(file => unlink(file)))
+      const temporary = [staged, saved ? checkpoint : output].filter((file): file is string => Boolean(file))
+      await Promise.allSettled(temporary.map(file => unlink(file)))
       activeParsing.delete(task)
       finish()
     }

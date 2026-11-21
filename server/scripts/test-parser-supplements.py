@@ -1,6 +1,7 @@
 """验证 PDF 补充抽取的正文覆盖判断，无需启动模型。"""
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -41,6 +42,43 @@ class SupplementTests(unittest.TestCase):
                 result = self.supplement(native, markdown, native)
                 self.assertEqual(result["text"], markdown)
                 self.assertEqual(len(result["blocks"]), 1)
+
+    def test_supplement_cache_requires_identical_pixels_and_bitmap_shape(self):
+        parser = Parser.__new__(Parser)
+        parser.pdf_images = {}
+        parser.recognize_image = MagicMock(side_effect=["同一金额", "不同像素", "不同步长"])
+
+        def bitmap(pixels, stride=3):
+            return SimpleNamespace(width=1, height=1, stride=stride, format=2, buffer=pixels, to_pil=MagicMock())
+
+        self.assertEqual(parser.recognize_pdf_image(bitmap(b"abc")), "同一金额")
+        self.assertEqual(parser.recognize_pdf_image(bitmap(b"abc")), "同一金额")
+        self.assertEqual(parser.recognize_pdf_image(bitmap(b"abd")), "不同像素")
+        self.assertEqual(parser.recognize_pdf_image(bitmap(b"abc", stride=4)), "不同步长")
+        self.assertEqual(parser.recognize_image.call_count, 3)
+
+    def test_supplement_reports_ocr_memory_error_and_offsets_generated_locators(self):
+        parser = Parser.__new__(Parser)
+        parser.memory_bounded = True
+        parser.recognize_pdf_image = MagicMock(side_effect=RuntimeError("Failed to allocate memory"))
+        image = MagicMock()
+        image.get_px_size.return_value = (80, 100)
+        page = MagicMock()
+        page.get_textpage.return_value.get_text_range.return_value = "原生行"
+        page.get_objects.return_value = [image]
+        document = MagicMock()
+        document.__len__.return_value = 1
+        document.__getitem__.return_value = page
+        result = {"text": "【来源：第 5 页的合同】", "blocks": [], "warnings": []}
+        with patch("pypdfium2.PdfDocument", return_value=document):
+            with self.assertRaisesRegex(RuntimeError, "Failed to allocate memory"):
+                parser.supplement_pdf_images(Path("fixture.pdf"), result, page_offset=20)
+            parser.recognize_pdf_image.side_effect = ValueError("invalid bitmap")
+            parser.supplement_pdf_images(Path("fixture.pdf"), result, page_offset=20)
+        self.assertEqual(result["warnings"], ["第 21 页 · 第 1 张图识别失败，请核对原件"])
+        self.assertEqual(result["blocks"][0]["page"], 1)
+        self.assertEqual(result["blocks"][0]["locator"], "第 21 页 · 原生文本")
+        self.assertTrue(result["text"].startswith("【来源：第 5 页的合同】"))
 
 
 if __name__ == "__main__":

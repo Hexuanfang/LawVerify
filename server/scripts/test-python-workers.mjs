@@ -87,6 +87,42 @@ test('解析队列在两个账号间轮转，先到账号的第二件不抢占�
   } finally { await pool.close() }
 })
 
+test('桌面解析先分派队列中的小文件，同大小保留入队顺序', async () => {
+  const directory = await mkdtemp(path.join(root, 'tmp/parser-queue-size-'))
+  const GiB = 1024 ** 3
+  const pool = new HttpWorkerPool({ ...options, desktopResources: {
+    sample: () => ({ cores: 8, totalBytes: 16 * GiB, freeBytes: 8 * GiB, cpuLoad: 0.1 }),
+  } })
+  try {
+    const order = []
+    const running = pool.run({ value: 'running', delay: 0.15 }).then(result => order.push(result.value))
+    const submit = (name, sizeBytes) => pool.run({ action: 'parse', fileName: `${name}.txt`, sizeBytes,
+      outputPath: path.join(directory, `${name}.json`),
+    }).then(() => order.push(name))
+    await Promise.all([running, submit('large', 1000), submit('small-first', 10), submit('small-second', 10)])
+    assert.deepEqual(order, ['running', 'small-first', 'small-second', 'large'])
+  } finally {
+    await pool.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('大 PDF 可用内存恢复时升级到 3 GiB worker', async () => {
+  const MiB = 1024 ** 2
+  let freeBytes = 3584 * MiB
+  const pool = new HttpWorkerPool({ ...options, desktopResources: {
+    keepWarm: true, sample: () => ({ cores: 16, totalBytes: 16384 * MiB, freeBytes, cpuLoad: 0.1 }),
+  } })
+  try {
+    const low = await pool.run({ action: 'resource-test', fileName: 'first.pdf' })
+    assert.equal(low.memoryMB, 1536)
+    freeBytes = 5120 * MiB
+    const upgraded = await pool.run({ action: 'resource-test', fileName: 'large.pdf', pdfWhole: 'prefer' })
+    assert.equal(upgraded.memoryMB, 3072)
+    assert.notEqual(upgraded.pid, low.pid)
+  } finally { await pool.close() }
+})
+
 test('桌面解析按资源增长并发，可用内存低时保留排队任务', async () => {
   const GiB = 1024 ** 3
   let freeBytes = GiB

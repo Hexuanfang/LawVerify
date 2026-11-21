@@ -77,10 +77,14 @@ export class HttpWorkerPool {
       this.maintain(budget)
     }
     while (this.queue.length) {
-      // 每个账号一次执行一件，优先选择最久未获分配的账号。
+      // 桌面解析优先分派小文件，HTTP 服务继续按账号轮转。
       const job = this.queue.reduce((best, item) => {
-        if (item.owner.active || (best && best.owner.turn <= item.owner.turn)) return best
-        return item
+        if (item.owner.active) return best
+        if (!best) return item
+        if (this.resources && item.input.action === 'parse' && best.input.action === 'parse') {
+          return (item.input.sizeBytes ?? Infinity) < (best.input.sizeBytes ?? Infinity) ? item : best
+        }
+        return best.owner.turn <= item.owner.turn ? best : item
       }, null)
       if (!job) break
       const slot = budget ? this.chooseSlot(job, budget) : this.slots.find(item => !item.active)
@@ -147,6 +151,19 @@ export class HttpWorkerPool {
     const active = this.slots.filter(slot => slot.active || slot.retiring).map(workerProfile)
     const idle = this.slots.filter(slot => !slot.active && !slot.retiring)
     const resident = this.residentSlot()
+    if (job.input.pdfWhole === 'prefer' && !active.length) {
+      const whole = idle.find(slot => slot.profile?.device === 'cpu' && slot.profile.memoryMB >= 3072
+        && fitsWorker(budget, active, workerProfile(slot)))
+      if (whole) return whole
+      const profile = allocateWorker(budget, active, 'cpu', 3072)
+      if (profile) {
+        const empty = idle.find(slot => !slot.pool)
+        if (empty) return this.configure(empty, { ...profile, resident: this.resources.keepWarm && !resident }, resident)
+        const replacement = idle.find(slot => slot !== resident) ?? resident
+        if (replacement) this.retire(replacement)
+        return undefined
+      }
+    }
     if (this.batch && budget.threads === 4 && job.input.action !== 'warmup') {
       const batchSlot = this.chooseBatchSlot(budget, active, idle, resident)
       if (batchSlot || active.length || idle.some(slot => slot.retiring)) return batchSlot
@@ -248,6 +265,16 @@ export class HttpWorkerPool {
     let retryOnCpu = false
     try {
       const result = await slot.pool.run(job.input)
+      if (this.resources && job.input.pdfRange && !job.signal?.aborted && !this.closed) {
+        // 每段释放文档模型，保留基础 OCR 会话供后续任务复用。
+        try {
+          await slot.pool.run({ action: 'release-models' })
+          if (slot.pool.measuredMemoryMB >= slot.profile.memoryMB / 2) job.stopping ??= slot.pool.close()
+        }
+        catch { job.stopping ??= slot.pool.close() }
+        await job.stopping
+      }
+      if (job.signal?.aborted) throw job.signal.reason
       job.resolve(result)
     } catch (error) {
       if (this.resources && error.code === 'PARSER_MEMORY_LIMIT') job.stopping ??= slot.pool.close()
@@ -267,7 +294,7 @@ export class HttpWorkerPool {
         slot.pool = null
         slot.profile = undefined
       } else if (job.stopping && !this.closed) slot.pool = new PythonWorkerPool(this.options)
-      if (slot.profile?.resident && job.input.action === 'parse') slot.hasParsed = true
+      if (slot.profile?.resident && job.input.action === 'parse') slot.hasParsed = !job.input.pdfRange
       slot.active = null
       slot.job = null
       slot.idleSince = Date.now()

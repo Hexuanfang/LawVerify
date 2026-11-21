@@ -15,7 +15,7 @@ Object.assign(env, { WORKSPACE_DATA_DIR: path.join(directory, 'data'), APP_DATA_
   LAWVERIFY_PYTHON: process.env.LAWVERIFY_TEST_PYTHON || env.LAWVERIFY_PYTHON,
   KNOWLEDGE_RAG_MODE: 'local', LLM_BASE_URL: '', LLM_API_KEY: '', LLM_MODEL: '' })
 const { readWorkspace, writeWorkspace, runWithWorkspaceAccount } = await import('../dist/store.js')
-const { ensureEvidenceParsed, approveEvidenceParsing, getEvidenceParsing } = await import('../dist/evidence-parsing.js')
+const { ensureEvidenceParsed, approveEvidenceParsing, getEvidenceParsing, sortEvidenceParsingBatch } = await import('../dist/evidence-parsing.js')
 const { runExclusiveWorkspaceMutation } = await import('../dist/infrastructure/workspace-lock.js')
 const { closeDocumentParser } = await import('../dist/infrastructure/document-jobs.js')
 const { createApp } = await import('../dist/app.js')
@@ -25,6 +25,18 @@ await mkdir(path.join(directory, 'storage'), { recursive: true })
 await copyFile(path.join(samples, 'mixed.pdf'), path.join(directory, 'storage/source'))
 await writeFile(path.join(directory, 'storage/bad.pdf'), '%PDF-1.7 broken')
 await copyFile(path.join(samples, 'group.png'), path.join(directory, 'storage/source.png'))
+
+test('一批材料按原件字节数排序，兼容旧内联原件和丢失原件', async () => {
+  const batch = [
+    { id: 'large-pdf', storageKey: 'source' },
+    { id: 'missing', storageKey: 'gone.txt' },
+    { id: 'legacy-tie', previewDataUrl: `data:text/plain;base64,${Buffer.alloc(15).toString('base64')}` },
+    { id: 'stored-tie', storageKey: 'bad.pdf' },
+    { id: 'smallest', sourceDataUrl: 'data:text/plain;base64,YWI=' },
+  ]
+  assert.deepEqual((await sortEvidenceParsingBatch(batch)).map(item => item.id),
+    ['smallest', 'legacy-tie', 'stored-tie', 'large-pdf', 'missing'])
+})
 
 test('文书解析 HTTP 入口使用 Python 解析无后缀的上传暂存文件', async () => {
   const server = createApp().app.listen(0, '127.0.0.1')
@@ -125,7 +137,8 @@ test('解析结果、人工修复、账号隔离与原件替换保护', async ()
     const { retryCaseAgent } = await import('../dist/service.js')
     await retryCaseAgent('case-parser')
     let legacy
-    for (let attempt = 0; attempt < 200; attempt++) {
+    const deadline = Date.now() + 120_000
+    while (Date.now() < deadline) {
       legacy = (await readWorkspace()).evidences.find(item => item.id === 'legacy')
       if (legacy.parsing?.status === 'ready') break
       await new Promise(resolve => setTimeout(resolve, 100))

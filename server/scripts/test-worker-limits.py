@@ -1,4 +1,5 @@
 """使用短时子进程验证资源限制，避免修改测试进程自身的资源配置。"""
+from importlib.util import find_spec
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,21 @@ class WorkerLimitTests(unittest.TestCase):
         result = self.worker("from worker_limits import start_worker_limits; print(start_worker_limits())")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "4")
+
+    @unittest.skipUnless(find_spec("mineru"), "需要已安装的 MinerU 运行时")
+    def test_bounded_onnx_session_releases_unused_cpu_allocations(self):
+        result = self.worker("""
+from mineru.model.runtime import onnx
+from onnxruntime import SessionOptions
+from worker import configure_bounded_onnx
+
+configure_bounded_onnx()
+options = SessionOptions()
+onnx.configure_ort_threads(options, intra_op_num_threads=2)
+assert options.intra_op_num_threads == 2
+assert not options.enable_cpu_mem_arena
+""")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_worker_caps_threads_and_restricts_supported_cpu_affinity(self):
         result = self.worker("""

@@ -14,6 +14,13 @@ def current_worker_memory_mb():
     return _read_memory() // _MIB if _read_memory else 0
 
 
+def is_memory_limit_error(error):
+    return isinstance(error, MemoryError) or any(marker in str(error).lower() for marker in (
+        "unable to allocate", "failed to allocate memory", "std::bad_alloc", "bad allocation",
+        "paging file is too small", "not enough memory resources", "out of memory",
+    ))
+
+
 def _env_integer(name, default):
     try:
         return max(0, int(os.environ.get(name, default)))

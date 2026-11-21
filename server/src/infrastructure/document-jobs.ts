@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { AppError } from '../core/app-error.js'
 import { env } from '../config/env.js'
 import { getRuntimeRoot, getWorkspaceDataDir } from '../config/paths.js'
+import { parsePdfOnDisk } from './pdf-segments.js'
 
 export interface ParsedDocumentBlock {
   page: number
@@ -110,7 +111,7 @@ function documentSuffix(fileName: string) {
 }
 
 export async function runDocumentParsing(inputPath: string, outputPath: string, fileName: string,
-  mimeType?: string, mode?: string, cancellation?: AbortSignal, batchSize?: number) {
+  mimeType?: string, mode?: string, cancellation?: AbortSignal, batchSize?: number, pdfCheckpoint?: string) {
   const timeout = AbortSignal.timeout(env.PARSER_TIMEOUT_MS)
   const signal = cancellation ? AbortSignal.any([timeout, cancellation]) : timeout
   let directory: string | undefined
@@ -123,8 +124,13 @@ export async function runDocumentParsing(inputPath: string, outputPath: string, 
     const suffix = documentSuffix(fileName)
     const input = path.extname(inputPath).toLowerCase() === suffix ? inputPath : path.join(directory, `source${suffix}`)
     if (input !== inputPath) await copyFile(inputPath, input)
-    await pool.run({ action: 'parse', inputPath: input, outputPath: temporary, fileName,
-      mimeType: mimeType || '', mode: mode || 'auto', batchSize }, signal)
+    const sizeBytes = (await stat(input).catch(() => undefined))?.size
+    const job = { action: 'parse', inputPath: input, outputPath: temporary, fileName,
+      mimeType: mimeType || '', mode: mode || 'auto', batchSize, sizeBytes }
+    if (suffix === '.pdf' && !/^text\/|^application\/rtf$/i.test(job.mimeType)) {
+      await parsePdfOnDisk({ directory, input: job, signal, checkpoint: pdfCheckpoint,
+        run: request => pool.run(request, signal), readArtifact: readParsedArtifact })
+    } else await pool.run(job, signal)
     const result = await readParsedArtifact(temporary)
     signal.throwIfAborted()
     await rename(temporary, outputPath)
@@ -135,6 +141,7 @@ export async function runDocumentParsing(inputPath: string, outputPath: string, 
     if (error instanceof Error && code === 'PARSE_FAILED') throw new AppError(error.message, 422, code)
     if (error instanceof Error && code === 'PARSER_QUEUE_FULL') throw new AppError(error.message, 429, code)
     if (error instanceof Error && code === 'PARSER_MEMORY_LIMIT') throw new AppError(error.message, 503, code)
+    if (error instanceof Error && code === 'PARSER_RESULT_TOO_LARGE') throw new AppError(error.message, 502, code)
     throw error
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined)

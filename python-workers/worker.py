@@ -7,8 +7,9 @@ import sys
 import threading
 import time
 import shutil
+import tempfile
 
-from worker_limits import MEMORY_LIMIT_EXIT, current_worker_memory_mb, start_worker_limits
+from worker_limits import MEMORY_LIMIT_EXIT, current_worker_memory_mb, is_memory_limit_error, start_worker_limits
 
 
 def watch_parent(parent):
@@ -59,11 +60,39 @@ def writable_models(root, supplied_home):
     return target
 
 
-def is_memory_limit_error(error):
-    return isinstance(error, MemoryError) or any(marker in str(error).lower() for marker in (
-        "unable to allocate", "failed to allocate memory", "std::bad_alloc", "bad allocation",
-        "paging file is too small", "not enough memory resources", "out of memory",
-    ))
+def configure_bounded_onnx():
+    from mineru.model.runtime import onnx
+
+    configure_threads = onnx.configure_ort_threads
+
+    def configure(options, **kwargs):
+        configure_threads(options, **kwargs)
+        # 不缓存不同尺寸的推理缓冲，避免扫描件逐页处理时耗尽 Windows 提交量。
+        options.enable_cpu_mem_arena = False
+
+    onnx.configure_ort_threads = configure
+
+
+def pdf_page_count(path):
+    from pypdfium2 import PdfDocument
+
+    with PdfDocument(path) as document:
+        return len(document)
+
+
+@contextlib.contextmanager
+def pdf_segment(path, output_path, page_range):
+    from pypdfium2 import PdfDocument
+
+    first, last = page_range
+    with tempfile.TemporaryDirectory(prefix="pdf-part-", dir=Path(output_path).parent) as directory:
+        target = Path(directory) / "pages.pdf"
+        with PdfDocument(path) as document, PdfDocument.new() as segment:
+            if not 1 <= first <= last <= len(document) <= 1000 or last - first >= 20:
+                raise ValueError("PDF 分段页码无效")
+            segment.import_pages(document, pages=list(range(first - 1, last)))
+            segment.save(target)
+        yield target
 
 
 def main():
@@ -107,7 +136,9 @@ def main():
                 from parsing import Parser, save_result
                 from mineru.model.runtime.ownership import RuntimeOwner, release_runtime_owner, runtime_owner
 
-                parser = Parser()
+                if limited and os.name == "nt" and os.environ.get("MINERU_MODEL_ONNX_DEVICE") == "cpu":
+                    configure_bounded_onnx()
+                parser = Parser(memory_bounded=limited)
         except Exception as error:
             if limited and is_memory_limit_error(error):
                 os._exit(MEMORY_LIMIT_EXIT)
@@ -141,22 +172,34 @@ def main():
                     release_runtime_owner(previous_models)
                 respond({"id": job["id"], "memoryMB": current_worker_memory_mb(), "result": {"pid": os.getpid()}})
                 continue
-            if job.get("action") != "parse":
+            action = job.get("action")
+            if action not in ("parse", "pdf-info"):
                 raise ValueError("不支持的解析操作")
+            path = Path(job["inputPath"])
+            if not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
+                raise ValueError("原件不存在或超过512MB")
+            if action == "pdf-info" or (job.get("pdfWhole") and 0 < memory_mb < 3072):
+                pages = pdf_page_count(path)
+                if not 1 <= pages <= 1000:
+                    raise ValueError("PDF 页数无效或超过1000页")
+                if action == "pdf-info" or pages > 20:
+                    respond({"id": job["id"], "memoryMB": current_worker_memory_mb(),
+                             "result": {"pdfPages": pages, "engineVersion": parser.version}})
+                    continue
             if accelerated:
                 with contextlib.redirect_stdout(sys.stderr):
                     allowed = gpu_has_headroom()
                 if not allowed:
                     respond({"id": job["id"], "code": "PARSER_GPU_BUSY", "error": "GPU 当前繁忙，切换到 CPU。"})
                     continue
-            path = Path(job["inputPath"])
-            if not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
-                raise ValueError("原件不存在或超过512MB")
             with contextlib.redirect_stdout(sys.stderr):
                 token = runtime_owner.set(document_models)
                 try:
-                    save_result(parser.parse(path, job.get("mode", "auto"), job.get("fileName"), job.get("mimeType") or ""),
-                                job["outputPath"])
+                    source = pdf_segment(path, job["outputPath"], job["pdfRange"]) if "pdfRange" in job else contextlib.nullcontext(path)
+                    with source as material:
+                        page_offset = job["pdfRange"][0] - 1 if "pdfRange" in job else 0
+                        save_result(parser.parse(material, job.get("mode", "auto"), job.get("fileName"), job.get("mimeType") or "",
+                                                 pdf_scope=job.get("pdfScope"), page_offset=page_offset), job["outputPath"])
                 finally:
                     runtime_owner.reset(token)
             respond({"id": job["id"], "memoryMB": current_worker_memory_mb(),

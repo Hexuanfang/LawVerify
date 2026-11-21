@@ -1,5 +1,6 @@
 """MinerU 本地解析适配，模型在进程内复用。"""
 import importlib.metadata
+from hashlib import sha256
 import io
 import html
 import json
@@ -7,6 +8,7 @@ import os
 import re
 from pathlib import Path
 import tempfile
+from time import perf_counter
 import unicodedata
 
 from PIL import Image, ImageOps
@@ -14,6 +16,7 @@ from PIL import Image, ImageOps
 from chat import analyze_chat, ocr_lines
 from legacy_word import extract_legacy_word
 from word_blocks import parse_word
+from worker_limits import is_memory_limit_error
 
 
 def text_content(value):
@@ -36,7 +39,7 @@ def normalized_lines(value):
 
 
 class Parser:
-    def __init__(self):
+    def __init__(self, memory_bounded=False):
         # Windows 的原生 DLL 初始化须先于阻塞式输入线程。
         from mineru.parser import parse
         from mineru.model.registry import MINERU_4_MODELS_ONNX
@@ -56,6 +59,9 @@ class Parser:
         self.device = runtime.device
         self.version = importlib.metadata.version("mineru")
         self.parse_document = parse
+        self.memory_bounded = memory_bounded
+        self.pdf_scope = None
+        self.pdf_images = {}
 
     def recognize_image(self, image):
         if image.width * image.height > 100_000_000:
@@ -63,6 +69,16 @@ class Parser:
         image = ImageOps.exif_transpose(image).convert("RGB")
         lines, _ = ocr_lines(self.ocr, image, [], image.height > 1500)
         return "\n".join(line["text"] for line in lines)
+
+    def recognize_pdf_image(self, bitmap):
+        key = (bitmap.width, bitmap.height, bitmap.stride, bitmap.format, sha256(bitmap.buffer).digest())
+        if key not in self.pdf_images:
+            text = self.recognize_image(bitmap.to_pil())
+            # 只缓存同一任务中像素完全一致的图片，来源页码仍由当前页生成。
+            if len(self.pdf_images) < 128 and len(text) <= 8000:
+                self.pdf_images[key] = text
+            return text
+        return self.pdf_images[key]
 
     def parse_word(self, path, result):
         def recognize(data):
@@ -80,8 +96,11 @@ class Parser:
             raise ValueError("旧版 Word 文件超过安全处理上限")
         result["text"] = extract_legacy_word(path.read_bytes())
 
-    def parse(self, input_path, mode="auto", file_name=None, mime_type=""):
+    def parse(self, input_path, mode="auto", file_name=None, mime_type="", *, pdf_scope=None, page_offset=0):
         path = Path(input_path)
+        if pdf_scope is None or pdf_scope != self.pdf_scope:
+            self.pdf_images.clear()
+        self.pdf_scope = pdf_scope
         suffix = Path(file_name or path.name).suffix.lower()
         result = {"schemaVersion": 1, "engineVersion": self.version, "text": "", "pages": 0,
                   "blocks": [], "warnings": [], "reviewRequired": False}
@@ -102,7 +121,7 @@ class Parser:
             result["pages"] = 1
             result["warnings"].append("GIF 仅识别首帧")
         else:
-            return self.parse_visual_document(path, mode, result, file_name)
+            return self.parse_visual_document(path, mode, result, file_name, page_offset)
         if len(result["text"]) + len(result.get("html", "")) > 8_000_000:
             raise ValueError("解析正文超过安全处理上限，请拆分材料")
         if not result["text"].strip():
@@ -111,7 +130,7 @@ class Parser:
         return result
 
 
-    def parse_visual_document(self, path, mode, result, file_name=None):
+    def parse_visual_document(self, path, mode, result, file_name=None, page_offset=0):
         if path.suffix.lower() == ".pdf":
             import pypdfium2
             document = pypdfium2.PdfDocument(path)
@@ -142,6 +161,7 @@ class Parser:
                 result["reviewRequired"] = chat["status"] == "manual_review"
                 return result
         # basic 不调用远程或本地 VLM，负责正文、版面与表格结构。
+        started = perf_counter()
         parsed = self.parse_document(path, tier="basic", ocr_mode="auto", image_analysis=False)
         if len(parsed.pages) > 1000:
             raise ValueError("材料超过1000页，请拆分后解析")
@@ -153,7 +173,12 @@ class Parser:
                 result["blocks"].append({"page": page["page_idx"] + 1, "bbox": block.get("bbox", []),
                                          "coordinateSpace": "normalized", "text": text_content(block.get("content", []))})
         if path.suffix.lower() == ".pdf":
-            self.supplement_pdf_images(path, result)
+            from loguru import logger
+
+            supplement_started = perf_counter()
+            self.supplement_pdf_images(path, result, page_offset)
+            logger.info("LawVerify PDF phases: main_s={:.3f}, supplement_s={:.3f}",
+                        supplement_started - started, perf_counter() - supplement_started)
         if not result["text"].strip():
             result["warnings"].append("原件未提取到可读文字，请人工审核")
             result["reviewRequired"] = True
@@ -161,7 +186,7 @@ class Parser:
             raise ValueError("解析正文超过安全处理上限，请拆分材料")
         return result
 
-    def supplement_pdf_images(self, path, result):
+    def supplement_pdf_images(self, path, result, page_offset=0):
         import pypdfium2
         import pypdfium2.raw as pdfium
 
@@ -188,7 +213,7 @@ class Parser:
                                         if line.strip() and (normalized_text(line) not in covered
                                                              or normalized_text(line) not in parsed_lines))
                     if missing:
-                        locator = f"第 {index + 1} 页 · 原生文本"
+                        locator = f"第 {page_offset + index + 1} 页 · 原生文本"
                         supplements.append(f"【来源：{locator}】\n{missing}")
                         missing_blocks = "\n".join(line for line in missing.splitlines()
                                                     if normalized_text(line) not in covered)
@@ -196,7 +221,7 @@ class Parser:
                             result["blocks"].append(dict(page=index + 1, bbox=list(page.get_bbox()),
                                                          coordinateSpace="pdf", text=missing_blocks, locator=locator, kind="native_text"))
                     for number, image in enumerate(page.get_objects(filter=[pdfium.FPDF_PAGEOBJ_IMAGE]), 1):
-                        locator = f"第 {index + 1} 页 · 第 {number} 张图"
+                        locator = f"第 {page_offset + index + 1} 页 · 第 {number} 张图"
                         try:
                             width, height = image.get_px_size()
                             if min(width, height) < 20:
@@ -205,7 +230,7 @@ class Parser:
                                 raise ValueError("图片像素过大")
                             bitmap = image.get_bitmap()
                             try:
-                                text = self.recognize_image(bitmap.to_pil())
+                                text = self.recognize_pdf_image(bitmap)
                             finally:
                                 bitmap.close()
                             text = "\n".join(line for line in text.splitlines()
@@ -216,7 +241,9 @@ class Parser:
                                 supplements.append(f"【来源：{locator}】\n{text}")
                                 result["blocks"].append(dict(page=index + 1, bbox=list(image.get_bounds()),
                                                              coordinateSpace="pdf", text=text, locator=locator, kind="image"))
-                        except Exception:
+                        except Exception as error:
+                            if self.memory_bounded and is_memory_limit_error(error):
+                                raise
                             result["warnings"].append(f"{locator}识别失败，请核对原件")
                 finally:
                     page.close()

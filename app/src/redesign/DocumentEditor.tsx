@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { Save } from 'lucide-react'
 import { Button } from './components/ui/button'
@@ -59,8 +59,9 @@ export function DocumentEditor({ editing }: { editing: '' | 'declarations' | 'do
   const loadedHtml = useRef(draft.initialHtml)
   const ready = draft.ready && !draft.saving && !draft.recovery && !app.busy
   const editable = editing === 'document' && ready
-  const exportable = ready && !draft.dirty && !draft.conflict && app.workspace
-    && wordExportReadiness(app.workspace, certificate.id).allowed
+  const canExport = useMemo(() => app.workspace && wordExportReadiness(app.workspace, certificate.id).allowed,
+    [app.workspace, certificate.id])
+  const exportable = ready && !draft.dirty && !draft.conflict && canExport
   useEffect(() => { editor?.setEditable(Boolean(editable), false) }, [editor, editable])
   useEffect(() => {
     if (!editor || inline.active || loadedHtml.current === draft.initialHtml) return

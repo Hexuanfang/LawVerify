@@ -456,9 +456,10 @@ app.whenReady().then(async () => {
     const loadedChunks = () => evaluate("performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/assets/')&&entry.name.endsWith('.js')).map(entry=>new URL(entry.name).pathname.split('/').pop())")
     const homeChunks = await loadedChunks()
     assert.equal(homeChunks.some(chunk => chunk.startsWith('LegacyEntry-')), false, '应用不能加载旧版页面')
-    for (const name of ['Workspace', 'Library', 'Report', 'DirectoryLinksModal', 'UploadModal', 'FormModal', 'PreviewDrawer', 'export-word']) {
+    for (const name of ['Library', 'Report', 'DirectoryLinksModal', 'UploadModal', 'FormModal', 'PreviewDrawer', 'export-word']) {
       assert.equal(homeChunks.some(chunk => chunk.startsWith(name + '-')), false, name + ' 应在使用时加载')
     }
+    await wait("performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.split('/').pop().startsWith('Workspace-'))")
     fs.writeFileSync(path.join(directory, 'home-chunks.json'), JSON.stringify(homeChunks, null, 2))
     await screenshot('home')
     const originalSize = window.getSize()
@@ -614,6 +615,7 @@ app.whenReady().then(async () => {
     await clickText('.workspace-doc-strip button', '核验结果')
     window.setSize(...originalSize)
     await wait("!document.querySelector('.ws.no-l.no-r')")
+    await wait("['CaseMemory-', 'WorkspaceAssistant-'].every(prefix => performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.split('/').pop().startsWith(prefix)))")
     await clickText('.topbar button', '案件记忆')
     await wait("document.querySelector('.case-memory-card')")
     assert.match(await evaluate("document.querySelector('.case-basic-fields').textContent"), /原告王某被告李某我方被告/)

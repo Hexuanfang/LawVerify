@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { Certificate } from '../types'
-import { documentDraftKey, draftKey, readDraft, removeDraft, writeDraft, type ParagraphDraft } from '../draft-store'
+import { documentDraftKey, draftKey, readDraft, readDrafts, removeDraft, writeDraft, type ParagraphDraft } from '../draft-store'
 import { contentSnapshot, documentBlocks, documentHtml, type DocumentBlock } from './documentContent'
 
 type LegacyDraft = Pick<ParagraphDraft, 'key' | 'revision'>
@@ -11,7 +11,8 @@ export function useDocumentDraft(certificate: Certificate,
   commit: (blocks: DocumentBlock[], expected: DocumentBlock[]) => Promise<DocumentBlock[]>) {
   const account = useRef(sessionStorage.getItem('lawverify-login-account') || '')
   const key = documentDraftKey(account.current, certificate.id)
-  const base = useRef(contentSnapshot(certificate.paragraphs))
+  const currentBlocks = useMemo(() => contentSnapshot(certificate.paragraphs), [certificate.paragraphs])
+  const base = useRef(currentBlocks)
   const [initialHtml, setInitialHtml] = useState(() => documentHtml(certificate.paragraphs))
   const pending = useRef<ParagraphDraft | null>(null)
   const legacy = useRef<LegacyDraft[]>([])
@@ -37,8 +38,7 @@ export function useDocumentDraft(certificate: Certificate,
         setRecovery({ draft: whole, legacy: JSON.parse(whole.baseRichText || '[]') as LegacyDraft[] })
         return
       }
-      const drafts = await Promise.all(certificate.paragraphs.map(paragraph =>
-        readDraft(draftKey(account.current, certificate.id, paragraph.id))))
+      const drafts = await readDrafts(certificate.paragraphs.map(paragraph => draftKey(account.current, certificate.id, paragraph.id)))
       if (!live.current) return
       const old = drafts.filter((draft): draft is ParagraphDraft => Boolean(draft))
       if (!old.length) return
@@ -61,7 +61,7 @@ export function useDocumentDraft(certificate: Certificate,
 
   useEffect(() => {
     if (savingRef.current) return
-    const latest = contentSnapshot(certificate.paragraphs)
+    const latest = currentBlocks
     if (JSON.stringify(latest) === JSON.stringify(base.current)) return
     if (pending.current || recovery) setConflict(true)
     else {
@@ -69,7 +69,7 @@ export function useDocumentDraft(certificate: Certificate,
       setInitialHtml(documentHtml(latest))
       setConflict(false)
     }
-  }, [certificate.paragraphs, recovery])
+  }, [currentBlocks, recovery])
 
   const persist = (draft: ParagraphDraft) => {
     pending.current = draft

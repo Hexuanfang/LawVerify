@@ -1,5 +1,5 @@
 import type { AppState, CertificateParagraph } from '../types'
-import { needsVerification, paragraphElements, statementRanges, type Verdict } from './model.ts'
+import { createParagraphReviewer, needsVerification, statementRanges, type Verdict } from './model.ts'
 import { hasDocumentDraft } from '../draft-store.ts'
 
 export function blocksWordExport(verdict: Verdict) {
@@ -8,7 +8,7 @@ export function blocksWordExport(verdict: Verdict) {
 
 export function wordExportReadiness(workspace: AppState, certificateId: string) {
   const certificate = workspace.certificates.find(item => item.id === certificateId)
-  const elements = certificate?.paragraphs.flatMap(paragraph => paragraphElements(paragraph, workspace, certificateId)) ?? []
+  const elements = certificate?.paragraphs.flatMap(createParagraphReviewer(workspace, certificateId)) ?? []
   const blocking = elements.filter(item => blocksWordExport(item.verdict)).length
   const reason = !certificate?.paragraphs.some(paragraph => paragraph.text.trim()) ? '没有可导出的正文。'
     : needsVerification(workspace, certificateId) ? '当前正文或材料尚未完成核验，请先返回文书运行 AI 核验。'
@@ -29,12 +29,15 @@ export async function requireWordExportSnapshot(workspace: AppState, certificate
 
 export function reviewReadiness(workspace: AppState, caseId: string, certificateId?: string) {
   const documents = workspace.certificates.filter(item => item.caseId === caseId && (!certificateId || item.id === certificateId))
-  const paragraphs = documents.flatMap(doc => doc.paragraphs.filter(paragraph => paragraph.text.trim()).map(paragraph => {
-    const elements = paragraphElements(paragraph, workspace, doc.id)
-    const reviewed = doc.verification?.revision && elements.some(item => item.declaration)
-      ? elements.every(item => item.verified || item.ignored) : paragraph.verified
-    return { elements, reviewed }
-  }))
+  const paragraphs = documents.flatMap(doc => {
+    const review = createParagraphReviewer(workspace, doc.id)
+    return doc.paragraphs.filter(paragraph => paragraph.text.trim()).map(paragraph => {
+      const elements = review(paragraph)
+      const reviewed = doc.verification?.revision && elements.some(item => item.declaration)
+        ? elements.every(item => item.verified || item.ignored) : paragraph.verified
+      return { elements, reviewed }
+    })
+  })
   const unreviewed = paragraphs.filter(item => !item.reviewed).length
   const elements = paragraphs.flatMap(item => item.elements)
   const red = elements.filter(item => item.verdict === 'fail' || item.verdict === 'miss').length

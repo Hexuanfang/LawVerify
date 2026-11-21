@@ -1,4 +1,5 @@
 import { StartupScreen } from '../StartupScreen'
+import { whenUiIdle } from '../redesign-loader'
 import { lazy, Suspense, useEffect } from 'react'
 import { Button } from './components/ui/button'
 import { TooltipProvider } from './components/ui/tooltip'
@@ -10,7 +11,8 @@ import './styles/global.css'
 import './integration.css'
 
 const DirectoryLinksModal = lazy(() => import('./DirectoryLinksModal').then(module => ({ default: module.DirectoryLinksModal })))
-const Workspace = lazy(() => import('./Workspace').then(module => ({ default: module.Workspace })))
+const loadWorkspace = () => import('./Workspace')
+const Workspace = lazy(() => loadWorkspace().then(module => ({ default: module.Workspace })))
 const Report = lazy(() => import('./Report').then(module => ({ default: module.Report })))
 const Processing = lazy(() => import('./Report').then(module => ({ default: module.Processing })))
 const Library = lazy(() => import('./Library').then(module => ({ default: module.Library })))
@@ -65,6 +67,10 @@ function Shell() {
   useEffect(() => {
     document.documentElement.removeAttribute('data-theme')
   }, [])
+  const canPreloadWorkspace = app.page === 'home' && !app.loading && app.projects.length > 0
+  useEffect(() => {
+    if (canPreloadWorkspace) return whenUiIdle(() => { void loadWorkspace().catch(() => {}) })
+  }, [canPreloadWorkspace])
   if (app.loading) return <StartupScreen />
   return (
     <div className="lawverify-redesign">

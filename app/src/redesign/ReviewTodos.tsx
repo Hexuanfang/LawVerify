@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Tabs } from 'radix-ui'
 import profile from '../../../server/src/intelligence/verification/doc-element-profile.json'
 import { declarationEditRange } from '../../../server/src/intelligence/verification/review-status.ts'
@@ -27,7 +27,7 @@ const statusLabels = {
 export function ReviewTodos({ hidden, onOpen }: { hidden: boolean; onOpen: (id: string, trigger: HTMLButtonElement) => void }) {
   const app = useApp()
   const [view, setView] = useState<ReviewView>('todo')
-  const groups = groupReview(app.elements)
+  const groups = useMemo(() => groupReview(app.elements), [app.elements])
   const total = app.elements.length
   const blocking = groups.required.length + groups.pending.length
   const processed = groups.processed
@@ -40,9 +40,11 @@ export function ReviewTodos({ hidden, onOpen }: { hidden: boolean; onOpen: (id: 
     passed: groups.passed.filter(item => item.verdict === 'pass'),
   }
   const { certificate, workspace } = app
-  const paragraphNumbers = new Map(certificate?.paragraphs.map((item, index) => [item.id, index + 1]))
-  const readiness = !blocking && total && workspace && certificate
-    ? wordExportReadiness(workspace, certificate.id) : undefined
+  const paragraphs = certificate?.paragraphs
+  const paragraphNumbers = useMemo(() => new Map(paragraphs?.map((item, index) => [item.id, index + 1])), [paragraphs])
+  const certificateId = certificate?.id
+  const readiness = useMemo(() => !blocking && total && workspace && certificateId
+    ? wordExportReadiness(workspace, certificateId) : undefined, [blocking, total, workspace, certificateId])
   const caption = blocking ? '先处理不通过和待核验，才能导出 Word。'
     : readiness?.allowed ? '必处理项已清零，可导出 Word。'
     : readiness?.reason || '必处理项已清零。'

@@ -62,20 +62,40 @@ export function needsVerification(workspace: AppState, certificateId: string) {
     || Boolean(certificate.verification && (certificate.verification.inputKey !== certificate.linkageInputKey || certificate.verification.dirty))
 }
 
-// 兼容早期只有 paragraph.link 的文书，证据匹配分不作为声明核验置信度。
-export function paragraphElements(
-  paragraph: CertificateParagraph,
-  workspace: AppState,
-  certificateId: string,
-): ReviewElement[] {
-  if (!paragraph.text.trim()) return []
+function indexDocumentReview(workspace: AppState, certificateId: string) {
   const certificate = workspace.certificates.find(item => item.id === certificateId)
   const pendingVerification = needsVerification(workspace, certificateId)
   const materials = new Map(workspace.evidences.filter(item => item.caseId === certificate?.caseId).map(item => [item.id, item]))
   const verification = certificate?.verification
-  if (verification && (!pendingVerification || verification.dirty) && verification.inputKey === certificate?.linkageInputKey) {
-    const dirty = new Set(verification.dirty?.declarationIds)
-    const saved = verification.declarations.filter(item => item.location.paragraphId === paragraph.id)
+  const current = verification && (!pendingVerification || verification.dirty) && verification.inputKey === certificate?.linkageInputKey
+    ? verification : undefined
+  const claims = (workspace.claimUnits ?? []).filter(item => item.certificateId === certificateId)
+  const claimIds = new Set(claims.map(item => item.id))
+  return {
+    pendingVerification, materials, verification: current,
+    dirty: new Set(current?.dirty?.declarationIds), dirtyParagraphs: new Set(current?.dirty?.paragraphIds),
+    declarationsByParagraph: groupBy(current?.declarations ?? [], item => item.location.paragraphId),
+    claimsByParagraph: groupBy(claims, item => item.paragraphId),
+    matchesByClaim: groupBy(claimIds.size ? (workspace.claimEvidenceMatches ?? []).filter(item => claimIds.has(item.claimUnitId)) : [], item => item.claimUnitId),
+  }
+}
+
+export function createParagraphReviewer(workspace: AppState, certificateId: string) {
+  const context = indexDocumentReview(workspace, certificateId)
+  return (paragraph: CertificateParagraph) => reviewParagraph(paragraph, certificateId, context)
+}
+
+export function paragraphElements(paragraph: CertificateParagraph, workspace: AppState, certificateId: string): ReviewElement[] {
+  return paragraph.text.trim() ? createParagraphReviewer(workspace, certificateId)(paragraph) : []
+}
+
+// 兼容早期只有 paragraph.link 的文书，证据匹配分不作为声明核验置信度。
+function reviewParagraph(paragraph: CertificateParagraph, certificateId: string, context: ReturnType<typeof indexDocumentReview>): ReviewElement[] {
+  if (!paragraph.text.trim()) return []
+  const { pendingVerification, materials, verification, dirty, dirtyParagraphs,
+    declarationsByParagraph, claimsByParagraph, matchesByClaim } = context
+  if (verification) {
+    const saved = declarationsByParagraph.get(paragraph.id) ?? []
     const declarations = saved.filter(item => !dirty.has(item.id) || paragraph.text.slice(item.location.start, item.location.end) === item.quote)
     if (declarations.length) {
       const rows: ReviewElement[] = declarations.map(item => {
@@ -119,7 +139,7 @@ export function paragraphElements(
           && ['pass', 'note', 'warn'].includes(verdict), original: paragraph }
       })
       const dropped = saved.length > declarations.length
-      const uncovered = verification.dirty?.paragraphIds.includes(paragraph.id) && statementRanges(paragraph.text).some(range =>
+      const uncovered = dirtyParagraphs.has(paragraph.id) && statementRanges(paragraph.text).some(range =>
         !declarations.some(item => item.location.start >= range.start && item.location.end <= range.end))
       if ((dropped || uncovered) && !rows.some(item => item.verdict === 'pending')) rows.push({
         id: `${certificateId}:${paragraph.id}:dirty`, paragraphId: paragraph.id, certificateId, start: 0, end: paragraph.text.length,
@@ -135,10 +155,8 @@ export function paragraphElements(
       ? [paragraph.link]
       : []
   const references = paragraph.references ?? []
-  const claimsInParagraph = (workspace.claimUnits ?? []).filter(
-    (claim) =>
-      claim.certificateId === certificateId &&
-      claim.paragraphId === paragraph.id && (!claim.sourceParagraphText || claim.sourceParagraphText === paragraph.text),
+  const claimsInParagraph = (claimsByParagraph.get(paragraph.id) ?? []).filter(
+    (claim) => !claim.sourceParagraphText || claim.sourceParagraphText === paragraph.text,
   )
   const indexed =
     [...links, ...references].some(
@@ -209,8 +227,7 @@ export function paragraphElements(
       const claims = claimsInParagraph.filter(
         (claim) => sentenceIndex === undefined || claim.sentenceIndex === sentenceIndex,
       )
-      const matches = (workspace.claimEvidenceMatches ?? []).filter((match) =>
-        claims.some((claim) => claim.id === match.claimUnitId) &&
+      const matches = claims.flatMap(claim => matchesByClaim.get(claim.id) ?? []).filter((match) =>
         matchingLinks.some(link => link.evidenceId === match.evidenceId && !(link.relation === 'support' && link.reason === '人工维护引用关系，请重新审阅。')),
       )
       const conflict =
@@ -336,9 +353,7 @@ export function buildProjects(workspace: AppState) {
             ...workspace, certificates: [certificate], evidences, claimUnits,
             claimEvidenceMatches: [...claimIds].flatMap(id => matchesByClaim.get(id) ?? []),
           }
-          const elements = certificate.paragraphs.flatMap((paragraph) =>
-            paragraphElements(paragraph, documentWorkspace, certificate.id),
-          )
+          const elements = certificate.paragraphs.flatMap(createParagraphReviewer(documentWorkspace, certificate.id))
           elements.sort((left, right) => verdictOrder[left.verdict] - verdictOrder[right.verdict]
             || Number(!identities.has(left.type)) - Number(!identities.has(right.type)))
           return [certificate.id, elements]

@@ -28,15 +28,22 @@ export function documentDraftKey(account: string, certificateId: string) {
 
 export async function hasDocumentDraft(account: string, certificateId: string, paragraphs: { id: string }[]) {
   if (await readDraft(documentDraftKey(account, certificateId))) return true
-  return (await Promise.all(paragraphs.map(item => readDraft(draftKey(account, certificateId, item.id))))).some(Boolean)
+  return (await readDrafts(paragraphs.map(item => draftKey(account, certificateId, item.id)))).some(Boolean)
 }
 
 export async function readDraft(key: string): Promise<ParagraphDraft | undefined> {
+  const [draft] = await readDrafts([key])
+  return draft
+}
+
+export async function readDrafts(keys: string[]): Promise<Array<ParagraphDraft | undefined>> {
+  if (!keys.length) return []
   const db = await openDatabase()
   return new Promise((resolve, reject) => {
     const transaction = db.transaction('paragraphs', 'readonly')
-    const request = transaction.objectStore('paragraphs').get(key)
-    transaction.oncomplete = () => resolve(request.result)
+    const store = transaction.objectStore('paragraphs')
+    const requests = keys.map(key => store.get(key))
+    transaction.oncomplete = () => resolve(requests.map(request => request.result))
     transaction.onabort = () => reject(transaction.error)
     transaction.onerror = () => reject(transaction.error)
   })

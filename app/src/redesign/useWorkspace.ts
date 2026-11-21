@@ -1,6 +1,6 @@
 import { getLoginWorkspace } from '../auth-transition'
 import { loadInitialWorkspace } from '../workspace-bootstrap'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import { api, watchWorkspace } from '../api'
 import type { AppState } from '../types'
 import { endSession, isSessionFailure } from './session'
@@ -27,12 +27,15 @@ export function useWorkspace() {
     const request = ++sequence.current
     try {
       const result = await (initialLoad ? loadInitialWorkspace() : api.getWorkspace())
-      if (isCurrent() && request === sequence.current && !mutating.current) setWorkspace(result.workspace)
+      if (isCurrent() && request === sequence.current && !mutating.current) {
+        if (initialLoad && !initial) setWorkspace(result.workspace)
+        else startTransition(() => setWorkspace(current => request === sequence.current ? result.workspace : current))
+      }
     } catch (cause) {
       if (isCurrent() && isSessionFailure(cause)) endSession(cause instanceof Error ? cause.message : '登录已失效，请重新登录。')
       throw cause
     }
-  }, [isCurrent])
+  }, [initial, isCurrent])
   const mutate = useCallback(
     async <T>(operation: () => Promise<T>): Promise<T> => {
       if (mutating.current) throw new Error('上一项操作正在保存，请稍候。')
@@ -72,19 +75,27 @@ export function useWorkspace() {
   )
   useEffect(() => {
     live.current = true
-    void refresh(true)
-      .catch((cause) => {
-        if (isCurrent() && isSessionFailure(cause)) endSession(cause.message)
-        else if (isCurrent()) setError(cause.message)
-      })
-      .finally(() => {
-        if (isCurrent()) setLoading(false)
-      })
+    const load = () => {
+      void refresh(true)
+        .catch((cause) => {
+          if (isCurrent() && isSessionFailure(cause)) endSession(cause.message)
+          else if (isCurrent()) setError(cause.message)
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false)
+        })
+    }
     let timer: ReturnType<typeof setTimeout> | undefined
+    // 首次连接事件会触发刷新，与登录后的补读共用一个计时器。
+    // 事件流暂未连上时也补读一次，冷启动则立即读取。
+    if (initial) timer = setTimeout(() => { if (!sequence.current) load() }, 2000)
+    else load()
     const unsubscribe = watchWorkspace(() => {
       clearTimeout(timer)
       timer = setTimeout(() => {
-        if (!mutating.current) void refresh().catch(() => {})
+        if (mutating.current) return
+        if (!sequence.current) load()
+        else void refresh().catch(() => {})
       }, 500)
     })
     return () => {
@@ -92,6 +103,6 @@ export function useWorkspace() {
       clearTimeout(timer)
       unsubscribe()
     }
-  }, [refresh, isCurrent])
+  }, [refresh, initial, isCurrent])
   return { workspace, loading, busy, error, setError, refresh, mutate }
 }

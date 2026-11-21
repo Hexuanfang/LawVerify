@@ -248,6 +248,26 @@ test('重复句子使用各自范围定位，来源中的旧文字不覆盖真�
 // 新版正式切换前的审阅与正文保存规则。
 import { reviewReadiness, reanchorParagraph, wordExportReadiness } from './workflow.ts'
 
+test('文书导出和案件审阅各只扫描一次文书所属的材料', () => {
+  const paragraphs = Array.from({ length: 12 }, (_, index) => ({
+    id: `p${index}`, text: '已交付。', verified: true,
+    links: [{ evidenceId: 'ev', locator: '第1页', quote: '已交付。', relation: 'support' }],
+  }))
+  const evidences = [...workspace.evidences]
+  const filter = evidences.filter.bind(evidences)
+  let scans = 0
+  Object.defineProperty(evidences, 'filter', { value: (predicate: Parameters<typeof filter>[0]) => {
+    scans++
+    return filter(predicate)
+  } })
+  const state = { ...workspace, evidences, certificates: [{ ...workspace.certificates[0], paragraphs }] }
+  assert.equal(wordExportReadiness(state, 'document').allowed, true)
+  assert.equal(scans, 1)
+  scans = 0
+  assert.deepEqual(reviewReadiness(state, 'case'), { total: 12, unreviewed: 0, red: 0, ready: true })
+  assert.equal(scans, 1)
+})
+
 test('正文 Word 阻断空稿、过期、历史已确认但未重核、红灯、缺源及待人工核验的支持项', () => {
   const link = { evidenceId: 'ev', relation: 'support' as const }
   const paragraph = { id: 'p', text: '已还款。', verified: true, links: [link] }

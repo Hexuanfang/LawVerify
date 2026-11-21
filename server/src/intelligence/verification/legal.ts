@@ -287,7 +287,7 @@ async function suggestReplacement(law: Declaration, locator: StatuteLocator, dec
 
 export async function verifyLegalDeclarations(certificate: LegalCertificate, declarations: Declaration[], workspace: LegalWorkspace,
   adapter?: StatuteAdapter, signal?: AbortSignal, officialAdapter?: StatuteAdapter,
-  caseAdapter = createWorkspaceCaseAdapter(workspace.knowledgeCases)): Promise<Declaration[]> {
+  caseAdapter = createWorkspaceCaseAdapter(workspace.knowledgeCases), frozen?: ReadonlySet<string>): Promise<Declaration[]> {
   const workspaceAdapter = workspaceStatuteAdapter(workspace.knowledgeStatutes)
   const primary = adapter ?? workspaceAdapter
   const official = officialAdapter ?? (adapter && workspace.knowledgeStatutes.length ? workspaceAdapter : undefined)
@@ -306,7 +306,7 @@ export async function verifyLegalDeclarations(certificate: LegalCertificate, dec
   for (const declaration of declarations) {
     signal?.throwIfAborted()
     const paragraph = paragraphs.get(declaration.location.paragraphId)
-    if (declaration.type === 'E-LAW' && paragraph) {
+    if (declaration.type === 'E-LAW' && paragraph && !frozen?.has(declaration.id)) {
       const locator = statuteLocator(declaration, paragraph, declarations)
       const tracks = locator && await lookup(locator)
       if (tracks?.result.outcome === 'found' && !tracks.conflicted) details.set(declaration.id, tracks.result.item)
@@ -316,15 +316,27 @@ export async function verifyLegalDeclarations(certificate: LegalCertificate, dec
       checked.push(declaration)
     }
   }
+  // 未冻结法条的位阶判定仍可能需要同句的已确认法条作为对照。
+  if (frozen?.size && details.size) {
+    const fresh = checked.filter(item => details.has(item.id))
+    const peers = checked.filter(item => item.type === 'E-LAW' && frozen.has(item.id) && item.checks.B5?.outcome === 'pass'
+      && fresh.some(other => other.location.paragraphId === item.location.paragraphId && other.location.sentenceIndex === item.location.sentenceIndex))
+    for (const peer of peers) {
+      const paragraph = paragraphs.get(peer.location.paragraphId)
+      const locator = paragraph && statuteLocator(peer, paragraph, declarations)
+      const tracks = locator && await lookup(locator)
+      if (tracks?.result.outcome === 'found' && !tracks.conflicted) details.set(peer.id, tracks.result.item)
+    }
+  }
   const conflicts = statuteConflictChecks(certificate.paragraphs, checked, details)
   const withHierarchy = checked.map(declaration => {
     const B5 = conflicts.get(declaration.id)
-    return B5 ? settle({ ...declaration, checks: { ...declaration.checks, B5 } }) : declaration
+    return B5 && !frozen?.has(declaration.id) ? settle({ ...declaration, checks: { ...declaration.checks, B5 } }) : declaration
   })
   const basisChecks = requestBasisChecks(withHierarchy)
   const withBasis = withHierarchy.map((declaration): Declaration => {
     const B6 = basisChecks.checks.get(declaration.id)
-    if (!B6) return declaration
+    if (!B6 || frozen?.has(declaration.id)) return declaration
     const dependencies = [...(declaration.dependencies ?? []).filter(edge => edge.check !== 'B6'), ...(basisChecks.dependencies.get(declaration.id) ?? [])]
     const next = { ...declaration, checks: { ...declaration.checks, B6 }, dependencies: dependencies.length ? dependencies : undefined }
     if (declaration.type === 'E-LAW') return settle(next)
@@ -332,5 +344,5 @@ export async function verifyLegalDeclarations(certificate: LegalCertificate, dec
     if (B6.outcome === 'warn' && ['pass', 'note'].includes(declaration.verdict)) return { ...next, verdict: 'warn', reason: B6.reason }
     return next
   })
-  return verifyCaseDeclarations(certificate, withBasis, caseAdapter, signal)
+  return verifyCaseDeclarations(certificate, withBasis, caseAdapter, signal, frozen)
 }

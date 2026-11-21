@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { rememberAssistantCandidate } from './assistant/candidates.js'
-import { assistantMaterialVersion, assistantSnapshot, prepareAssistantDraft, verifiedDraftAuthorities } from './assistant/draft.js'
+import { buildAssistantDocumentContext, type AssistantDocumentContext } from './assistant/context.js'
+import { applyDraftSupplement, assistantMaterialVersion, assistantSnapshot, locateSupplement, prepareAssistantDraft, researchDraftAuthorities, verifiedDraftAuthorities } from './assistant/draft.js'
 import { getAssistantSkill, validateSkillOutput } from './assistant/skill-contract.js'
 import { markAssistantVerificationPending, recheckAssistantDeclarations, resumeAssistantVerification, type AssistantPendingVerification } from './assistant/recheck.js'
 import { rewriteRichText } from './assistant/rewrite-rich-text.js'
@@ -9,15 +10,16 @@ import { rebuildParagraphs } from './document-editing.js'
 import { atomicOfficeJson, officeContentHash, officeFormat, type OfficeFile } from './office/files.js'
 import { extractDeclarations, parseModelDeclarationCandidates } from './intelligence/verification/extract.js'
 import { applyDeclarationDependencies } from './intelligence/verification/dependencies.js'
-import { assertDraftPosition } from './intelligence/verification/draft-policy.js'
+import { assertDraftPosition, inferDraftDocKey } from './intelligence/verification/draft-policy.js'
+import { caseRoleLabels } from './intelligence/case-roles.js'
 import { locateRewriteSelection, validateRewritePreview } from './intelligence/verification/rewrite-selection.js'
 import { verifyEvidence } from './intelligence/verification/evidence.js'
 import { verifyLegalDeclarations } from './intelligence/verification/legal.js'
 import { createVerificationSources } from './integrations/verification-sources.js'
 import { normalizeDocKey, profile as documentProfile } from './intelligence/verification/profile.js'
-import { carryDeclarationReviews, declarationEditSchema, declarationReferenceSchema, invalidateVerification, preserveScopedReferences, verificationAuthorityKey } from './intelligence/verification/review-state.js'
+import { carryDeclarationReviews, confirmedDeclarationsForFullRecheck, declarationEditSchema, declarationReferenceSchema, invalidateVerification, mergeConfirmedDeclarations, preserveScopedReferences, verificationAuthorityKey } from './intelligence/verification/review-state.js'
 import { documentMaterialKey, recheckDirtyDeclarations, recordVerification, sameVerificationDocument, saveDeclarationReview, validateDeclarationEdit, validateDeclarationReferences, verificationMaterialVersion } from './intelligence/verification/workspace-review.js'
-import { approveEvidenceParsing, cancelCaseEvidenceParsing, ensureEvidenceParsed, supportsMineru } from './evidence-parsing.js'
+import { approveEvidenceParsing, cancelCaseEvidenceParsing, ensureEvidenceParsed, sortEvidenceParsingBatch, supportsMineru } from './evidence-parsing.js'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { rankCases } from './intelligence/legal-verification.js'
@@ -157,6 +159,7 @@ export type CertificateStreamEvent =
     rewriteVersion?: string
     candidateId?: string
     draft?: ReturnType<typeof prepareAssistantDraft>['draft']
+    authorityNotice?: string
   }
 
 function createId(prefix: string) {
@@ -218,9 +221,9 @@ function queueBackgroundEvidenceProcessing(caseId: string, evidenceIds: string[]
 }
 
 // 解析队列独立运行，不占用模型请求配额。单份完成即可进入现有理解队列。
-function startEvidenceParsing(evidenceIds: string[]) {
-  for (const evidenceId of evidenceIds) {
-    void ensureEvidenceParsed(evidenceId, { batchSize: evidenceIds.length }).then(async evidence => {
+async function startEvidenceParsing(evidences: Evidence[]) {
+  for (const { id: evidenceId } of await sortEvidenceParsingBatch(evidences)) {
+    void ensureEvidenceParsed(evidenceId, { batchSize: evidences.length }).then(async evidence => {
       if (evidence?.parsing?.status !== 'ready') return
       const latest = await readWorkspace()
       const folder = latest.cases.find(item => item.id === evidence.caseId)
@@ -452,9 +455,9 @@ async function drainBackgroundEvidenceProcessingQueue() {
         const task = folder?.agent?.task
         if (!folder || !task || folder.agent?.autoAnalyze === false || !['queued', 'processing'].includes(task.status)) return
         const revision = task.revision
-        const unparsedEvidenceIds = task.evidenceIds.filter(id => {
+        const unparsedEvidences = task.evidenceIds.flatMap(id => {
           const material = initial.evidences.find(item => item.id === id)
-          return material && supportsMineru(material) && !material.parsing && material.summaryStatus !== 'ready'
+          return material && supportsMineru(material) && !material.parsing && material.summaryStatus !== 'ready' ? [material] : []
         })
         // 只处理还没理解好的材料：分批上传时任务队列会不断追加，
         // 若每次都重扫全部材料，批次一多就会退化成材料数乘批次数次读写。
@@ -477,7 +480,7 @@ async function drainBackgroundEvidenceProcessingQueue() {
           task.skippedEvidenceIds = filterStaleSkippedEvidenceIds(initial, task.skippedEvidenceIds)
           task.updatedAt = new Date().toISOString()
           await writeWorkspace(initial)
-          startEvidenceParsing(unparsedEvidenceIds)
+          void startEvidenceParsing(unparsedEvidences)
           scheduleCaseMemoryRebuild(caseId, revision, [])
           return
         }
@@ -485,7 +488,7 @@ async function drainBackgroundEvidenceProcessingQueue() {
         task.stage = '正在理解新增材料'
         task.updatedAt = new Date().toISOString()
         await writeWorkspace(initial)
-        startEvidenceParsing(unparsedEvidenceIds)
+        void startEvidenceParsing(unparsedEvidences)
         const skippedEvidenceIds: string[] = []
         const duplicateEvidenceIds: string[] = []
         try {
@@ -2189,13 +2192,13 @@ export function mergeAutoLinkageItems<T extends { note?: string }>(
   ]
 }
 
-export function mergeAutoLinkageIntoCertificate(latest: Certificate, linked: Certificate): Certificate {
+export function mergeAutoLinkageIntoCertificate(latest: Certificate, linked: Certificate, retainedParagraphs?: ReadonlySet<string>): Certificate {
   const linkedParagraphs = new Map((linked.paragraphs ?? []).map((paragraph) => [paragraph.id, paragraph]))
   return {
     ...latest,
     paragraphs: (latest.paragraphs ?? []).map((paragraph) => {
       const source = linkedParagraphs.get(paragraph.id)
-      if (!source) {
+      if (!source || retainedParagraphs?.has(paragraph.id)) {
         return paragraph
       }
       const links = mergeAutoLinkageItems(
@@ -3732,7 +3735,7 @@ function scoreKeywords(source: string, candidates: string[]) {
 }
 
 function buildParagraphText(evidence: Evidence, role: RoleType, focus: string) {
-  const sideLabel = role === 'plaintiff' ? '原告质证意见' : '被告质证意见'
+  const sideLabel = buildFallbackTitle(role)
   const focusText = focus.trim() || '真实性、关联性与证明力'
   const quote = getQuote(evidence.summaryText || evidence.ocrText)
   return `${sideLabel}：针对证据 ${evidence.number}《${evidence.name}》，当前可重点围绕“${focusText}”展开核验。结合材料摘录“${quote}”，建议进一步核对形成时间、来源链路及与待证事实的对应关系。`
@@ -4392,7 +4395,10 @@ function normalizeImportedEvidenceFile(file: EvidenceImportPayload['files'][numb
   }
 }
 
-function buildCertificate(caseFolder: CaseFolder, evidences: Evidence[], role: RoleType, focus: string): Certificate {
+function buildCertificate(caseFolder: CaseFolder, evidences: Evidence[], role: RoleType, focus: string, docKey?: Certificate['docKey']): Certificate {
+  if (role !== 'plaintiff' && role !== 'defendant' && docKey && docKey !== 'zz') {
+    throw new AppError('请先配置模型后按当前代理立场和文书体例起草。', 503, 'DRAFT_MODEL_REQUIRED')
+  }
   const createdAt = new Date().toISOString()
   const paragraphs: CertificateParagraph[] = evidences.map((evidence, index) => {
     const text = buildParagraphText(evidence, role, focus)
@@ -4409,7 +4415,7 @@ function buildCertificate(caseFolder: CaseFolder, evidences: Evidence[], role: R
   return {
     id: createId('certificate'),
     caseId: caseFolder.id,
-    title: `${role === 'plaintiff' ? '原告' : '被告'}质证意见`,
+    title: buildFallbackTitle(role),
     role,
     focus,
     paragraphIds: paragraphs.map((paragraph) => paragraph.id),
@@ -4418,8 +4424,9 @@ function buildCertificate(caseFolder: CaseFolder, evidences: Evidence[], role: R
   }
 }
 
-function buildFallbackTitle(caseFolder: CaseFolder, role: RoleType) {
-  return `${role === 'plaintiff' ? '原告' : '被告'}质证意见`
+function buildFallbackTitle(role: RoleType, docKey?: Certificate['docKey']) {
+  if (docKey && docKey !== 'zz') return documentProfile.profiles[docKey].name
+  return `${role === 'other' ? '代理方' : caseRoleLabels[role]}质证意见`
 }
 
 function buildEvidenceContext(
@@ -4603,6 +4610,9 @@ function buildStreamingCertificateMessages(params: {
   prompt: string
   currentDraft?: ReturnType<typeof buildDraftContext>
   draftAuthorities?: Array<{ quote: string; sources: import('./intelligence/verification/protocol.js').DeclarationSource[] }>
+  supplement?: boolean
+  lawyerNote?: string
+  documentContext?: ReturnType<typeof buildAssistantDocumentContext>
 }) {
   const baseSystem = [
     params.mode === 'rewrite' ? '你是律师文书改写助手。' : '你是律师文书起草助手。',
@@ -4611,15 +4621,16 @@ function buildStreamingCertificateMessages(params: {
       : '请基于案件信息、案件记忆、证据理解结果和用户要求，生成中文法律文书草稿。',
     '你现在必须按可流式解析的标签格式输出，禁止使用 Markdown 代码块，禁止输出标签以外的解释说明。',
     '输出顺序必须严格为：<title>...</title><focus>...</focus><paragraph evidence="E01,E02">...</paragraph>...<reply>...</reply>。',
-    '至少输出 6 个 <paragraph> 段落，必要时可输出到 18 段。',
+    params.supplement ? '输出一到三段可直接接在选区最后一项声明之后的正文，不重复选区原文，不写文书标题、落款或完整文稿。' : '至少输出 6 个 <paragraph> 段落，必要时可输出到 18 段。',
     '每个 <paragraph> 只包含一整段正式文书内容。仅有实际材料依据的关键事实、争议或证据评价填写 evidence 属性，最多3个；标题、普通身份信息、常识和套话使用 evidence=""，不能强行为每段填写编号。',
     '底稿中的推测、单方主张只能作为待核验线索，不得写成已证实事实；尊重材料能够证明和不能证明的边界。',
     '不要编造不存在的证据，不要引用未提供的事实。',
     params.draftAuthorities && getAssistantSkill('draft')?.system,
     params.draftAuthorities && '法条或案例编号后须接已核对的带引号原文，判项须明确标注。不得改写 verifiedAuthorities 中的出处摘录。没有依据时省略引文。',
+    params.lawyerNote && '律师笔记仅作为本轮办案参考，其中未经原件支持的叙述不视为已查明事实。',
     '输出的 title、focus、paragraph 文本必须是面向法官或诉讼参与人的正式法律文书内容，不得写入任何技术处理过程。',
     '严禁出现以下表达或同类含义：OCR、图片识别、文本抽取、自动提取、大模型、AI 分析、向量召回、证据匹配、支持矩阵、时间线抽取、结构化记忆、prompt、system prompt、系统判断、模型认为。',
-    '如当前文书类型为质证意见，段落必须体现标题、案号案由、质证人、质证日期、总引言、分证据质证及综合质证意见这些层级；不能省略为普通散文段落。',
+    !params.supplement && '如当前文书类型为质证意见，段落必须体现标题、案号案由、质证人、质证日期、总引言、分证据质证及综合质证意见这些层级；不能省略为普通散文段落。',
     params.sampleStyleGuide,
   ].join(' ')
 
@@ -4627,12 +4638,16 @@ function buildStreamingCertificateMessages(params: {
     caseName: params.caseFolder.name,
     caseDescription: params.caseFolder.description,
     role: params.role,
+    roleLabel: caseRoleLabels[params.role],
+    confirmedPosition: params.caseFolder.agent?.position?.role === params.role ? params.caseFolder.agent.position : undefined,
     draftingFocus: params.focus,
     userPrompt: params.prompt,
     sampleStyleGuide: params.sampleStyleGuide,
     caseMemory: params.caseMemoryContext,
     currentDraft: params.currentDraft,
+    documentContext: params.documentContext,
     verifiedAuthorities: params.draftAuthorities,
+    lawyerNote: params.lawyerNote,
     evidences: params.evidenceContext,
   }
 
@@ -4718,8 +4733,14 @@ function inferLegalDocumentKind(input: {
 function buildCertificateSampleStyleGuide(params: {
   role: RoleType
   kind: 'cross_examination' | 'answer'
+  docKey?: Certificate['docKey']
 }) {
-  const roleLabel = params.role === 'defendant' ? '被告' : '原告'
+  const roleLabel = params.role === 'other' ? '代理方' : caseRoleLabels[params.role]
+  const selected = params.docKey && documentProfile.profiles[params.docKey]
+  if (selected) {
+    const required = selected.identityElements.map(type => selected.elements[type].hint || documentProfile.elementTypes[type]).join('；')
+    return `采用${selected.name}体例，从已确认的${roleLabel}代理立场撰写。必要内容：${required}`
+  }
 
   if (params.kind === 'answer') {
     return [
@@ -4738,7 +4759,7 @@ function buildCertificateSampleStyleGuide(params: {
     '标题下方必须单列案件基础信息，写成“案号：……    案由：……”的形式；如现有材料未明确案号或案由，可保留空白或用“待补充”表示，但结构必须保留。',
     `案件基础信息后必须单列“质证人（${roleLabel}）：……”和“质证日期：……”。`,
     `正文开头必须先写一段总引言，采用“${roleLabel}……现就……提交的证据材料，发表如下质证意见：”这一类正式表述。`,
-    '正文主体必须按“ 一、对原告证据一（……）的质证意见 / 二、对原告证据二（……）的质证意见 / 三、对原告证据三（……）的质证意见 ”这种层级展开，不能只按争点分段概述。',
+    '正文主体按对方所提交的证据逐项质证，使用“一、对证据一（……）的质证意见 / 二、对证据二（……）的质证意见”的层级。以材料记载的提交方为准。',
     '对每一组证据，必须尽量完整写出“【对真实性的意见】”“【对合法性、关联性的意见】”“【对证明目的的意见】”三个固定小标题；如某项证据通常不涉及合法性争议，也应优先保留该标题后再给出简洁意见。',
     '当“对证明目的的意见”为不予认可或部分认可时，后文必须继续分层展开，优先使用“（一）……（二）……（三）……”以及“第一、第二、第三”的论证结构，而不是一句话带过。',
     '每一项论证都要紧扣该组证据欲证明的具体事实，分别评价其能否证明、证明到何种程度、为何不足以支持对方主张。',
@@ -4753,6 +4774,7 @@ async function generateCertificateWithLlm(params: {
   evidences: Evidence[]
   caseContextMemory: CaseContextMemory | null
   role: RoleType
+  docKey?: Certificate['docKey']
   focus: string
   prompt?: string
 }) {
@@ -4765,6 +4787,7 @@ async function generateCertificateWithLlm(params: {
   const sampleStyleGuide = buildCertificateSampleStyleGuide({
     role: params.role,
     kind: documentKind,
+    docKey: params.docKey,
   })
   const completion = await createChatCompletion({
     messages: [
@@ -4793,6 +4816,8 @@ async function generateCertificateWithLlm(params: {
           caseName: params.caseFolder.name,
           caseDescription: params.caseFolder.description,
           role: params.role,
+          roleLabel: caseRoleLabels[params.role],
+          confirmedPosition: params.caseFolder.agent?.position,
           draftingFocus: params.focus,
           userPrompt: params.prompt?.trim() || '请基于现有证据生成一版结构完整、可用于后续核验修改的法律文书。',
           sampleStyleGuide,
@@ -4833,7 +4858,7 @@ async function generateCertificateWithLlm(params: {
   const certificate: Certificate = {
     id: createId('certificate'),
     caseId: params.caseFolder.id,
-    title: parsed.title?.trim() || buildFallbackTitle(params.caseFolder, params.role),
+    title: parsed.title?.trim() || buildFallbackTitle(params.role, params.docKey),
     role: params.role,
     focus: parsed.focus?.trim() || params.focus,
     paragraphIds: paragraphs.map((paragraph) => paragraph.id),
@@ -4865,6 +4890,7 @@ async function rewriteCertificateWithLlm(params: {
   const sampleStyleGuide = buildCertificateSampleStyleGuide({
     role: params.certificate.role,
     kind: documentKind,
+    docKey: params.certificate.docKey,
   })
   const completion = await createChatCompletion({
     messages: [
@@ -5759,7 +5785,7 @@ export async function bootstrap(options?: { sanitizeForClient?: boolean }) {
       queueBackgroundEvidenceProcessing(folder.id, folder.agent.task.evidenceIds)
     }
   }
-  startEvidenceParsing(workspace.evidences.filter(item => ['queued', 'processing'].includes(item.parsing?.status ?? '')).map(item => item.id))
+  void startEvidenceParsing(workspace.evidences.filter(item => ['queued', 'processing'].includes(item.parsing?.status ?? '')))
   // 核验指纹使用持久化的法源，知识文件预览只在响应中补充。
   const snapshot = options?.sanitizeForClient ? sanitizeWorkspaceForClient(workspace) : workspace
   return { workspace: hydrateWorkspaceStatutesFromKnowledgeFiles(snapshot) }
@@ -5907,7 +5933,7 @@ export async function confirmCasePosition(caseId: string, value: unknown, expect
 }
 
 export async function caseAgentMessage(caseId: string, message: string, intent: 'position' | 'question',
-  input: import('./intelligence/assistant-options.js').AssistantOptions = {}) {
+  input: import('./intelligence/assistant-options.js').AssistantOptions = {}, lawyerNote?: string, documentContext?: AssistantDocumentContext) {
   const { assistantOptionsSchema, assistantInstructions } = await import('./intelligence/assistant-options.js')
   const { getAssistantCapabilities } = await import('./integrations/llm-service.js')
   const options = assistantOptionsSchema.parse(input)
@@ -5928,7 +5954,8 @@ export async function caseAgentMessage(caseId: string, message: string, intent: 
         ? '仅将本次用户说明整理为待确认的代理立场JSON：{"reply":"确认提示或需要补充的问题","proposal":{"party":"当事人姓名","role":"plaintiff/defendant/third_party/applicant/respondent/other","goals":["目标"],"admissions":["认可事项"],"disputes":["争议"],"boundaries":["约束"]}}。未说明代理谁或目标时proposal为null并追问，不可从材料推定代理身份。可以结合已确认立场理解用户明确的调整。'
         : `回答本次办案问题，使用专业法律口径，重点给出主张、证据、缺口和风险。返回JSON：{"reply":"回答内容"}。不要擅自切换代理方或改变已确认立场；涉及调整时提示使用代理设置确认。引用材料时写系统证据编号，不把未经核验的主张当作事实。\n${assistantInstructions(options)}`}` },
       { role: 'user', content: JSON.stringify({
-        message, confirmedPosition: folder.agent?.position,
+        message, caseName: folder.name, caseDescription: folder.description, confirmedPosition: folder.agent?.position, lawyerNote,
+        documentContext: buildAssistantDocumentContext(workspace, caseId, documentContext),
         memory: memory ? buildCaseMemoryPromptContext({ ...memory, agentContext: folder.agent }) : null,
         evidenceInsights: workspace.evidenceInsights.filter(i => i.caseId === caseId),
         evidenceCatalog: workspace.evidences.filter(e => e.caseId === caseId).map(e => ({ id: e.id, number: e.number, name: e.name })),
@@ -6263,11 +6290,7 @@ async function importEvidencesUnlocked(payload: EvidenceImportPayload) {
     await writeWorkspace(workspace)
     const parsingBatch = Array.from(touchedEvidenceIds, id => workspace.evidences.find(item => item.id === id)!)
       .filter(supportsMineru)
-    // 先让耗时较长的 PDF 开始加载模型，避免多个 PDF 堆在批次末尾。
-    if (env.PARSER_WORKERS > 1 && parsingBatch.length >= 4) {
-      parsingBatch.sort((left, right) => Number(right.type === 'pdf') - Number(left.type === 'pdf'))
-    }
-    startEvidenceParsing(parsingBatch.map(item => item.id))
+    void startEvidenceParsing(parsingBatch)
     if (queueEvidenceIds.length) queueBackgroundEvidenceProcessing(caseFolder.id, queueEvidenceIds)
     return { workspace, created }
   }
@@ -6459,7 +6482,7 @@ export async function retryEvidenceParsing(evidenceId: string, mode: 'auto' | 'd
   if (!evidence) throw new AppError('材料不存在。', 404, 'EVIDENCE_NOT_FOUND')
   if (!supportsMineru(evidence)) throw new AppError('当前材料没有受支持的可解析原件。', 400, 'PARSE_SOURCE_REQUIRED')
   void ensureEvidenceParsed(evidenceId, { force: true, mode }).then(parsed => {
-    if (parsed?.parsing?.status === 'ready') startEvidenceParsing([evidenceId])
+    if (parsed?.parsing?.status === 'ready') void startEvidenceParsing([parsed])
   }).catch(() => {})
   return { workspace: await readWorkspace() }
 }
@@ -6892,6 +6915,7 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
   }
 
   const positionVersion = assertDraftPosition(caseFolder.agent?.position, payload.role)
+  const docKey = normalizeDocKey(payload.docKey) ?? inferDraftDocKey(payload.prompt?.trim() || payload.focus)
   const evidences = workspace.evidences.filter((item) => item.caseId === caseFolder.id && payload.evidenceIds.includes(item.id))
   if (evidences.length === 0) {
     throw new Error('请至少勾选一份证据。')
@@ -6911,15 +6935,16 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
           evidences,
           caseContextMemory,
           role: payload.role,
+          docKey,
           focus: payload.focus,
           prompt: payload.prompt,
         })
       : {
-          certificate: buildCertificate(caseFolder, evidences, payload.role, payload.focus),
+          certificate: buildCertificate(caseFolder, evidences, payload.role, payload.focus, docKey),
           agentReply: '当前未配置模型，已回退为基础规则生成文书。',
         }
   const certificate = await attachAutoStatuteReferencesToCertificate(workspace, {
-    ...rawCertificate, docKey: normalizeDocKey(payload.docKey), paragraphs: rawCertificate.paragraphs.map(item => ({ ...item, aiOrigin: 'draft' })),
+    ...rawCertificate, docKey, paragraphs: rawCertificate.paragraphs.map(item => ({ ...item, aiOrigin: 'draft' })),
   })
   // 保存前重新读取工作区，把生成结果应用到最新状态：
   // 期间后台的材料理解与其它任务的更新不会被旧快照覆盖。
@@ -6946,10 +6971,12 @@ export async function generateCertificate(payload: GenerateCertificatePayload) {
   return { workspace: latest, certificate, agentReply }
 }
 
+type AssistantDraftOptions = { certificateId?: string; selection?: RewriteCertificatePayload['selection']; lawyerNote?: string; context?: AssistantDocumentContext }
+
 export async function streamGenerateCertificate(
   payload: GenerateCertificatePayload,
   onEvent: (event: CertificateStreamEvent) => Promise<void> | void,
-  options?: { signal?: AbortSignal; preview?: { certificateId?: string } },
+  options?: { signal?: AbortSignal; preview?: AssistantDraftOptions },
 ) {
   // 客户端断开（删除案件、手动停止）时把中止信号传进模型调用，避免继续消耗额度。
   return withRequestAbortSignal(options?.signal, () => runStreamGenerateCertificate(payload, onEvent, options))
@@ -6958,7 +6985,7 @@ export async function streamGenerateCertificate(
 async function runStreamGenerateCertificate(
   payload: GenerateCertificatePayload,
   onEvent: (event: CertificateStreamEvent) => Promise<void> | void,
-  options?: { signal?: AbortSignal; preview?: { certificateId?: string } },
+  options?: { signal?: AbortSignal; preview?: AssistantDraftOptions },
 ) {
   const workspace = await readWorkspace()
   const caseFolder = workspace.cases.find((item) => item.id === payload.caseId)
@@ -6970,10 +6997,14 @@ async function runStreamGenerateCertificate(
   const positionVersion = assertDraftPosition(caseFolder.agent?.position, payload.role)
   const preview = options?.preview
   const previewMaterialVersion = preview ? assistantMaterialVersion(workspace, caseFolder.id) : ''
+  const previewContentVersion = preview ? verificationMaterialVersion(workspace, caseFolder.id) : undefined
   const sourceDocument = preview?.certificateId ? workspace.certificates.find(item => item.id === preview.certificateId && item.caseId === caseFolder.id) : undefined
   if (preview?.certificateId && !sourceDocument) throw new AppError('起草所用文书已变化，请重新选择。', 409, 'DRAFT_TARGET_CHANGED')
-  const authorities = preview ? verifiedDraftAuthorities(workspace, sourceDocument) : []
-  const docKey = normalizeDocKey(payload.docKey) ?? (preview ? normalizeDocKey(sourceDocument?.docKey) : undefined)
+  if (preview?.selection && !sourceDocument) throw new AppError('请从当前文书选择要补写的原文。', 400, 'DRAFT_SELECTION_REQUIRED')
+  const supplement = preview?.selection && sourceDocument ? locateSupplement(sourceDocument, preview.selection) : undefined
+  const requestedDocKey = normalizeDocKey(payload.docKey) ?? (!supplement
+    ? inferDraftDocKey(payload.prompt?.trim() || payload.focus) : undefined)
+  const docKey = supplement ? sourceDocument?.docKey : requestedDocKey ?? (preview ? normalizeDocKey(sourceDocument?.docKey) : undefined)
   const evidences = workspace.evidences.filter((item) => item.caseId === caseFolder.id && payload.evidenceIds.includes(item.id))
   if (evidences.length === 0) {
     throw new Error('请至少勾选一份证据。')
@@ -6985,11 +7016,22 @@ async function runStreamGenerateCertificate(
     workspace.evidences.filter((item) => item.caseId === caseFolder.id),
   )
 
+  const modelConfigured = isLlmConfigured()
+  if (supplement && !modelConfigured) throw new AppError('请先配置模型后使用选区补写。', 503, 'DRAFT_MODEL_REQUIRED')
+  const fallback = modelConfigured ? undefined : buildCertificate(caseFolder, evidences, payload.role, payload.focus, docKey)
+  const existingVerification = sourceDocument?.verification
+  const context = preview && existingVerification && existingVerification.inputKey === previewMaterialVersion && !sourceDocument?.linkageStale
+    && (!existingVerification.authorityKey || existingVerification.authorityKey === verificationAuthorityKey(workspace, existingVerification.declarations))
+    ? existingVerification.declarations.filter(item => !existingVerification.dirty?.declarationIds.includes(item.id)
+      && !existingVerification.dirty?.paragraphIds.includes(item.location.paragraphId)) : []
+  const research = preview ? await researchDraftAuthorities(workspace, caseFolder.id, caseFolder.basicInfo?.cause ?? '', payload.focus,
+    docKey, context, caseContextMemory, options?.signal) : undefined
+  const authorities = preview ? [...verifiedDraftAuthorities(workspace, sourceDocument), ...(research?.authorities ?? [])] : []
+
   let certificate: Certificate
   let agentReply: string | undefined
 
-  if (!isLlmConfigured()) {
-    const fallback = buildCertificate(caseFolder, evidences, payload.role, payload.focus)
+  if (fallback) {
     certificate = preview ? fallback : await attachAutoStatuteReferencesToCertificate(workspace, fallback)
     agentReply = '当前未配置模型，已回退为基础规则生成文书。'
     await onEvent({ type: 'meta', title: certificate.title, focus: certificate.focus })
@@ -7010,13 +7052,8 @@ async function runStreamGenerateCertificate(
       prompt: payload.prompt,
       focus: payload.focus,
     })
-    const selectedProfile = preview && docKey ? documentProfile.profiles[docKey] : undefined
-    const sampleStyleGuide = selectedProfile
-      ? `采用${selectedProfile.name}体例。必要内容：${selectedProfile.identityElements.map(type => selectedProfile.elements[type].hint || documentProfile.elementTypes[type]).join('；')}`
-      : buildCertificateSampleStyleGuide({
-      role: payload.role,
-      kind: documentKind,
-      })
+    const sampleStyleGuide = supplement ? '沿用当前文书体例和正文语气，按已确认的代理立场补写选区后的论述。'
+      : buildCertificateSampleStyleGuide({ role: payload.role, kind: documentKind, docKey })
 
     const parsed = await streamStructuredCertificateFromLlm({
       messages: buildStreamingCertificateMessages({
@@ -7029,6 +7066,9 @@ async function runStreamGenerateCertificate(
         focus: payload.focus,
         prompt: payload.prompt?.trim() || '请基于现有证据生成一版结构完整、可用于后续核验修改的法律文书。',
         draftAuthorities: preview ? authorities.map(({ quote, sources }) => ({ quote, sources: sources.filter(source => source.tier !== 'l1') })) : undefined,
+        supplement: Boolean(supplement), lawyerNote: preview?.lawyerNote,
+        documentContext: preview ? buildAssistantDocumentContext(workspace, caseFolder.id, preview.context, sourceDocument) : undefined,
+        currentDraft: supplement && sourceDocument ? buildDraftContext({ ...sourceDocument, paragraphs: [supplement.paragraph] }) : undefined,
       }),
       onEvent,
     })
@@ -7036,12 +7076,13 @@ async function runStreamGenerateCertificate(
     if (!parsed.paragraphs.length) {
       throw new Error('模型未返回有效文书段落。')
     }
+    if (supplement && parsed.paragraphs.length > 3) throw new AppError('补写结果超出三段，请缩小补写范围后重试。', 422, 'DRAFT_SUPPLEMENT_TOO_LONG')
 
     const paragraphs = buildCertificateParagraphsFromLlmOutput(parsed.paragraphs, evidences, payload.prompt)
     certificate = {
       id: createId('certificate'),
       caseId: caseFolder.id,
-      title: parsed.title?.trim() || buildFallbackTitle(caseFolder, payload.role),
+      title: supplement ? '选区补写候选' : parsed.title?.trim() || buildFallbackTitle(payload.role, docKey),
       role: payload.role,
       focus: parsed.focus?.trim() || payload.focus,
       paragraphIds: paragraphs.map((paragraph) => paragraph.id),
@@ -7072,27 +7113,35 @@ async function runStreamGenerateCertificate(
       const currentCase = latest.cases.find(item => item.id === caseId)
       if (!currentCase) throw new AppError('案件已删除，请重新起草。', 409, 'DRAFT_TARGET_CHANGED')
       assertDraftPosition(currentCase.agent?.position, payload.role, positionVersion)
-      const currentDocument = certificateId && latest.certificates.find(item => item.id === certificateId && item.caseId === caseId)
+      const currentDocument = certificateId ? latest.certificates.find(item => item.id === certificateId && item.caseId === caseId) : undefined
       if (caseVersion !== assistantSnapshot([currentCase.name, currentCase.description, currentCase.basicInfo])
         || (certificateId && targetVersion !== assistantSnapshot(currentDocument)) || materialVersion !== assistantMaterialVersion(latest, caseId)
+        || previewContentVersion !== verificationMaterialVersion(latest, caseId)
         || (legalVersion && legalVersion !== assistantSnapshot([latest.knowledgeStatutes, latest.knowledgeCases]))) {
         throw new AppError('起草所依据的文书、材料或法源已更新，请重新生成。', 409, 'DRAFT_TARGET_CHANGED')
       }
-      const accepted = prepared.certificate
-      accepted.verification.revision = randomUUID()
-      accepted.verification.authorityKey = verificationAuthorityKey(latest, accepted.verification.declarations)
-      accepted.verification.audit = [{ id: randomUUID(), at: new Date().toISOString(), actor: getCurrentWorkspaceAccount() ?? latest.user.email,
-        action: 'adopt', paragraphId: accepted.paragraphs[0]?.id, note: '律师采纳 AI 起草候选，新增声明待核验',
-        affected: accepted.verification.declarations.map(item => item.id) }]
-      latest.certificates.unshift(accepted)
+      const actor = getCurrentWorkspaceAccount() ?? latest.user.email
+      const accepted = supplement && currentDocument ? applyDraftSupplement(latest, currentDocument, prepared.certificate, supplement, materialVersion, actor)
+        : prepared.certificate
+      if (supplement && currentDocument) latest.certificates = latest.certificates.map(item => item.id === accepted.id ? accepted : item)
+      else {
+        const verification = prepared.certificate.verification
+        verification.revision = randomUUID()
+        verification.authorityKey = verificationAuthorityKey(latest, verification.declarations)
+        verification.audit = [{ id: randomUUID(), at: new Date().toISOString(), actor,
+          action: 'adopt', paragraphId: accepted.paragraphs[0]?.id, note: '律师采纳 AI 起草候选，新增声明待核验',
+          affected: verification.declarations.map(item => item.id) }]
+        latest.certificates.unshift(accepted)
+      }
       currentCase.status = 'in_review'
       const memory = latest.caseContextMemories.find(item => item.caseId === caseId) ?? null
       upsertDraftMemory(latest, buildDraftMemory(latest, accepted, payload.prompt?.trim() || payload.focus, memory,
         latest.evidences.filter(item => item.caseId === caseId && payload.evidenceIds.includes(item.id))))
       await writeWorkspace(latest)
-      return { certificateId: accepted.id }
+      const adoption = supplement ? accepted.verification?.audit?.at(-1) : undefined
+      return { certificateId: accepted.id, paragraphId: adoption?.paragraphId, elementId: adoption?.declarationId }
     }))
-    await onEvent({ type: 'done', workspace, certificate: prepared.certificate, candidateId, draft: prepared.draft })
+    await onEvent({ type: 'done', workspace, certificate: prepared.certificate, candidateId, draft: prepared.draft, authorityNotice: research?.notice })
     return
   }
   // 保存前重新读取工作区，把生成结果应用到最新状态：
@@ -7258,9 +7307,10 @@ async function runStreamRewriteCertificate(
     title: certificate.title,
     focus: certificate.focus,
   })
-  const sampleStyleGuide = buildCertificateSampleStyleGuide({
+  const sampleStyleGuide = selection ? '保持原文书体例和正文语气，仅调整所选文字。' : buildCertificateSampleStyleGuide({
     role: certificate.role,
     kind: documentKind,
+    docKey: certificate.docKey,
   })
 
   const parsed = await streamStructuredCertificateFromLlm({
@@ -7275,6 +7325,8 @@ async function runStreamRewriteCertificate(
       prompt: selection ? `只对给定的一段原文调整表述。返回且只返回一个段落；不得新增事实或引用，不得改变数字、日期、条号、案号。\n${payload.prompt.trim()}` : payload.prompt.trim(),
       currentDraft: buildDraftContext(selectedParagraph && selection
         ? { ...certificate, paragraphs: [{ ...selectedParagraph, text: selection.quote }] } : certificate),
+      lawyerNote: payload.lawyerNote,
+      documentContext: buildAssistantDocumentContext(workspace, caseFolder.id, payload.context, certificate),
     }),
     onEvent: selection ? () => {} : onEvent,
   })
@@ -7837,7 +7889,16 @@ export async function autoLinkCertificate(
         .filter(item => !getSentenceLinkageGuard(item.sentenceText).skip && item.kind === 'fact' && item.evidenceNeeded)
         .map(item => ({ paragraphId: paragraph.id, quote: item.sentenceText, type: 'E-FACT' as const }))
     })
-    const { declarations, docKey, classificationRequired } = extractDeclarations(merged, candidates)
+    const { declarations: extracted, docKey, classificationRequired } = extractDeclarations(merged, candidates)
+    const previous = latestCertificate.verification
+    const sameRules = previous?.profileVersion === documentProfile.version && previous.docKey === docKey
+    const confirmed = sameRules
+      ? confirmedDeclarationsForFullRecheck(latestCertificate, latestWorkspace, documentProfile.version, linkageInputKey, materialVersion)
+      : new Map<string, import('./intelligence/verification/protocol.js').Declaration>()
+    const declarations = mergeConfirmedDeclarations(extracted, confirmed, docKey)
+    const targets = new Set(declarations.filter(item => !confirmed.has(item.id)).map(item => item.id))
+    const retainedParagraphs = new Set([...confirmed.values()].map(item => item.location.paragraphId))
+    for (const item of declarations) if (targets.has(item.id)) retainedParagraphs.delete(item.location.paragraphId)
     const usedStatutes = declarations.some(item => item.type === 'E-LAW') || merged.paragraphs.some(paragraph =>
       paragraph.references?.some(reference => reference.note === AUTO_STATUTE_REFERENCE_NOTE))
     if (usedStatutes && !isDeepStrictEqual(statuteSnapshot, latestWorkspace.knowledgeStatutes)) {
@@ -7849,13 +7910,11 @@ export async function autoLinkCertificate(
     }
     const caseDeadline = usedCases ? AbortSignal.timeout(12000) : undefined
     const { statuteAdapter, officialStatuteAdapter, caseAdapter } = createVerificationSources(latestWorkspace, caseDeadline)
-    const { declarations: evidenceVerified, documentDiagnostics } = verifyEvidence(merged, declarations, latestWorkspace)
-    const previous = latestCertificate.verification
-    const sameRules = previous?.profileVersion === documentProfile.version && previous.docKey === docKey
+    const { declarations: evidenceVerified, documentDiagnostics } = verifyEvidence(merged, declarations, latestWorkspace, targets)
     const withReviews = sameRules ? carryDeclarationReviews(previous, evidenceVerified) : evidenceVerified
     const legalVerified = await verifyLegalDeclarations(merged, withReviews, {
       knowledgeStatutes: latestWorkspace.knowledgeStatutes, knowledgeCases: latestWorkspace.knowledgeCases,
-    }, statuteAdapter, signal, officialStatuteAdapter, caseAdapter)
+    }, statuteAdapter, signal, officialStatuteAdapter, caseAdapter, new Set(confirmed.keys()))
     throwIfLinkageAborted(signal)
     try {
       await runExclusiveWorkspaceMutation(async () => {
@@ -7873,13 +7932,15 @@ export async function autoLinkCertificate(
           if ((currentMemories.get(memory.id)?.version ?? -1) < (memory.version ?? 0)) currentMemories.set(memory.id, memory)
         }
         currentWorkspace.caseContextMemories = [...currentMemories.values()]
-        const basis = applyDeclarationDependencies(legalVerified)
+        const basis = applyDeclarationDependencies(legalVerified).map(item => confirmed.get(item.id) ?? item)
         const result = recordVerification(currentWorkspace, previous, {
           version: 1, profileVersion: documentProfile.version, inputKey: linkageInputKey, docKey, classificationRequired,
           declarations: sameRules ? carryDeclarationReviews(previous, basis) : basis,
           ...(documentDiagnostics.length ? { documentDiagnostics } : {}),
         }, undefined, certificate.caseId)
-        const next = mergeAutoLinkageIntoCertificate(current, nextCertificate)
+        // 已确认的结果保留核对时间、来源和置信度，避免新一轮计算改写律师确认时的依据。
+        result.declarations = result.declarations.map(item => confirmed.get(item.id) ?? item)
+        const next = mergeAutoLinkageIntoCertificate(current, nextCertificate, retainedParagraphs)
         currentWorkspace.certificates = currentWorkspace.certificates.map(item => item.id === certificateId
           ? { ...next, linkageInputKey, linkageStale: false, verification: result } : item)
         throwIfLinkageAborted(signal)

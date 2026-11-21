@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { AppError } from '../core/app-error.js'
-import type { Certificate, CertificateParagraph, WorkspaceState } from '../domain.js'
+import type { Certificate, CertificateParagraph, ParagraphReference, WorkspaceState } from '../domain.js'
+import type { Declaration } from '../intelligence/verification/protocol.js'
 import { runExclusiveWorkspaceMutation } from '../infrastructure/workspace-lock.js'
 import { createVerificationSources } from '../integrations/verification-sources.js'
 import { extractDeclarations } from '../intelligence/verification/extract.js'
+import { getLinkageSentences } from '../intelligence/linkage-policy.js'
 import { profile } from '../intelligence/verification/profile.js'
-import { invalidateVerification, verificationAuthorityKey } from '../intelligence/verification/review-state.js'
+import { declarationReviewIsCurrent, invalidateVerification, verificationAuthorityKey } from '../intelligence/verification/review-state.js'
 import { getCurrentWorkspaceAccount, readWorkspace, writeWorkspace } from '../store.js'
 import { isAnalysisSkill, runAnalysisSkill } from './analysis.js'
 import { rememberAssistantCandidate, type AssistantCandidateTarget } from './candidates.js'
@@ -26,16 +28,58 @@ function sourceSnapshot(workspace: WorkspaceState, caseId: string, card: Verifie
   return assistantSnapshot(card.source.tier === 'l2' ? workspace.knowledgeStatutes : workspace.knowledgeCases)
 }
 
+function citationReference(card: VerifiedCard): ParagraphReference | undefined {
+  const { tier, id, name, url, quote, locator } = card.source
+  if (tier === 'l1' || !url || !URL.canParse(url) || !quote || !locator) return undefined
+  const parsed = new URL(url)
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return undefined
+  const { caseVerification } = card
+  const caseDetails = caseVerification && { caseNumber: caseVerification.caseNumber, court: caseVerification.court, judgmentDate: caseVerification.judgmentDate }
+  return { type: tier === 'l2' ? 'statute' : 'case', targetId: id, sourceTitle: name, label: locator, locator, quote,
+    ...card.reference, sourceUrl: url, caseDetails, reason: '检索挂靠出处', note: '律师采纳检索引文，待核验' }
+}
+
+function associateCitation(workspace: WorkspaceState, document: Certificate, declarationId: string, reference: ParagraphReference,
+  card: VerifiedCard, inputKey: string) {
+  const previous = document.verification
+  const declaration = previous?.declarations.find(item => item.id === declarationId)
+  const paragraph = document.paragraphs.find(item => item.id === declaration?.location.paragraphId)
+  const sentenceIndex = declaration?.location.sentenceIndex
+  const sentence = paragraph && sentenceIndex !== undefined ? getLinkageSentences(paragraph.text)[sentenceIndex] : undefined
+  if (!previous || previous.inputKey !== inputKey || document.linkageInputKey !== inputKey || !declaration || !paragraph || !sentence
+    || !declarationReviewIsCurrent(paragraph, declaration) || (previous.authorityKey
+      && previous.authorityKey !== verificationAuthorityKey(workspace, previous.declarations))) {
+    throw new AppError('当前声明已更新，请重新定位后检索。', 409, 'CITATION_DECLARATION_CHANGED')
+  }
+  const id = randomUUID()
+  if (paragraph.references?.some(item => item.targetId === reference.targetId && item.locator === reference.locator && item.sourceUrl === reference.sourceUrl
+    && item.id && previous.manualReferences?.[item.id] === declarationId)) return { certificateId: document.id, paragraphId: paragraph.id, elementId: declarationId }
+  const references = [...(paragraph.references ?? []), { ...reference, id, sentenceIndex, sentenceText: sentence.sentenceText }]
+  const paragraphs = document.paragraphs.map(item => item.id === paragraph.id ? { ...item, references, verified: false } : item)
+  const bindings = { ...previous.manualReferences, [id]: declarationId }
+  const actor = getCurrentWorkspaceAccount() ?? workspace.user.email
+  const updated = invalidateVerification(document, { ...document, paragraphs, verification: { ...previous, manualReferences: bindings } }) ?? previous
+  const reason = '已关联可回查的检索出处，待重新核验。'
+  const declarations: Declaration[] = updated.declarations.map(item => item.id === declarationId ? { ...item, verdict: 'pending', reason,
+    review: undefined, conf: null, verifiedText: undefined, verifiedSources: undefined,
+    checks: Object.fromEntries(Object.keys(item.checks).map(code => [code, { outcome: 'pending' as const, reason }])) } : item)
+  document.paragraphs = paragraphs
+  document.linkageStale = true
+  document.verification = { ...updated, declarations, authorityKey: verificationAuthorityKey(workspace, declarations),
+    audit: [...(updated.audit ?? []), { id: randomUUID(), at: new Date().toISOString(), actor, action: 'source',
+      declarationId, paragraphId: paragraph.id, quote: declaration.quote, previousVerdict: declaration.verdict, sources: [card.source], note: reason }] }
+  return { certificateId: document.id, paragraphId: paragraph.id, elementId: declarationId }
+}
+
 function stageCitation(target: Certificate, workspace: WorkspaceState, card: RetrievalCard) {
   if (card.status !== 'verified') return undefined
-  const verifiedLegalSource = (card.source.tier === 'l2' || card.source.tier === 'l3')
-    && card.source.url && card.source.locator && card.source.quote
-  if (!card.evidenceLink && !card.reference && !verifiedLegalSource) return undefined
+  const reference = citationReference(card)
+  if (!card.evidenceLink && !reference) return undefined
   const { caseId, id: certificateId } = target
   const documentVersion = assistantSnapshot(target)
   const materialVersion = assistantMaterialVersion(workspace, caseId)
   const sourceVersion = sourceSnapshot(workspace, caseId, card)
-  return rememberAssistantCandidate({ caseId, certificateId }, () => runExclusiveWorkspaceMutation(async () => {
+  return rememberAssistantCandidate({ caseId, certificateId }, declarationId => runExclusiveWorkspaceMutation(async () => {
     const latest = await readWorkspace()
     const document = latest.certificates.find(item => item.id === certificateId && item.caseId === caseId)
     const folder = latest.cases.find(item => item.id === caseId)
@@ -43,10 +87,16 @@ function stageCitation(target: Certificate, workspace: WorkspaceState, card: Ret
       || sourceSnapshot(latest, caseId, card) !== sourceVersion) {
       throw new AppError('文书或来源已变化，请重新检索后采纳。', 409, 'CITATION_TARGET_CHANGED')
     }
+    if (declarationId && reference) {
+      const result = associateCitation(latest, document, declarationId, reference, card, materialVersion)
+      if (folder.status === 'ready') folder.status = 'in_review'
+      await writeWorkspace(latest)
+      return result
+    }
     const paragraph: CertificateParagraph = {
       id: randomUUID(), text: card.citationText, verified: false, aiOrigin: 'citation',
       ...(card.evidenceLink && { links: [{ ...card.evidenceLink, relation: 'context', note: '律师采纳卷内摘录，待核验' }] }),
-      ...(card.reference && { references: [{ ...card.reference, note: '律师采纳检索引文，待核验' }] }),
+      ...(reference && { references: [reference] }),
     }
     const previous = document.verification
     const baseline = previous && !document.linkageStale && document.linkageInputKey === materialVersion
@@ -60,13 +110,20 @@ function stageCitation(target: Certificate, workspace: WorkspaceState, card: Ret
     const reason = '已采纳可回查引文，待重新核验。'
     const newDeclarations = extracted.declarations.filter(item => item.location.paragraphId === paragraph.id)
       .map(item => ({ ...item, reason, sources: [card.source] }))
+    const citation = reference && newDeclarations.find(item => item.type === (reference.type === 'statute' ? 'E-LAW' : 'E-CASE'))
+    const manualReferences: Record<string, string> = { ...invalidated?.manualReferences }
+    if (reference && citation) {
+      const id = randomUUID()
+      paragraph.references = [{ ...reference, id, sentenceIndex: citation.location.sentenceIndex }]
+      manualReferences[id] = citation.id
+    }
     const declarations = [...(baseline?.declarations ?? extracted.declarations.filter(item => item.location.paragraphId !== paragraph.id)), ...newDeclarations]
     const affected = newDeclarations.map(item => item.id)
     document.verification = {
       ...invalidated,
       version: 1, profileVersion: profile.version, inputKey: materialVersion, docKey: extracted.docKey,
       classificationRequired: extracted.classificationRequired, documentDiagnostics: baseline?.documentDiagnostics,
-      revision: randomUUID(), authorityKey: verificationAuthorityKey(latest, declarations), declarations,
+      revision: randomUUID(), authorityKey: verificationAuthorityKey(latest, declarations), declarations, manualReferences,
       dirty: { paragraphIds: [...new Set([...(invalidated?.dirty?.paragraphIds ?? []), paragraph.id])],
         declarationIds: [...new Set([...(invalidated?.dirty?.declarationIds ?? []), ...affected])] },
       audit: [...(previous?.audit ?? []), { id: randomUUID(), action: 'adopt', at: new Date().toISOString(),
@@ -77,7 +134,7 @@ function stageCitation(target: Certificate, workspace: WorkspaceState, card: Ret
     if (folder.status === 'ready') folder.status = 'in_review'
     await writeWorkspace(latest)
     return { certificateId, paragraphId: paragraph.id, elementId: newDeclarations[0]?.id }
-  }))
+  }), Boolean(reference))
 }
 
 export async function executeAssistantSkill(id: string, input: SkillInput, signal?: AbortSignal) {

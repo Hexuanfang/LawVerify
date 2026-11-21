@@ -3,7 +3,7 @@ import { elementTypes, normalizeDocKey, profile, verificationChecks } from './pr
 import type { Declaration, DeclarationLocation, DocKey, ElementType, EvidenceCell, FactKind } from './protocol.js'
 
 type ParagraphInput = { id: string; text: string; richText?: string; aiOrigin?: Declaration['aiOrigin']; evidenceCell?: EvidenceCell }
-type ExtractionInput = { id: string; docKey?: string; title?: string; paragraphs: ParagraphInput[] }
+type ExtractionInput = { id: string; docKey?: string; title?: string; paragraphs: ParagraphInput[]; verification?: { declarations: Declaration[] } }
 type ModelCandidate = { paragraphId: string; type: ElementType; quote: string; start?: number; factKinds?: FactKind[] }
 
 const lawCitation = /《[^》\n]+》\s*(?:第\s*[0-9０-９零〇一二两三四五六七八九十百千万]+\s*(?:条(?:\s*之\s*[0-9０-９零〇一二两三四五六七八九十百千万]+)?|[款项编章])\s*)+/gu
@@ -134,6 +134,7 @@ export function extractDeclarations(document: ExtractionInput, model: ModelCandi
   const offCandidates: Declaration[] = []
   const occupied = new Set<string>()
   const superseded = new Set<string>()
+  const priorOrigins = new Map(document.verification?.declarations.filter(item => item.aiOrigin).map(item => [item.id, item]))
   const modelByParagraph = new Map<string, ModelCandidate[]>()
   for (const item of model) {
     const list = modelByParagraph.get(item.paragraphId)
@@ -149,9 +150,10 @@ export function extractDeclarations(document: ExtractionInput, model: ModelCandi
       occupied.add(id)
       const target = docKey && profile.profiles[docKey].elements[type].level === 'off' ? offCandidates : declarations
       const reason = '已定位原文，待判定。'
+      const prior = priorOrigins.get(id)
       const declaration: Declaration = { id, type, quote, location: { paragraphId: paragraph.id, paragraphIndex, start, end: start + quote.length, ...extra },
         ...(type === 'E-FACT' ? { factKinds: factSignals.filter(([kind, pattern]) => pattern.test(quote) || modelFactKinds.includes(kind)).map(([kind]) => kind) } : {}),
-        aiOrigin: paragraph.aiOrigin, verdict: 'pending', reason, conf: null, sources: [],
+        aiOrigin: paragraph.aiOrigin ?? (prior?.quote === quote ? prior.aiOrigin : undefined), verdict: 'pending', reason, conf: null, sources: [],
         checks: Object.fromEntries(verificationChecks(docKey, type).map(code => [code, { outcome: 'pending', reason }])),
       }
       target.push(declaration)

@@ -58,7 +58,7 @@ test('起草候选预览不写入，明确采纳后仅保存一份待核文书',
 test('起草前拦截空立场，采纳时拦截过期立场', async () => {
   await runWithWorkspaceAccount('draft-unconfirmed@test.invalid', async () => {
     await setup(false)
-    await assert.rejects(preview(), /请先确认/)
+    await assert.rejects(preview(), { code: 'DRAFT_POSITION_REQUIRED' })
   })
   await runWithWorkspaceAccount('draft-stale@test.invalid', async () => {
     await setup(true)

@@ -6,7 +6,8 @@ import type { Certificate, CertificateParagraph, WorkspaceState } from '../../do
 import { getLinkageSentences } from '../linkage-policy.js'
 import { dependentDeclarationIds } from './dependencies.js'
 import { extractDeclarations } from './extract.js'
-import type { CheckCode, Declaration, DeclarationReviewAction, VerificationResult } from './protocol.js'
+import { profile } from './profile.js'
+import type { CheckCode, Declaration, DeclarationReviewAction, DocKey, VerificationResult } from './protocol.js'
 import { mayConfirmDeclaration, reviewedVerdict } from './review-status.js'
 
 export const reviewActionSchema = z.object({
@@ -31,6 +32,46 @@ export function verificationAuthorityKey(workspace: Pick<WorkspaceState, 'knowle
 export function declarationReviewIsCurrent(paragraph: CertificateParagraph, declaration: Declaration) {
   const { paragraphId, start, end } = declaration.location
   return paragraph.id === paragraphId && paragraph.text.slice(start, end) === declaration.quote
+}
+
+export function confirmedDeclarationsForFullRecheck(certificate: Certificate, workspace: Pick<WorkspaceState, 'knowledgeCases' | 'knowledgeStatutes'>,
+  profileVersion: string, inputKey: string, materialVersion: string) {
+  const previous = certificate.verification
+  if (!previous || previous.profileVersion !== profileVersion || previous.docKey !== certificate.docKey
+    || previous.inputKey !== inputKey || certificate.linkageInputKey !== inputKey
+    || previous.materialVersion !== materialVersion || previous.authorityKey !== verificationAuthorityKey(workspace, previous.declarations)
+    || (certificate.linkageStale && !previous.dirty)) return new Map<string, Declaration>()
+
+  const paragraphs = new Map(certificate.paragraphs.map((item, index) => [item.id, { item, index }]))
+  const dirtyParagraphs = new Set(previous.dirty?.paragraphIds)
+  const dirty = new Set(previous.dirty?.declarationIds)
+  const known = new Set(previous.declarations.map(item => item.id))
+  for (const declaration of previous.declarations) {
+    const paragraph = paragraphs.get(declaration.location.paragraphId)
+    if (!paragraph || dirtyParagraphs.has(paragraph.item.id) || !declarationReviewIsCurrent(paragraph.item, declaration)
+      || declaration.dependencies?.some(edge => !known.has(edge.id))) dirty.add(declaration.id)
+  }
+  const affected = dependentDeclarationIds(previous.declarations, dirty)
+  return new Map(previous.declarations.flatMap(item => {
+    if (item.review?.decision !== 'confirmed' || item.verdict === 'pending' || affected.has(item.id) || !mayConfirmDeclaration(item)) return []
+    const index = paragraphs.get(item.location.paragraphId)!.index
+    return [[item.id, item.location.paragraphIndex === index ? item : { ...item, location: { ...item.location, paragraphIndex: index } }] as const]
+  }))
+}
+
+export function mergeConfirmedDeclarations(declarations: Declaration[], confirmed: ReadonlyMap<string, Declaration>, docKey?: DocKey) {
+  if (!confirmed.size) return declarations
+  const indexed = new Map<string, Declaration[]>()
+  for (const item of confirmed.values()) {
+    const key = `${item.location.paragraphId}:${item.type}`
+    indexed.set(key, [...(indexed.get(key) ?? []), item])
+  }
+  const merged = declarations.filter(item => !indexed.get(`${item.location.paragraphId}:${item.type}`)?.some(known =>
+    known.location.start < item.location.end && item.location.start < known.location.end))
+  merged.push(...confirmed.values())
+  const identity = docKey ? profile.profiles[docKey].identityElements : []
+  return merged.sort((left, right) => Number(!identity.includes(left.type)) - Number(!identity.includes(right.type))
+    || left.location.paragraphIndex - right.location.paragraphIndex || left.location.start - right.location.start)
 }
 
 export function applyReviewAction(result: VerificationResult, declarationId: string, action: DeclarationReviewAction, actor: string) {
@@ -251,7 +292,7 @@ export function invalidateVerification(before: Certificate, after: Certificate, 
   } satisfies VerificationResult
 }
 
-function reopenAuthorityContext(declarations: Declaration[], changed: Declaration[], dirty: Set<string>) {
+export function reopenAuthorityContext(declarations: Declaration[], changed: Declaration[], dirty: Set<string>) {
   const legalBasisChanged = changed.some(item => ['E-FACT', 'E-LAW', 'E-CLAIM'].includes(item.type))
   const caseContextChanged = changed.filter(item => ['E-FACT', 'E-LAW', 'E-CLAIM', 'E-FOCUS', 'E-PROC'].includes(item.type))
   for (const item of declarations) {

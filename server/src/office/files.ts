@@ -8,17 +8,18 @@ import type { Certificate, CertificateParagraph } from '../domain.js'
 import { OFFICE_FILE_ID } from '../infrastructure/workspace-case-files.js'
 import { getCurrentWorkspaceAccount, rememberCaseFile } from '../store.js'
 import { patchOfficeDocx, readOfficeDocxBlocks } from './patch.js'
+import { markdownBlocks, patchMarkdown } from './markdown.js'
 
-export type OfficeFormat = 'doc' | 'docx' | 'txt'
 export type OfficeFile = NonNullable<Certificate['officeFile']>
+export type OfficeFormat = OfficeFile['format']
 export const MAX_OFFICE_BYTES = 20 * 1024 * 1024
 
 export function officeFormat(fileName: string): OfficeFormat {
   if (!fileName || /[\\/\u0000-\u001f]/u.test(fileName))
     throw new AppError('文书文件名不正确。', 400, 'OFFICE_FILE_NAME')
   const suffix = path.extname(fileName).slice(1).toLowerCase()
-  if (suffix !== 'doc' && suffix !== 'docx' && suffix !== 'txt')
-    throw new AppError('文书仅支持 Word（.doc、.docx）或 TXT。', 400, 'OFFICE_FORMAT')
+  if (suffix !== 'doc' && suffix !== 'docx' && suffix !== 'txt' && suffix !== 'md' && suffix !== 'markdown')
+    throw new AppError('文书支持 Word（.doc、.docx）、TXT 或 Markdown（.md、.markdown）。', 400, 'OFFICE_FORMAT')
   return suffix
 }
 
@@ -61,14 +62,17 @@ export async function storeOfficeFile(caseId: string, bytes: Buffer, fileName: s
   return { id, fileName, format, version, sha256: officeHash(bytes), contentHash: '', updatedAt: new Date().toISOString() }
 }
 
-export async function parseOfficeBytes(bytes: Buffer, format: 'docx' | 'txt', preserveTableCells = false) {
+export async function parseOfficeBytes(bytes: Buffer, format: Exclude<OfficeFormat, 'doc'>, preserveTableCells = false) {
   if (bytes.length > MAX_OFFICE_BYTES) throw new AppError('文书超过 20 MB。', 413, 'OFFICE_TOO_LARGE')
-  if (format === 'txt') {
+  if (format !== 'docx') {
+    const label = format === 'txt' ? 'TXT' : 'Markdown'
     let text: string
     try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
-    catch { throw new AppError('TXT 文书需要 UTF-8 编码，请转换编码后重试。', 422, 'OFFICE_TEXT_ENCODING') }
-    if (text.includes('\0')) throw new AppError('TXT 包含二进制数据。', 422, 'OFFICE_INVALID_TEXT')
-    return { text, html: '', paragraphs: undefined }
+    catch { throw new AppError(`${label} 文书需要 UTF-8 编码，请转换编码后重试。`, 422, 'OFFICE_TEXT_ENCODING') }
+    if (text.includes('\0')) throw new AppError(`${label} 包含二进制数据。`, 422, 'OFFICE_INVALID_TEXT')
+    const paragraphs = format === 'txt' ? undefined : markdownBlocks(text.replace(/\r\n?/gu, '\n'))
+      .map(({ text, richText }) => ({ text, richText }))
+    return { text, html: '', paragraphs }
   }
   try {
     // 按 OOXML 提取段落、制表符与软换行，原 DOCX 文件负责保留排版。
@@ -90,11 +94,18 @@ export async function legacyOfficeBytes(certificate: Certificate) {
   const file = certificate.officeFile
   if (file && file.contentHash === officeContentHash(certificate.paragraphs))
     return { bytes: await readFile(officePath(file.id)), file }
-  if (file?.format === 'docx') {
+  if (file?.format === 'docx' || file?.format === 'md' || file?.format === 'markdown') {
     let snapshot: { paragraphs: CertificateParagraph[] }
     try { snapshot = JSON.parse(await readFile(officePath(file.id, 'json'), 'utf8')) }
-    catch { throw new AppError('原 Word 文件缺少正文基线，已阻止覆盖，请重新导入原件。', 409, 'OFFICE_BASE_MISSING') }
-    const bytes = await patchOfficeDocx(await readFile(officePath(file.id)), snapshot.paragraphs, certificate.paragraphs)
+    catch { throw new AppError('原文书文件缺少正文基线，请重新导入原件。', 409, 'OFFICE_BASE_MISSING') }
+    const original = await readFile(officePath(file.id))
+    let bytes: Buffer
+    if (file.format === 'docx') bytes = await patchOfficeDocx(original, snapshot.paragraphs, certificate.paragraphs)
+    else {
+      const text = original.toString('utf8')
+      const bom = text.startsWith('\uFEFF') ? '\uFEFF' : ''
+      bytes = Buffer.from(bom + patchMarkdown(text.slice(bom.length), snapshot.paragraphs, certificate.paragraphs), 'utf8')
+    }
     const stored = await storeOfficeFile(certificate.caseId, bytes, file.fileName, file.version + 1)
     stored.contentHash = officeContentHash(certificate.paragraphs)
     await atomicOfficeJson(stored.id, { paragraphs: certificate.paragraphs })

@@ -1,4 +1,6 @@
 import { saveDocumentContent } from '../document-editing.js'
+import { assistantContextSchema } from '../assistant/context.js'
+import { caseRoles } from '../intelligence/case-roles.js'
 import { Router, type Request } from 'express'
 import multer from 'multer'
 import { boundedFileStorage, boundedMemoryStorage, reserveUpload } from '../middleware/bounded-upload.js'
@@ -75,7 +77,10 @@ const createCaseSchema = z.object({
 const assistantTargetSchema = z.object({ caseId: z.string().min(1).max(200), certificateId: z.string().min(1).max(200).optional() })
 const draftPreviewSchema = assistantTargetSchema.extend({
   docKey: z.string().max(16).optional(), evidenceIds: z.array(z.string().min(1).max(200)).min(1),
-  role: z.enum(['plaintiff', 'defendant']), focus: z.string().max(6000), prompt: z.string().max(8000).optional(), model: z.string().max(200).optional(),
+  role: z.enum(caseRoles), focus: z.string().max(6000), prompt: z.string().max(8000).optional(), model: z.string().max(200).optional(),
+  selection: z.object({ paragraphId: z.string().min(1).max(200), start: z.number().int().nonnegative(), quote: z.string().min(1).max(1000) }).optional(),
+  lawyerNote: z.string().trim().max(20000).optional(),
+  context: assistantContextSchema.optional(),
 })
 
 const rechargeSchema = z.object({
@@ -401,7 +406,7 @@ export function createV1Router() {
       await withAssistantModel(preview?.model, () => streamGenerateCertificate(preview ?? request.body, async (event) => {
         if (event.type === 'done') {
           if (preview) {
-            sendStreamEvent(response, 'done', { candidateId: event.candidateId, certificate: event.certificate, draft: event.draft })
+            sendStreamEvent(response, 'done', { candidateId: event.candidateId, certificate: event.certificate, draft: event.draft, authorityNotice: event.authorityNotice })
             return
           }
           sendStreamEvent(response, 'done', {
@@ -424,7 +429,7 @@ export function createV1Router() {
   })
 
   router.post('/assistant/candidates/:candidateId/adopt', async (request, response) => {
-    const body = assistantTargetSchema.extend({ confirmed: z.literal(true) }).parse(request.body)
+    const body = assistantTargetSchema.extend({ confirmed: z.literal(true), declarationId: z.string().min(1).max(650).optional() }).parse(request.body)
     const candidateId = z.uuid().parse(request.params.candidateId)
     sendSuccess(response, await adoptAssistantCandidate({ ...body, candidateId }))
   })
@@ -479,6 +484,8 @@ export function createV1Router() {
         evidenceIds: Array.isArray(request.body?.evidenceIds) ? request.body.evidenceIds : [],
         prompt: typeof request.body?.prompt === 'string' ? request.body.prompt : '',
         selection: request.body?.selection,
+        lawyerNote: z.string().trim().max(20000).optional().parse(request.body?.lawyerNote),
+        context: assistantContextSchema.optional().parse(request.body?.context),
       }, async (event) => {
         if (event.type === 'done') {
           sendStreamEvent(response, 'done', {

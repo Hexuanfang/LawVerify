@@ -48,8 +48,16 @@ export function assessCaseContext(declaration: Declaration, item: CaseDetail, de
   const scores = [relationScore, compareFeatures(item.issues, issues), compareFeatures(item.key_facts, factual),
     compareFeatures(item.rules, rules), stageScore] as const
   const fields = ['法律关系', '争议焦点', '关键事实', '裁判规则', '程序问题']
-  const dimensions: NonNullable<CaseVerification['dimensions']> = scores.map((score, index) => ({ field: fields[index], score,
-    reason: score === undefined ? '现案或详情缺少可核对内容。' : score === 1 ? '已匹配详情和现案声明。' : score === 0 ? '当前声明未匹配详情。' : '部分特征匹配。' }))
+  const sourced = [
+    [item.cause && `案由 ${item.cause}`, item.legal_relationship, item.party_roles.length && `主体 ${item.party_roles.join('、')}`],
+    item.issues, item.key_facts, item.rules, [item.procedure],
+  ]
+  const dimensions: NonNullable<CaseVerification['dimensions']> = scores.map((score, index) => {
+    const outcome = score === undefined ? '现案或详情缺少可核对内容。' : score === 1 ? '已匹配详情和现案声明。'
+      : score === 0 ? '当前声明未匹配详情。' : '部分特征匹配。'
+    const detail = sourced[index].filter(Boolean).join('；').slice(0, 600)
+    return { field: fields[index], score, reason: detail ? `${outcome} 裁判详情 · ${detail}` : outcome }
+  })
   const cause = item.cause ? Number(all.includes(caseText(item.cause)) || (relationScore === 1 && relation(item.cause) === currentRelation)) : undefined
   const accuracy = [all ? cause : undefined, compareFeatures(item.party_roles, factual), scores[2], scores[1]]
   const accuracyReason = ['案由', '主体', '关键事实', '争议'].map((field, index) => {

@@ -10,8 +10,29 @@ import './test-linkage-batching.mjs'
 import * as policy from '../src/intelligence/linkage-policy.ts'
 import { normalizeDocKey, profile as documentProfile } from '../src/intelligence/verification/profile.ts'
 import { parseModelDeclarationCandidates } from '../src/intelligence/verification/extract.ts'
-import { invalidateVerification } from '../src/intelligence/verification/review-state.ts'
+import { confirmedDeclarationsForFullRecheck, invalidateVerification, mergeConfirmedDeclarations, verificationAuthorityKey } from '../src/intelligence/verification/review-state.ts'
 import { buildClaimUnits, buildClaimEvidenceMatches, buildEvidenceFragments } from '../src/intelligence/evidence-matching.ts'
+
+test('全文重核保留已确认的有效锚点，材料、上游变化或待核验会解除保留', () => {
+  const workspace = { knowledgeCases: [], knowledgeStatutes: [] }
+  const paragraphs = ['原告已付款。', '被告已收款。', '交付无异议。'].map((text, index) => ({ id: `p${index}`, text, verified: false }))
+  const declarations = paragraphs.map(({ text, id }, index) => ({
+    id, quote: text, type: 'E-FACT', verdict: index === 2 ? 'pending' : 'pass', checks: {}, review: { decision: 'confirmed' },
+    location: { paragraphId: id, paragraphIndex: index, start: 0, end: text.length },
+    sources: [{ tier: 'l1', id: 'document', name: '流水', locator: '第 1 页', quote: text }],
+    ...(index === 1 && { dependencies: [{ id: 'p0', check: 'B4' }] }),
+  }))
+  const verification = { profileVersion: documentProfile.version, docKey: 'qs', inputKey: 'materials',
+    materialVersion: 'v1', authorityKey: verificationAuthorityKey(workspace, declarations), declarations }
+  const certificate = { paragraphs, linkageInputKey: 'materials', docKey: 'qs', verification }
+  const frozen = confirmedDeclarationsForFullRecheck(certificate, workspace, documentProfile.version, 'materials', 'v1')
+  assert.deepEqual([...frozen.keys()], ['p0', 'p1'])
+  const changedModel = { ...declarations[0], id: 'p0-model', quote: '已付款', location: { ...declarations[0].location, start: 2, end: 5 } }
+  assert.deepEqual(mergeConfirmedDeclarations([changedModel, declarations[2]], frozen, 'qs'), declarations)
+  assert.equal(confirmedDeclarationsForFullRecheck(certificate, workspace, documentProfile.version, 'materials', 'v2').size, 0)
+  assert.equal(confirmedDeclarationsForFullRecheck({ ...certificate, verification: { ...verification,
+    dirty: { paragraphIds: ['p0'], declarationIds: [] } } }, workspace, documentProfile.version, 'materials', 'v1').size, 0)
+})
 
 // Exercise the actual service functions without loading databases, accounts or API keys.
 function loadFunctions(file, names, mocks = {}) {

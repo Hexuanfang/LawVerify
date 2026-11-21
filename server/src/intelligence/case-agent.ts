@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { CaseContextMemory, Evidence, EvidenceInsight } from '../domain.js'
+import { caseRoles } from './case-roles.js'
 
 export const positionSchema = z.object({
   party: z.string().trim().min(1).max(200),
-  role: z.enum(['plaintiff', 'defendant', 'third_party', 'applicant', 'respondent', 'other']),
+  role: z.enum(caseRoles),
   goals: z.array(z.string().trim().min(1).max(1000)).min(1).max(12),
   admissions: z.array(z.string().trim().min(1).max(1000)).max(12).default([]),
   disputes: z.array(z.string().trim().min(1).max(1000)).max(12).default([]),

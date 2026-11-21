@@ -35,8 +35,7 @@ function textIndex(root: XmlNode, separators: boolean) {
   return { text, spans }
 }
 
-export function rewriteRichText(html: string | undefined, original: string, next: string) {
-  if (!html) return undefined
+function parseRichText(html: string, original: string) {
   const conflict = () => new AppError('正文与富文本无法对齐，请保存文书后重新选择改写范围。', 409, 'REWRITE_RICH_TEXT_CONFLICT')
   let root: XmlNode
   try {
@@ -50,6 +49,12 @@ export function rewriteRichText(html: string | undefined, original: string, next
   const index = canonical.text.includes(original) ? canonical : textIndex(root, false)
   const base = index.text.indexOf(original)
   if (base < 0 || index.text.indexOf(original, base + 1) >= 0) throw conflict()
+  return { root, index, base, separators: index === canonical, conflict }
+}
+
+export function rewriteRichText(html: string | undefined, original: string, next: string) {
+  if (!html) return undefined
+  const { root, index, base, separators, conflict } = parseRichText(html, original)
   let prefix = 0
   while (prefix < original.length && original[prefix] === next[prefix]) prefix++
   let suffix = 0
@@ -68,7 +73,30 @@ export function rewriteRichText(html: string | undefined, original: string, next
     node.textContent = node.textContent.slice(0, Math.max(0, start - left)) + (i ? '' : replacement)
       + node.textContent.slice(Math.min(right - left, end - left))
   }
-  const checked = textIndex(root, index === canonical).text
+  const checked = textIndex(root, separators).text
   if (checked !== index.text.slice(0, base) + next + index.text.slice(base + original.length)) throw conflict()
+  return Array.from(root.childNodes).map(item => item.toString()).join('')
+}
+
+export function insertRichText(html: string, original: string, offset: number, insertion: string) {
+  const { root, index, base, separators, conflict } = parseRichText(html, original)
+  const position = base + offset
+  const span = index.spans.find(item => item.start <= position && position <= item.end)
+  if (!span) throw conflict()
+  const { node, start } = span
+  const local = position - start
+  const text = node.textContent
+  if (separators) {
+    const siblings = Array.from(node.parentNode.childNodes)
+    const following = siblings[siblings.indexOf(node) + 1] ?? null
+    const document = node.ownerDocument
+    node.textContent = text.slice(0, local)
+    insertion.split('\n').forEach((line, index) => {
+      if (index) node.parentNode.insertBefore(document.createElementNS('', 'br'), following)
+      if (line) node.parentNode.insertBefore(document.createTextNode(line), following)
+    })
+    if (local < text.length) node.parentNode.insertBefore(document.createTextNode(text.slice(local)), following)
+  } else node.textContent = text.slice(0, local) + insertion + text.slice(local)
+  if (textIndex(root, separators).text !== index.text.slice(0, position) + insertion + index.text.slice(position)) throw conflict()
   return Array.from(root.childNodes).map(item => item.toString()).join('')
 }

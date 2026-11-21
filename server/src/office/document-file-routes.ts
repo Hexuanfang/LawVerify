@@ -28,7 +28,7 @@ export function createDocumentFileRouter() {
   })
   router.post('/import', reserveUpload, upload.single('file'), async (request, response) => {
     const file = request.file
-    if (!file) throw new AppError('请选择 Word 或 TXT 文书。', 400, 'DOCUMENT_REQUIRED')
+    if (!file) throw new AppError('请选择 Word、TXT 或 Markdown 文书。', 400, 'DOCUMENT_REQUIRED')
     try {
       const caseId = z.string().min(1).parse(request.body.caseId)
       const docKey = z.string().max(16).optional().parse(request.body.docKey)

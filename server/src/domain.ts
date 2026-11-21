@@ -1,6 +1,7 @@
 import type { CaseAgentState } from './intelligence/case-agent.js'
+import type { CaseRole } from './intelligence/case-roles.js'
 
-export type RoleType = 'plaintiff' | 'defendant'
+export type RoleType = CaseRole
 
 export type EvidenceType = 'pdf' | 'ppt' | 'image' | 'word' | 'text' | 'other'
 export type EvidenceFragmentType = 'document' | 'page' | 'paragraph' | 'ocr_block' | 'image_region' | 'audio_segment'
@@ -155,6 +156,8 @@ export interface ParagraphReference {
   label: string
   locator: string
   quote: string
+  sourceUrl?: string
+  caseDetails?: Pick<import('./intelligence/verification/protocol.js').CaseVerification, 'caseNumber' | 'court' | 'judgmentDate'>
   sentenceIndex?: number
   sentenceText?: string
   note?: string
@@ -324,7 +327,7 @@ export interface Certificate {
   officeFile?: {
     id: string
     fileName: string
-    format: 'doc' | 'docx' | 'txt'
+    format: 'doc' | 'docx' | 'txt' | 'md' | 'markdown'
     version: number
     sha256: string
     contentHash: string
@@ -540,6 +543,8 @@ export interface RewriteCertificatePayload {
   certificateId: string
   evidenceIds: string[]
   prompt: string
+  lawyerNote?: string
+  context?: import('./assistant/context.js').AssistantDocumentContext
   selection?: import('./intelligence/verification/rewrite-selection.js').RewriteSelection
 }
 

@@ -1,4 +1,5 @@
 import { saveDocumentContent } from '../document-editing.js'
+import { assistantContextSchema } from '../assistant/context.js'
 import { createDocumentFileRouter } from '../office/document-file-routes.js'
 import { Router, type Request, type Response } from 'express'
 import { getEvidenceParsing } from '../evidence-parsing.js'
@@ -335,8 +336,10 @@ export function createLegacyRouter() {
       message: z.string().trim().min(1).max(6000),
       intent: z.enum(['position', 'question']),
       options: assistantOptionsSchema.optional(),
+      lawyerNote: z.string().trim().max(20000).optional(),
+      context: assistantContextSchema.optional(),
     }).parse(request.body)
-    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent, payload.options))
+    sendWorkspacePayload(response, await caseAgentMessage(request.params.caseId, payload.message, payload.intent, payload.options, payload.lawyerNote, payload.context))
   })
 
   router.get('/assistant/capabilities', async (_request, response) => {
@@ -571,6 +574,8 @@ export function createLegacyRouter() {
         evidenceIds: Array.isArray(request.body?.evidenceIds) ? request.body.evidenceIds : [],
         prompt: typeof request.body?.prompt === 'string' ? request.body.prompt : '',
         selection: request.body?.selection,
+        lawyerNote: z.string().trim().max(20000).optional().parse(request.body?.lawyerNote),
+        context: assistantContextSchema.optional().parse(request.body?.context),
       }, async (event) => {
         if (event.type === 'done') {
           sendStreamEvent(response, 'done', {

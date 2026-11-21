@@ -338,7 +338,8 @@ async function reviewLaterCases(declaration: Declaration, lookupCase: (number: s
     caseVerification: { ...state, documents, effect: correction ?? state.effect, allowCitation: false } }
 }
 
-export async function verifyCaseDeclarations(certificate: CaseCertificate, declarations: Declaration[], adapter: CaseAdapter, signal?: AbortSignal) {
+export async function verifyCaseDeclarations(certificate: CaseCertificate, declarations: Declaration[], adapter: CaseAdapter, signal?: AbortSignal,
+  frozen?: ReadonlySet<string>) {
   const cache = new Map<string, Promise<CaseLookup>>()
   const lookupCase = (caseNumber: string) => {
     const key = normalizeCaseNumber(caseNumber)
@@ -354,10 +355,11 @@ export async function verifyCaseDeclarations(certificate: CaseCertificate, decla
   for (const declaration of declarations) {
     if (declaration.type !== 'E-CASE') continue
     signal?.throwIfAborted()
+    if (frozen?.has(declaration.id)) { cases.push(declaration); continue }
     const lookup = hasCaseNumberFormat(normalizeCaseNumber(declaration.quote)) ? await lookupCase(declaration.quote) : undefined
     const checked = checkCase(declaration, paragraphs.get(declaration.location.paragraphId) ?? '', declarations, certificate.docKey, lookup)
     cases.push(await reviewLaterCases(checked, lookupCase))
   }
   const verified = new Map(groupCases(cases, certificate).map(item => [item.id, item]))
-  return declarations.map(item => verified.get(item.id) ?? item)
+  return declarations.map(item => frozen?.has(item.id) ? item : verified.get(item.id) ?? item)
 }

@@ -72,7 +72,7 @@ module.exports = async function checkCaseAssistant({ evaluate, wait, clickText, 
   })
   await reload()
   await enter(caseName)
-  await clickText('.workspace-doc-strip button', 'AI 助手')
+  await clickText('.workspace-right-tablist [role=tab]', 'AI 助手')
   await ready()
   assert.equal(await evaluate("document.querySelectorAll('.case-assistant-message').length"), 10, '完整显示全部历史对话')
   assert.doesNotMatch(await evaluate("document.querySelector('.workspace-ai-panel').textContent"), /语音|Skills|默认模型|代理设置与案件记忆/)

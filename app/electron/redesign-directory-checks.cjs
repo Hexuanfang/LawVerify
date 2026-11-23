@@ -6,8 +6,15 @@ module.exports = async function checkDirectory({ evaluate, wait, clickText, save
   const focus = () => evaluate("window.dispatchEvent(new Event('focus'))")
   const hasEvidence = name => saved(state => state.evidences.some(item => item.caseId === target && item.fileName === name && item.storageKey))
   const openDirectory = async () => {
-    await clickText('.add-mat', '本地文件夹联动')
-    await wait("document.querySelector('.new-directory') && !document.querySelector('.new-directory button:disabled')")
+    await clickText('.add-mat', '导入材料或文书')
+    await wait("document.querySelector('.new-upload .upload-directory')")
+    await clickText('.upload-directory', '管理本地文件夹联动')
+    await wait("document.querySelector('.new-directory .directory-actions button:first-child:not(:disabled)')")
+  }
+  const closeDirectory = async () => {
+    await clickText('.new-directory button', '完成')
+    await wait("document.querySelector('.new-upload')")
+    await clickText('.new-upload [data-slot=dialog-close]', 'Close')
   }
   const sync = () => clickText('.new-directory button', '立即同步')
   const poll = async predicate => {
@@ -18,6 +25,11 @@ module.exports = async function checkDirectory({ evaluate, wait, clickText, save
     }
     throw new Error('文件夹联动持久化检查超时')
   }
+  await openDirectory()
+  await clickText('.directory-actions button:not(:disabled)', '链接目录')
+  await wait("document.querySelector('.new-directory .directory-status')?.textContent === '目录已链接' && !document.querySelector('.new-directory button:disabled')")
+  await poll(() => hasEvidence('测试材料.txt'))
+  await closeDirectory()
   fs.writeFileSync(path.join(linkedDirectory, '新增材料.txt'), '新增材料第一版')
   await focus()
   await evaluate("document.dispatchEvent(new Event('visibilitychange'))")
@@ -37,8 +49,8 @@ module.exports = async function checkDirectory({ evaluate, wait, clickText, save
   await sync()
   await poll(async () => !await hasEvidence('新增材料.txt'))
   await wait("!document.querySelector('.new-directory button:disabled')")
-  await clickText('.new-directory button', '完成')
-  await clickText('.topbar button', '首页')
+  await closeDirectory()
+  await clickText('.topbar button.brand-home', 'LawVerify 首页')
   await wait("document.querySelector('#pg-home') && document.querySelector('.dock .dock-ava')")
   await evaluate("document.querySelector('.dock-ava').click()")
   await wait("document.querySelector('.acct-grid')")
@@ -60,8 +72,8 @@ module.exports = async function checkDirectory({ evaluate, wait, clickText, save
   await openDirectory()
   await sync()
   await poll(() => hasEvidence('删除失败后新增.txt'))
-  await wait("!document.querySelector('.new-directory button:disabled')")
-  await clickText('.new-directory button', '解除链接')
+  await wait("document.querySelector('.new-directory .directory-status')?.textContent === '目录已链接' && !document.querySelector('.new-directory button:disabled')")
+  await clickText('.directory-actions button:not(:disabled)', '解除链接')
   await wait("document.querySelector('.directory-confirm')")
   await clickText('.directory-confirm button', '取消解除')
   assert.equal(await hasEvidence('测试材料.txt'), true)
@@ -76,7 +88,8 @@ module.exports = async function checkDirectory({ evaluate, wait, clickText, save
   await focus()
   await new Promise(resolve => setTimeout(resolve, 350))
   assert.equal(await hasEvidence('测试材料.txt'), false)
-  await clickText('.new-directory button', '完成')
+  assert.equal(await hasEvidence('子目录材料.txt'), true)
+  await closeDirectory()
   await evaluate("delete document.visibilityState")
   console.log('PASS directory linking, manual-only sync, modify, delete and unlink')
 }

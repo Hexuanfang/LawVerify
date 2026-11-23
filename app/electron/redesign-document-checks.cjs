@@ -4,9 +4,6 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
   const open = async () => {
     if (!await evaluate("Boolean(document.querySelector('#pg-ws'))")) await enter('必要工作流测试')
     await wait("document.querySelector('.whole-document-content')")
-    if (await evaluate("document.querySelector('.workspace-edit-toggle').getAttribute('aria-pressed') === 'false'")) {
-      await clickText('.workspace-document-heading button', '整篇排版')
-    }
   }
   const selectBlock = async (index, position = 'all') => {
     await evaluate(`(() => {
@@ -32,7 +29,7 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
     await wait("document.querySelector('.document-save-button').disabled")
   }
   const close = async () => {
-    await clickText('.topbar button', '首页')
+    await clickText('.topbar button.brand-home', 'LawVerify 首页')
     await wait("document.querySelector('#pg-home')")
   }
 
@@ -160,7 +157,7 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
   assert.doesNotMatch(await evaluate("document.querySelector('.new-error').textContent"), /不一致|未找到原声明/)
   await saved(state => assert.equal(state.certificates.find(item => item.id === 'essential-doc').paragraphs[1].text, '第一行已修改。第二行。'))
   await clickText('.inline-actions button', '取消'); await clickText('.new-error button', '关闭')
-  await clickText('.ops button', '管理引用')
+  await clickText('.ops button', '关联出处')
   await wait("document.querySelector('.essential-reference-dialog')")
   await saved(async state => {
     state.certificates.find(item => item.id === 'essential-doc').paragraphs[1].references = [{ id: 'external-ref', type: 'statute', targetId: 'essential-article', sourceTitle: '外部新增引用', label: '第一条', locator: '第一条', quote: '后台刚新增的引用' }]
@@ -227,7 +224,7 @@ module.exports = async function checkDocument({ evaluate, wait, clickText, fill,
   await wait("document.querySelector('#pg-report')")
   await saved(state => assert.ok(state.certificates.find(item => item.id === 'essential-doc').paragraphs.some(p => p.text.includes('导出前保存正文。'))))
   await clickText('.topbar button', '← 返回工作台')
-  await wait("document.querySelector('.whole-document-content[contenteditable=false]')")
+  await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
   assert.match(await evaluate("document.querySelector('.whole-document-content').textContent"), /导出前保存正文/)
   assert.equal(await evaluate("document.querySelector('.document-save-button').disabled"), true)
 

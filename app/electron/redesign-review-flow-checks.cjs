@@ -21,19 +21,24 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   await selectReviewedFixture()
   await wait("document.querySelector('.audit')?.textContent.includes('当前账号记录')")
   assert.doesNotMatch(await evaluate("document.querySelector('.audit').textContent"), /其他账号记录/)
-  await clickText('.add-doc', '导入待核验文书')
+  await clickText('.add-mat', '导入材料或文书')
   await wait("document.querySelector('.new-upload')")
   await evaluate(`(() => {
-    const input = document.querySelector('input[aria-label="上传已撰写文书"]')
+    const input = document.querySelector('input[aria-label="上传材料或文书"]')
     const files = new DataTransfer()
-    for (const name of ['批量甲', '批量乙', '批量丙']) files.items.add(new File(['借款已交付。'], name + '.txt', { type: 'text/plain' }))
+    for (const name of ['批量甲', '批量乙', '批量丙']) files.items.add(new File(['民事起诉状\\n借款已交付。'], name + '.txt', { type: 'text/plain' }))
     input.files = files.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
   verification.progressTexts = [
+    '原材料与证据解析 · 共 2 份 · 已就绪 0 份 · 解析中 0 份 · 待解析 0 份 · 跳过 2 份',
     '正在读取文书与案件材料', '正在梳理案件背景、争议焦点与证据薄弱点',
     '正在核对第 1 组内容的证据原文与句级关联', '正在核验争议对应的法律依据',
     '正在核验相关案例与裁判规则', '正在保存联动结果',
+  ]
+  verification.skippedMaterials = [
+    { evidenceId: 'parse-failed', fileName: '流水原件.pdf', status: 'failed', reason: '解析服务不可用' },
+    { evidenceId: 'parse-review', fileName: '聊天截图.png', status: 'review_required', reason: '仅识别到图形' },
   ]
   await evaluate(`(() => {
     window.__verificationStages = []
@@ -47,6 +52,7 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   verification.importDelay = 500
   verification.enabled = true
   verification.failNext = 2
+  await wait("document.querySelector('.upload-actions .btn-pri:not(:disabled)')")
   await clickText('.upload-actions button', '导入并核验')
   await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('正在解析文书')")
   assert.equal(await evaluate("Boolean(document.querySelector('.new-upload'))"), false, '上传解析应在共用流程页显示')
@@ -56,12 +62,17 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   await wait("document.querySelector('#pg-proc .proc-actions')?.textContent.includes('重试')")
   assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.on').length"), 0, '失败后不能继续显示处理中')
   assert.match(await evaluate("document.querySelector('#pg-proc .proc-t').textContent"), /《批量乙》/)
-  assert.deepEqual(await evaluate('window.__verificationStages'), ['1', '2', '3', '4', '5', '6'], '六个实际处理阶段都应显示')
+  assert.deepEqual(await evaluate('window.__verificationStages'), ['1', '2', '3', '4', '5', '6', '7'], '七个实际处理阶段都应显示')
   const ids = await saved(state => ['批量甲', '批量乙', '批量丙'].map(title => state.certificates.find(item => item.title === title).id))
   assert.deepEqual(verification.calls, ids.slice(0, 2), '失败后应停止，尚未执行后续文书')
   await clickText('.proc-actions button', '重试')
   await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('核验完成')")
-  assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.done').length"), 6, '完成时六个步骤都必须显示完成')
+  assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.done').length"), 7, '完成时七个步骤都必须显示完成')
+  assert.match(await evaluate("document.querySelector('#pg-proc .proc-skipped').previousElementSibling.textContent"), /生成文档与保存结果/)
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#pg-proc .proc-skipped li'), item => item.textContent)"), [
+    '流水原件.pdf解析失败 · 解析服务不可用', '聊天截图.png待人工审核 · 仅识别到图形',
+  ])
+  verification.skippedMaterials = undefined
   assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.on').length"), 0)
   await evaluate("new Promise(resolve=>setTimeout(resolve,200))")
   assert.equal(await evaluate("Boolean(document.querySelector('#pg-proc'))"), true, '完成后不能自动退出进度页')
@@ -70,18 +81,19 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   await wait("document.querySelector('#pg-ws .ctool h1')?.textContent === '批量丙'")
   assert.match(await evaluate("document.querySelector('#pg-ws .topbar').textContent"), /王某诉李某民间借贷纠纷/)
   assert.deepEqual(verification.calls, [ids[0], ids[1], ids[1], ids[2]], '重试仅执行失败及剩余文书，不能漏核或重复已完成文书')
-  await clickText('.add-doc', '导入待核验文书')
+  await clickText('.add-mat', '导入材料或文书')
   await wait("document.querySelector('.new-upload')")
   await evaluate(`(() => {
-    const input = document.querySelector('input[aria-label="上传已撰写文书"]')
+    const input = document.querySelector('input[aria-label="上传材料或文书"]')
     const files = new DataTransfer()
-    for (const name of ['取消甲', '取消乙', '取消丙']) files.items.add(new File(['借款已交付。'], name + '.txt', { type: 'text/plain' }))
+    for (const name of ['取消甲', '取消乙', '取消丙']) files.items.add(new File(['民事起诉状\\n借款已交付。'], name + '.txt', { type: 'text/plain' }))
     input.files = files.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
   verification.holdAt = 6
+  await wait("document.querySelector('.upload-actions .btn-pri:not(:disabled)')")
   await clickText('.upload-actions button', '导入并核验')
-  await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('第 2/3 份') && document.querySelector('#pg-proc .pst.on .pst-i')?.textContent === '3'")
+  await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('第 2/3 份') && document.querySelector('#pg-proc .pst.on .pst-i')?.textContent === '4'")
   await clickText('.proc-actions button', '取消核验')
   await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('核验已取消')")
   assert.match(await evaluate("document.querySelector('#pg-proc .proc-t').textContent"), /《取消乙》/)
@@ -92,7 +104,8 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   assert.deepEqual(verification.calls.slice(4), cancelledIds.slice(0, 2), '取消后不能再执行第三份文书')
   await clickText('.proc-actions button', '重试')
   await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('核验完成')")
-  assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.done').length"), 6, '完成时六个步骤都必须显示完成')
+  assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.done').length"), 7, '完成时七个步骤都必须显示完成')
+  assert.equal(await evaluate("Boolean(document.querySelector('#pg-proc .proc-skipped'))"), false, '没有跳过材料时不显示提示')
   assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.on').length"), 0)
   await evaluate("new Promise(resolve=>setTimeout(resolve,200))")
   assert.equal(await evaluate("Boolean(document.querySelector('#pg-proc'))"), true, '完成后不能自动退出进度页')
@@ -321,7 +334,6 @@ module.exports.checkWordExport = async function checkWordExport({
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.document-editor-tools button')).find(button=>button.textContent.trim()==='导出原格式').disabled"), true)
     await clickText('.document-editor-notice button', '使用已保存正文')
 
-    await clickText('.workspace-document-heading button', '整篇排版')
     await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
     await evaluate(`(() => {
       const editor = document.querySelector('.whole-document-content');
@@ -511,7 +523,7 @@ module.exports.checkWordExport = async function checkWordExport({
   for (const marker of [...linkedMarkers, linkedCase.sourceUrl]) assert.ok(singleText.includes(marker), `单案报告缺少 ${marker}`)
   assert.ok(!singleText.includes(blockedCase.title))
   console.log('PASS T6 report dependency links, current-document authorities, Word blocking and independent case DOCX')
-  await clickText('.workspace-doc-strip button', 'AI 助手')
+  await clickText('.workspace-right-tablist [role=tab]', 'AI 助手')
   await wait("document.querySelector('.workspace-ai-modes button[aria-label=\"查类案\"]:not(:disabled)')")
   await clickText('.workspace-ai-modes button', '查类案')
   const send = () => clickText('.assistant-composer button', '发送')
@@ -572,7 +584,7 @@ module.exports.checkWordExport = async function checkWordExport({
 
   await checkEditorPersistence()
 
-  await clickText('.workspace-doc-strip button', 'AI 助手')
+  await clickText('.workspace-right-tablist [role=tab]', 'AI 助手')
   await wait("document.querySelector('.workspace-ai-modes')")
   await clickText('.workspace-ai-modes button', '起草文书')
   await send()
@@ -593,7 +605,7 @@ module.exports.checkWordExport = async function checkWordExport({
 
   await back()
   await wait("document.querySelector('.workspace-doc-strip')")
-  if (!await evaluate("Boolean(document.querySelector('.workspace-ai-panel'))")) await clickText('.workspace-doc-strip button', 'AI 助手')
+  if (!await evaluate("document.querySelector('.workspace-ai-panel')?.checkVisibility()")) await clickText('.workspace-right-tablist [role=tab]', 'AI 助手')
   await wait("document.querySelector('.workspace-ai-more')")
   for (const [skill, field] of [['证据三性', '真实性'], ['论证链检查', '论证断链'], ['金额复算', '算式'],
     ['风险与补强', '补证动作'], ['争议焦点', '共同争点'], ['时间线梳理', '日期待核']]) {

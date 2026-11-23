@@ -8,7 +8,7 @@ const project = path.resolve(__dirname, '../..')
 const directory = fs.mkdtempSync(path.join(project, 'tmp/parser-review-ui-'))
 app.setPath('userData', path.join(directory, 'profile'))
 app.disableHardwareAcceleration()
-let closeParser, server, window
+let server, window
 ipcMain.handle('parser-qa-account', () => ({ status: 200, body: JSON.stringify({ success: true,
   data: { user: { email: 'parser-ui@test.invalid', name: '测试律师' }, organization: { id: 'qa', role: 'member' } } }) }))
 const preload = path.join(directory, 'preload.cjs')
@@ -18,29 +18,23 @@ app.whenReady().then(async () => {
   try {
     const build = process.env.LAWVERIFY_REDESIGN_SERVER_DIST ?? path.join(project, 'server/dist')
     const { env } = await import(pathToFileURL(path.join(build, 'config/env.js')).href)
-    const { useParserWorkerFixture } = await import(pathToFileURL(path.join(project, 'server/scripts/parser-test-fixtures.mjs')).href)
     Object.assign(env, { WORKSPACE_DATA_DIR: path.join(directory, 'data'), APP_DATA_ROOT: directory,
       STORAGE_LOCAL_ROOT: 'storage',
       FRONTEND_DIST_DIR: path.join(project, 'app/dist'), AI_GATEWAY_MODE: 'direct', KNOWLEDGE_RAG_MODE: 'local',
       LLM_BASE_URL: '', LLM_API_KEY: '', LLM_MODEL: '' })
-    useParserWorkerFixture(env, directory)
-    closeParser = (await import(pathToFileURL(path.join(build, 'infrastructure/document-jobs.js')).href)).closeDocumentParser
     fs.mkdirSync(path.join(directory, 'storage'), { recursive: true })
     fs.copyFileSync(path.join(project, 'server/eval/v2/assets/native-contract.pdf'), path.join(directory, 'storage/source.pdf'))
     const store = await import(pathToFileURL(path.join(build, 'store.js')).href)
-    const parsing = await import(pathToFileURL(path.join(build, 'evidence-parsing.js')).href)
     const account = 'parser-ui@test.invalid'
     await store.runWithWorkspaceAccount(account, async () => {
       const state = await store.readWorkspace()
       state.cases = [{ id: 'qa-case', name: '解析审核验证', description: '', status: 'draft', createdAt: '2026-11-16', agent: { autoAnalyze: false } }]
       state.certificates = []
       state.evidences = [{ id: 'qa-evidence', caseId: 'qa-case', type: 'pdf', name: '待审核合同', number: 'E01',
-        fileName: 'source.pdf', storageKey: 'source.pdf', contentHash: 'qa', ocrText: '', uploadedAt: '2026-11-16' }]
+        fileName: 'source.pdf', storageKey: 'source.pdf', contentHash: 'qa', ocrText: '', uploadedAt: '2026-11-16',
+        parsing: { status: 'review_required', revision: 'qa', sourceKey: 'qa', mode: 'auto', engineVersion: 'qa', updatedAt: '2026-11-16' } }]
       await store.writeWorkspace(state)
-      const evidence = await parsing.ensureEvidenceParsed('qa-evidence')
-      assert.equal(evidence?.parsing?.status, 'review_required', evidence?.parsing?.error)
     })
-    await closeParser()
     const backend = await import(pathToFileURL(path.join(build, 'app.js')).href)
     server = backend.createApp().app.listen(0, '127.0.0.1')
     await new Promise(resolve => server.once('listening', resolve))
@@ -66,29 +60,19 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.case-card').click()")
     await wait("document.querySelector('.mat-it')")
     assert.equal(await evaluate("Boolean(document.querySelector('.mat-it svg[data-status=review_required]'))"), true, '待人工审核使用状态图标')
-    await evaluate("document.querySelector('.mat-it').focus()")
+    await evaluate("document.querySelector('.mat-it').dispatchEvent(new FocusEvent('focusin', { bubbles: true }))")
     await wait("document.querySelector('[role=tooltip]')?.textContent.includes('待人工审核')")
-    await evaluate("document.querySelector('.mat-it').blur()")
+    await evaluate("document.querySelector('.mat-it').dispatchEvent(new FocusEvent('focusout', { bubbles: true }))")
     await wait("!document.querySelector('[role=tooltip]')")
     await evaluate("document.querySelector('.mat-it svg[data-status=review_required]').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }))")
     await wait("document.querySelector('[role=tooltip]')?.textContent.includes('待人工审核')")
     await evaluate("document.querySelector('.mat-it').click()")
-    await wait("document.querySelector('textarea[aria-label=\"待审核解析正文\"]')")
-    assert.equal(await evaluate("document.querySelectorAll('.new-material-manage textarea').length"), 1, '解析审核只提供一个正文编辑入口')
+    await wait("document.querySelector('.evidence-references')?.textContent.includes('暂无文书引用此材料')")
+    assert.equal(await evaluate("document.querySelector('.new-drawer textarea, .new-drawer .evidence-manage')"), null)
     await wait("document.querySelector('.pdf-preview canvas')?.width > 0 && !document.querySelector('.pdf-preview [role=status]') && !document.querySelector('.pdf-preview [role=alert]')")
-    await wait("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='确认正文并继续理解'&&!b.disabled)")
-    await evaluate(`(() => {const element=document.querySelector('textarea[aria-label="待审核解析正文"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(element,'人工审核补正文：金额1000元，尚未还款。');element.dispatchEvent(new Event('input',{bubbles:true}));})()`)
-    await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='确认正文并继续理解').click()")
-    await wait("document.body.textContent.includes('正文已经人工确认')")
-    await wait("document.querySelector('.mat-it svg[data-status=ready]')")
-    await store.runWithWorkspaceAccount(account, async () => {
-      const state = await store.readWorkspace()
-      assert.equal(state.evidences[0].parsing.status, 'ready')
-      assert.equal(state.evidences[0].ocrText, '人工审核补正文：金额1000元，尚未还款。')
-    })
-    fs.writeFileSync(path.join(directory, 'review-confirmed.png'), (await window.webContents.capturePage()).toPNG())
+    fs.writeFileSync(path.join(directory, 'pending-review-preview.png'), (await window.webContents.capturePage()).toPNG())
     fs.writeFileSync(path.join(directory, 'result.json'), JSON.stringify({ passed: true, directory }))
-    console.log(`人工审核界面通过 ${directory}`)
+    console.log(`待审核材料状态与原件预览检查通过 ${directory}`)
     window.destroy()
     server.close(() => app.exit(0))
   } catch (error) {
@@ -99,7 +83,6 @@ app.whenReady().then(async () => {
     }
     console.error(error)
     window?.destroy()
-    await closeParser?.()
     server?.close()
     app.exit(1)
   }

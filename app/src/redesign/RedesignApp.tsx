@@ -10,7 +10,6 @@ import './fonts.css'
 import './styles/global.css'
 import './integration.css'
 
-const DirectoryLinksModal = lazy(() => import('./DirectoryLinksModal').then(module => ({ default: module.DirectoryLinksModal })))
 const loadWorkspace = () => import('./Workspace')
 const Workspace = lazy(() => loadWorkspace().then(module => ({ default: module.Workspace })))
 const Report = lazy(() => import('./Report').then(module => ({ default: module.Report })))
@@ -30,7 +29,6 @@ function Shell() {
       )
       if (
         editing ||
-        app.uploadCase ||
         app.documentCase ||
         app.form ||
         app.drawer ||
@@ -89,7 +87,6 @@ function Shell() {
           </Suspense>
           <Dock />
           <Suspense fallback={<div className="toast show" role="status">正在加载…</div>}>
-            {app.uploadCase && <DirectoryLinksModal key={`directory:${app.uploadCase}`} />}
             {app.documentCase && <UploadModal key={`import:${app.documentCase}`} />}
             {app.form && <FormModal key={`${app.form.tab}:${app.form.id ?? ''}`} />}
             {app.drawer && <PreviewDrawer />}

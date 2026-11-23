@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { FolderOpen, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import {
   Dialog,
@@ -20,6 +20,7 @@ import {
 } from './components/ui/select'
 import { useApp } from './AppContext'
 import { CaseFileCard } from './CaseFileCard'
+import { CaseMaterialCard } from './CaseMaterialCard'
 import { prepareCaseFiles } from './caseSetup'
 import { api } from '../api'
 import type { KnowledgeCase, KnowledgeStatuteDocument } from '../types'
@@ -42,31 +43,14 @@ export function FormModal() {
   const [task, setTask] = useState<'verify' | 'draft'>('verify')
   const [files, setFiles] = useState<File[]>([])
   const [documents, setDocuments] = useState<File[]>([])
-  const [directories, setDirectories] = useState<Array<{ id: string; name: string }>>([])
-  const [directoryError, setDirectoryError] = useState('')
+  const [links, setLinks] = useState<CaseMaterialSelection[]>([])
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false)
   const [reading, setReading] = useState(0)
   const onReading = (active: boolean) => setReading(current => current + (active ? 1 : -1))
-  const blocked = app.busy || reading > 0
-  const missingCaseFiles = (!files.length && !directories.length) || (task === 'verify' && !documents.length)
-  const desktop = window.lawVerifyDesktop
-  const canLinkDirectory = desktop?.pickCaseDirectory && desktop.attachCaseDirectory && desktop.readCaseDirectoryFile
-  const pickDirectory = async () => {
-    if (blocked || !canLinkDirectory) return
-    const account = sessionStorage.getItem('lawverify-login-account') || ''
-    const session = sessionStorage.getItem('lawverify-auth-session')
-    onReading(true)
-    setDirectoryError('')
-    try {
-      const directory = await desktop.pickCaseDirectory!({ account })
-      if (directory && account === sessionStorage.getItem('lawverify-login-account') && session === sessionStorage.getItem('lawverify-auth-session')) {
-        setDirectories(current => current.some(item => item.id === directory.id) ? current : [...current, directory])
-      }
-    } catch (error) {
-      setDirectoryError(error instanceof Error ? error.message : '无法读取文件夹，请重新选择。')
-    } finally {
-      onReading(false)
-    }
-  }
+  const filesBusy = app.busy || reading > 0
+  const blocked = filesBusy || materialPickerOpen
+  const needsCaseName = creatingProject && !values.name?.trim()
+  const missingCaseFiles = (!files.length && !links.length) || (task === 'verify' && !documents.length)
   const law = app.workspace?.knowledgeStatutes.find(
     (item) =>
       item.id === form?.id ||
@@ -160,7 +144,7 @@ export function FormModal() {
               cause: values.cause, court: values.court, caseNumber: values.caseNumber },
           })
           signal.throwIfAborted()
-          prepareFiles = prepareCaseFiles({ caseId, name, files, directories,
+          prepareFiles = prepareCaseFiles({ caseId, name, files, links,
             documents: task === 'verify' ? documents : [],
             position: party && ourSide && goals.length ? { party, role: ourSide, goals, admissions: [], disputes: [], boundaries: [] } : undefined,
           })
@@ -411,23 +395,17 @@ export function FormModal() {
                 </div>
               </fieldset>}
               {creatingProject && <div className={`case-files-grid${task === 'verify' ? ' case-files-verify' : ''}`}>
-                <CaseFileCard material required allowFolderUpload files={files} onFiles={setFiles} disabled={blocked} onReading={onReading}
-                  onLinkDirectory={canLinkDirectory ? pickDirectory : undefined}>
-                  {directoryError && <p className="case-file-feedback" role="status">{directoryError}</p>}
-                  {directories.length > 0 && <ul className="case-file-list" aria-label="待链接的材料文件夹">
-                    {directories.map(directory => <li key={directory.id} className="chip">
-                      <FolderOpen size={17} aria-hidden="true" />
-                      <div><b>{directory.name}</b><small>创建后链接</small></div>
-                      <Button variant="ghost" size="icon" type="button" disabled={blocked} aria-label={`移除文件夹 ${directory.name}`}
-                        onClick={() => setDirectories(current => current.filter(item => item.id !== directory.id))}><X size={14} aria-hidden="true" /></Button>
-                    </li>)}
-                  </ul>}
-                </CaseFileCard>
-                {task === 'verify' && <CaseFileCard required allowFolderUpload files={documents} onFiles={setDocuments} disabled={blocked} onReading={onReading} />}
+                <CaseMaterialCard links={links} onLinks={setLinks} files={files} onFiles={setFiles} disabled={filesBusy}
+                  pickerOpen={materialPickerOpen} onPicking={setMaterialPickerOpen} onReading={onReading} />
+                {task === 'verify' && <CaseFileCard files={documents} onFiles={setDocuments}
+                  disabled={filesBusy} pickerOpen={materialPickerOpen} onReading={onReading} />}
               </div>}
             </div>
           )}
           <div className="fm-ft">
+            {needsCaseName && !missingCaseFiles && (
+              <span className="case-file-feedback self-center" role="status">请填写案件名称后继续。</span>
+            )}
             {!creatingProject && <DialogClose asChild>
               <Button
                 type="button"
@@ -440,7 +418,7 @@ export function FormModal() {
             <Button
               type="submit"
               className="btn btn-pri btn-sm"
-              disabled={blocked || (creatingProject && (!values.name?.trim() || missingCaseFiles))}
+              disabled={blocked || needsCaseName || (creatingProject && missingCaseFiles)}
             >
               {creatingProject ? (task === 'verify' ? '创建并核验' : '创建并起草') : app.busy ? '保存中…' : editingProject ? '保存案件信息' : '保存'}
             </Button>

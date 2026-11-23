@@ -115,7 +115,7 @@ export function CaseDeleteDialog({ target, onClose }: { target: CaseDeleteTarget
           <DialogTitle>{removed ? '案件文件待清理' : '删除案件？'}</DialogTitle>
           <DialogDescription>
             {removed ? `可重试清理「${selection?.name}」在应用内的剩余文件和记录。`
-              : `将永久删除「${selection?.name}」及应用内保存的文书、材料副本和记录。链接目录里的原件、已导出的文件及整库备份仍会保留。`}
+              : `将永久删除「${selection?.name}」及应用内保存的文书、材料副本和记录，并解除本机材料链接。本机原件、已导出的文件及整库备份仍会保留。`}
           </DialogDescription>
         </DialogHeader>
         <div className="fm-ft">

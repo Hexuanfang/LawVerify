@@ -71,7 +71,6 @@ function useAppState() {
   const [selected, select] = useState('')
   const [filter, setFilter] = useState('all')
   const [libTab, setLibTab] = useState<LibTab>('law')
-  const [uploadCase, setUploadCase] = useState<string | null>(null)
   const [documentCase, setDocumentCase] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(null)
   const [drawer, setDrawer] = useState<Source | null>(null)
@@ -459,10 +458,11 @@ function useAppState() {
           controller.signal.throwIfAborted()
           setDocId(id)
           select('')
-          setProc(current => ({ ...current, step: 0, title: titles.get(id), message: `正在核验第 ${index + 1}/${ids.length} 份文书` }))
+          setProc(current => ({ ...current, step: 0, title: titles.get(id), message: '准备读取材料解析状态' }))
           const outcome = await api.autoLinkCertificate(id, text => {
             const step = verificationStep(text)
-            setProc(current => ({ ...current, step: Math.max(current.step, step), message: `第 ${index + 1}/${ids.length} 份 · ${text}` }))
+            const message = step === 0 ? text : `第 ${index + 1}/${ids.length} 份 · ${text}`
+            setProc(current => ({ ...current, step: Math.max(current.step, step), message }))
           }, controller.signal, scope)
           for (const item of outcome.linkage.certificate.verification?.skippedMaterials ?? []) {
             skippedMaterials.set(item.evidenceId, item)
@@ -648,8 +648,6 @@ function useAppState() {
     libTab,
     setLibTab,
     documentCase, setDocumentCase,
-    uploadCase,
-    setUploadCase,
     form,
     setForm,
     drawer,

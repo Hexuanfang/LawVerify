@@ -80,7 +80,7 @@ async function syncDirectory(account: string, caseId: string, directory: CaseDir
       caseId, processInBackground: true,
       files: pending.map((entry, index) => {
         const asset = assets[index]
-        if (!asset) throw new Error(`文件“${entry.item.fileName}”同步失败。`)
+          if (!asset) throw new Error(`文件“${entry.item.fileName}”导入失败。`)
         return {
           ...asset,
           fileName: entry.item.fileName,

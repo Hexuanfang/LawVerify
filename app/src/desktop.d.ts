@@ -32,7 +32,8 @@ declare global {
       getServiceStatus?: () => Promise<{ state: string }>
       onServiceStatus?: (listener: (payload: { state: string }) => void) => () => void
       linkCaseDirectory?: (payload: { account: string; caseId: string; requestId?: string }) => Promise<CaseDirectoryManifest | null>
-      pickCaseDirectory?: (payload: { account: string }) => Promise<{ id: string; name: string } | null>
+      pickCaseDirectory?: (payload: { account: string; retainIds: string[] }) => Promise<CaseMaterialSelection | null>
+      stageDroppedCaseMaterials?: (account: string, files: File[], retainIds: string[]) => Promise<{ links: CaseMaterialSelection[]; skipped: number }>
       attachCaseDirectory?: (payload: { account: string; caseId: string; selectionId: string }) => Promise<CaseDirectoryManifest>
       onCaseDirectoryBatch?: (listener: (batch: CaseDirectoryBatch) => void) => () => void
       scanCaseDirectories?: (payload: { account: string; caseId: string }) => Promise<CaseDirectoryManifest[]>
@@ -44,9 +45,18 @@ declare global {
     }
   }
 
+  interface CaseMaterialSelection {
+    id: string
+    name: string
+    kind: 'file' | 'directory'
+    count: number
+  }
+
   interface CaseDirectoryManifest {
     id: string
     name: string
+    kind?: 'file'
+    unavailable?: boolean
     files: Array<{ relativePath: string; fileName: string; size: number; hash: string }>
   }
   interface CaseDirectoryBatch extends CaseDirectoryManifest {

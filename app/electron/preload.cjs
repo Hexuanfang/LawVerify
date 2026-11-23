@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const OPEN_EXTERNAL_CHANNEL = 'lawverify:open-external'
 const START_APP_UPDATE_CHANNEL = 'lawverify:start-app-update'
@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('lawVerifyDesktop', {
   },
   linkCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-link', payload),
   pickCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-pick', payload),
+  stageDroppedCaseMaterials: (account, files, retainIds) => ipcRenderer.invoke('lawverify:case-directories-stage-drop', {
+    account, paths: files.map(file => webUtils.getPathForFile(file)), retainIds,
+  }),
   attachCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-attach', payload),
   onCaseDirectoryBatch: (listener) => {
     if (typeof listener !== 'function') return () => {}

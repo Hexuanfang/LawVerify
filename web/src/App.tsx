@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 
 import { api, authStorage, consumeDesktopTokenFromUrl, isAuthApiError } from './api'
 import { AccountFeatures, ProductAnalytics } from './AccountFeatures'
+import { AdminCocreatePage, CocreatePage } from './Cocreate'
 import {
   applyPageMeta,
   captureApplyIntent,
@@ -18,7 +19,6 @@ import {
   setPageJsonLd,
   siteConfig,
   track,
-  type ApplyIntent,
   type DownloadTarget,
 } from './site'
 import {
@@ -65,6 +65,7 @@ type SiteRoute =
   | '/admin'
   | '/admin/users'
   | '/admin/usage'
+  | '/admin/cocreate'
   | '/admin/feedback'
 
 type PaymentChannel = 'alipay' | 'wechat'
@@ -359,6 +360,7 @@ const adminNav: NavItem[] = [
   { label: '系统概览', href: '/admin' },
   { label: '用户管理', href: '/admin/users' },
   { label: '使用统计', href: '/admin/usage' },
+  { label: '共创审核', href: '/admin/cocreate' },
   { label: '用户反馈', href: '/admin/feedback' },
 ]
 
@@ -523,6 +525,7 @@ function normalizeRoute(pathname: string): SiteRoute {
     '/admin',
     '/admin/users',
     '/admin/usage',
+    '/admin/cocreate',
     '/admin/feedback',
   ])
 
@@ -798,58 +801,6 @@ function HomePage({ plans, packages }: { plans: SitePlan[]; packages: BillingPac
       </section>
 
     </div>
-  )
-}
-
-function CocreatePage() {
-  const [submitted, setSubmitted] = useState(() => new URLSearchParams(window.location.search).get('preview') === 'wechat')
-  const [copied, setCopied] = useState(false)
-  return (
-    <section className="card stack cocreate-page" aria-labelledby="cocreate-page-title">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <img src="/brand/lawverify-wordmark.svg" alt="LawVerify" width={146} height={42} />
-        <span style={{ borderInlineStart: '1px solid currentColor', paddingInlineStart: 14, fontSize: 14, fontWeight: 600 }}>律师共创计划</span>
-      </div>
-      <h1 id="cocreate-page-title">{submitted ? '报名已提交（预览）' : '一起做出更懂律师的 AI'}</h1>
-      {!submitted && <>
-      <p><strong>招募 50 位执业律师，入选可享终身全功能 VIP。</strong> LawVerify 将文书里的事实逐句与本案证据对照，提示依据不足、支持不完整或前后矛盾的地方，方便你回到原件复核。无论是自己写的还是 AI 辅助生成的文书，最终判断都由律师作出。</p>
-      <ul>
-        <li><strong>试一试，直接提意见。</strong> 哪一步太绕、哪条提示不清楚、哪个功能该优先做，都欢迎告诉我们。需要举例时，请用虚构场景。</li>
-        <li><strong>一起把反馈变成改进。</strong> 我们会在共创群同步进展。你也可以自愿参与官网署名、共创案例集和发布活动；公开署名前会征得你的同意。</li>
-      </ul>
-      <p>报名无需注册 LawVerify 账号。请准备一段简短的执业履历、工作年限、所在城市、律所、擅长领域、共创期望，以及姓名和一种联系方式。</p>
-      <p className="muted">报名信息用于共创筛选和联系。请勿填写客户姓名、案号或上传案卷材料。</p>
-      <p className="muted">本轮限 50 位，民商事诉讼律师优先。参与要求、VIP 权益范围及活动安排以共创协议为准。</p>
-      </>}
-      {submitted ? (
-        <div className="stack" role="status">
-          <img src="/xiao-hetao.jpg" alt="LawVerify 的小核桃" width={144} height={144} style={{ borderRadius: 20 }} />
-          <h2>下一步：来和小核桃打个招呼</h2>
-          <p>谢谢你报名！请添加小核桃微信，方便我们与你沟通后续安排。</p>
-          <p>微信号：<strong>info_LawVerify</strong><br />好友验证请写「共创报名 + 你的姓名」。添加微信不代表入选。</p>
-          <div className="hero-actions">
-            <button className="primary-button" type="button" onClick={async () => {
-              try { await navigator.clipboard.writeText('info_LawVerify'); setCopied(true) } catch { setCopied(false) }
-            }}>{copied ? '已复制微信号' : '复制微信号'}</button>
-            <a className="ghost-button" href="/">返回首页</a>
-          </div>
-        </div>
-      ) : (
-        <form className="cocreate-form" onSubmit={(event) => { event.preventDefault(); setSubmitted(true) }}>
-          <h2>填写共创申请</h2>
-          <label>姓名<input required placeholder="请输入姓名" /></label>
-          <label>微信或手机号<input required placeholder="填写一种即可" /></label>
-          <label>工作年限<select required defaultValue=""><option value="">请选择</option><option>不足 3 年</option><option>3 至不足 5 年</option><option>5 至不足 10 年</option><option>10 年及以上</option></select></label>
-          <label>所在地区<input required placeholder="例如：浙江省杭州市" /></label>
-          <label>所在律所<input required placeholder="请输入律所名称" /></label>
-          <label>擅长领域<input required placeholder="例如：民商事诉讼、证据审查" /></label>
-          <label className="cocreate-extra">简要履历<textarea required rows={3} placeholder="简述执业经历及主要业务" /></label>
-          <label className="cocreate-extra">共创期望<textarea required rows={3} placeholder="最想改善哪个办案环节？希望怎样参与共创？" /></label>
-          <div className="hero-actions"><button className="primary-button" type="submit">模拟提交申请</button><a className="ghost-button" href="/">返回首页</a></div>
-          <p className="muted">本地设计预览，请用虚构信息；不会保存或发送到飞书。</p>
-        </form>
-      )}
-    </section>
   )
 }
 
@@ -1721,6 +1672,7 @@ function AdminLayout({ route, data }: { route: SiteRoute; data: DashboardData })
         {route === '/admin' ? <AdminDashboardPage /> : null}
         {route === '/admin/users' ? <AdminUsersPage /> : null}
         {route === '/admin/usage' ? <><AdminUsagePage /><ProductAnalytics /></> : null}
+        {route === '/admin/cocreate' ? <AdminCocreatePage /> : null}
         {route === '/admin/feedback' ? <AdminFeedbackPage /> : null}
       </div>
     </section>
@@ -2662,14 +2614,13 @@ function WelcomeCard() {
 const practiceAreas = ['合同', '借贷', '公司股权', '劳动', '其他']
 
 function CocreateApplyCard() {
-  const [intent, setIntent] = useState<ApplyIntent>(() => readApplyIntent() ?? 'cocreate')
-  const [open, setOpen] = useState(() => Boolean(readApplyIntent()) || window.location.hash === '#cocreate')
+  const [open, setOpen] = useState(() => readApplyIntent() === 'team' || window.location.hash === '#cocreate')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const cardRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    if (open && (readApplyIntent() || window.location.hash === '#cocreate')) {
+    if (open && (readApplyIntent() === 'team' || window.location.hash === '#cocreate')) {
       cardRef.current?.scrollIntoView({ block: 'start' })
     }
     // 只在首次进入时滚动。
@@ -2687,7 +2638,7 @@ function CocreateApplyCard() {
       setNotice({ tone: 'error', text: '请填写微信或手机号，方便我们联系你。' })
       return
     }
-    const typeLabel = intent === 'team' ? '律所团队咨询' : '共建律师申请'
+    const typeLabel = '律所团队咨询'
     const content = [
       `申请类型：${typeLabel}`,
       `执业年限：${years || '未填写'}`,
@@ -2709,7 +2660,7 @@ function CocreateApplyCard() {
         pageContext: '官网账户中心',
       })
       clearApplyIntent()
-      track('cocreate_apply_submit', intent)
+      track('cocreate_apply_submit', 'team')
       form.reset()
       setNotice({ tone: 'success', text: '已提交，我们会通过你留下的联系方式联系你。' })
     } catch (error) {
@@ -2723,21 +2674,19 @@ function CocreateApplyCard() {
     <section ref={cardRef} id="cocreate" className="card cocreate-card">
       <div className="section-head">
         <div>
-          <h3>申请成为共建律师 / 律所团队咨询</h3>
-          <span className="muted">共建律师：民商事诉讼律师优先，共建期间赠送专业版额度，你的反馈直接进入产品迭代。律所团队：说明团队规模和需求，我们会联系你沟通。</span>
+          <h3>共创律师报名与律所团队咨询</h3>
+          <span className="muted">律所团队可说明团队规模和需求，我们会联系你沟通。</span>
         </div>
-        {!open ? <button type="button" className="primary-button" onClick={() => setOpen(true)}>填写申请</button> : null}
+        <div className="hero-actions">
+          <a className="primary-button" href="/cocreate">共创律师报名</a>
+          {!open && <button type="button" className="ghost-button" onClick={() => setOpen(true)}>填写团队咨询</button>}
+        </div>
       </div>
       {open ? (
         <form className="cocreate-form" onSubmit={(event) => {
           event.preventDefault()
           void handleSubmit(event.currentTarget)
         }}>
-          <fieldset className="cocreate-type">
-            <legend>申请类型</legend>
-            <label><input type="radio" name="intent" checked={intent === 'cocreate'} onChange={() => setIntent('cocreate')} />申请成为共建律师</label>
-            <label><input type="radio" name="intent" checked={intent === 'team'} onChange={() => setIntent('team')} />律所团队咨询</label>
-          </fieldset>
           <label>
             执业年限
             <select name="years" className="streamlined-case-select" defaultValue="">
@@ -2770,7 +2719,7 @@ function CocreateApplyCard() {
           </label>
           <label className="cocreate-extra">
             补充说明（选填）
-            <textarea name="extra" rows={3} maxLength={600} placeholder={intent === 'team' ? '团队人数、希望怎么协作等' : '你最希望 LawVerify 帮你核什么'} />
+            <textarea name="extra" rows={3} maxLength={600} placeholder="团队人数、希望怎么协作等" />
           </label>
           {notice ? <div className={notice.tone === 'success' ? 'form-success' : 'form-error'}>{notice.text}</div> : null}
           <div className="hero-actions">
@@ -3328,7 +3277,7 @@ function SiteFooter() {
             </div>
             <div>
               <strong>合作</strong>
-              <a href="/register?apply=cocreate">申请成为共建律师</a>
+              <a href="/cocreate">申请成为共创律师</a>
               <a href="/console?apply=team#cocreate">律所团队咨询</a>
             </div>
           </nav>
@@ -3429,7 +3378,7 @@ function Content({
   onRegister: (formData: FormData) => Promise<void>
 }) {
   if (route === '/cocreate' || (route === '/register' && new URLSearchParams(window.location.search).get('apply') === 'cocreate')) {
-    return <CocreatePage />
+    return <CocreatePage signedIn={Boolean(authToken)} />
   }
 
   if (route === '/login') {
@@ -3775,7 +3724,9 @@ export default function App() {
       authStorage.setToken(result.token)
       setAuthToken(result.token)
       
-      if (result.isPlatformAdmin) {
+      if (new URLSearchParams(window.location.search).get('apply') === 'cocreate') {
+        window.location.assign('/cocreate')
+      } else if (result.isPlatformAdmin) {
         window.location.assign('/admin')
       } else {
         window.location.assign('/console')

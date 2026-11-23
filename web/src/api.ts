@@ -27,6 +27,43 @@ type Envelope<T> = {
   }
 }
 
+export type CocreateWorkYears = 'under_3' | '3_to_4' | '5_to_9' | '10_plus'
+export type CocreateReviewFilter = 'all' | 'pending' | 'approved'
+
+export type CocreateApplication = {
+  id: string
+  name: string
+  email: string
+  phone: string
+  workYears: CocreateWorkYears
+  region: string
+  lawFirm: string
+  practiceAreas: string
+  resume: string
+  expectations: string
+}
+
+export type CocreateReviewItem = Omit<CocreateApplication, 'email' | 'phone'> & {
+  email: string | null
+  phone: string | null
+  contact: string | null
+  status: Exclude<CocreateReviewFilter, 'all'>
+  registered: boolean
+  pointsGranted: string
+  canGrantPoints: boolean
+  pointsGrantBlockedReason: string | null
+  pointsRecipient: { userId: string; account: string } | null
+  productAccount: string | null
+  submittedAt: string
+}
+
+export type CocreateReviewList = {
+  counts: Record<CocreateReviewFilter, number>
+  items: CocreateReviewItem[]
+  page: number
+  pageSize: number
+}
+
 function getDefaultHttpErrorMessage(response: Response) {
   if (response.status === 503) {
     return '账户中心服务正在维护，请稍后重试。'
@@ -132,6 +169,26 @@ export function consumeDesktopTokenFromUrl() {
 }
 
 export const api = {
+  submitCocreateApplication(application: CocreateApplication) {
+    return request<{ id: string }>('/api/web/cocreate/applications', {
+      method: 'POST', body: JSON.stringify(application),
+    })
+  },
+  searchCocreateApplications(filters: { query: string; status: CocreateReviewFilter; page: number }, signal: AbortSignal) {
+    return request<CocreateReviewList>('/api/admin/cocreate/applications/search', {
+      method: 'POST', body: JSON.stringify(filters), signal,
+    })
+  },
+  approveCocreateApplication(id: string) {
+    return request<{ id: string; status: 'approved' }>(`/api/admin/cocreate/applications/${encodeURIComponent(id)}/approve`, {
+      method: 'PATCH',
+    })
+  },
+  grantCocreatePoints(id: string, grant: { idempotencyKey: string; recipientUserId: string }) {
+    return request<{ pointsGranted: string; pointsBalance: number; message: string }>(`/api/admin/cocreate/applications/${encodeURIComponent(id)}/grant-points`, {
+      method: 'POST', body: JSON.stringify(grant),
+    })
+  },
   getReferralSummary() {
     return request<{ code: string; inviteUrl: string; invited: number; rewarded: number; earnedPoints: number;
       enabled: boolean; inviterPoints: number; inviteePoints: number; minPaymentFen: number }>('/api/account/referrals')
@@ -206,7 +263,7 @@ export const api = {
       method: 'POST',
     })
   },
-  // 复用桌面端已在用的反馈接口：官网的渠道来源记录、共建申请、律所咨询都走这里，后台 /admin/feedback 查看。
+  // 官网注册来源与律所咨询复用反馈接口，可在 /admin/feedback 查看。
   submitFeedback(payload: {
     feedbackType: 'bug' | 'suggestion' | 'experience' | 'other'
     title: string

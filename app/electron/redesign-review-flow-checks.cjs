@@ -24,7 +24,7 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   await clickText('.add-mat', '导入材料或文书')
   await wait("document.querySelector('.new-upload')")
   await evaluate(`(() => {
-    const input = document.querySelector('input[aria-label="上传材料或文书"]')
+    const input = document.querySelector('input[aria-label="上传已撰写文书"]')
     const files = new DataTransfer()
     for (const name of ['批量甲', '批量乙', '批量丙']) files.items.add(new File(['民事起诉状\\n借款已交付。'], name + '.txt', { type: 'text/plain' }))
     input.files = files.files
@@ -42,9 +42,14 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   ]
   await evaluate(`(() => {
     window.__verificationStages = []
+    window.__materialProgress = []
     window.__verificationObserver = new MutationObserver(() => {
       const stage = document.querySelector('#pg-proc .pst.on .pst-i')?.textContent
       if (stage && !window.__verificationStages.includes(stage)) window.__verificationStages.push(stage)
+      const message = document.querySelector('#pg-proc .ppct')?.textContent
+      if (stage === '1' && message?.includes('原材料与证据解析') && !window.__materialProgress.includes(message)) {
+        window.__materialProgress.push(message)
+      }
     })
     window.__verificationObserver.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true })
   })()`)
@@ -63,6 +68,7 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   assert.equal(await evaluate("document.querySelectorAll('#pg-proc .pst.on').length"), 0, '失败后不能继续显示处理中')
   assert.match(await evaluate("document.querySelector('#pg-proc .proc-t').textContent"), /《批量乙》/)
   assert.deepEqual(await evaluate('window.__verificationStages'), ['1', '2', '3', '4', '5', '6', '7'], '七个实际处理阶段都应显示')
+  assert.deepEqual(await evaluate('window.__materialProgress'), [verification.progressTexts[0]], '材料解析只展示材料进度')
   const ids = await saved(state => ['批量甲', '批量乙', '批量丙'].map(title => state.certificates.find(item => item.title === title).id))
   assert.deepEqual(verification.calls, ids.slice(0, 2), '失败后应停止，尚未执行后续文书')
   await clickText('.proc-actions button', '重试')
@@ -84,7 +90,7 @@ module.exports = async function checkReviewFlow({ evaluate, wait, clickText, scr
   await clickText('.add-mat', '导入材料或文书')
   await wait("document.querySelector('.new-upload')")
   await evaluate(`(() => {
-    const input = document.querySelector('input[aria-label="上传材料或文书"]')
+    const input = document.querySelector('input[aria-label="上传已撰写文书"]')
     const files = new DataTransfer()
     for (const name of ['取消甲', '取消乙', '取消丙']) files.items.add(new File(['民事起诉状\\n借款已交付。'], name + '.txt', { type: 'text/plain' }))
     input.files = files.files
@@ -160,7 +166,7 @@ module.exports.checkWordExport = async function checkWordExport({
     issueSummary: '', holdingSummary: `${name}裁判摘要`, reasoningSummary: '', resultSummary: '', sourceUrl: `https://example.invalid/cases/${id}`,
     sourceType: 'qa-fixture', keywords: [], focusTags: [], referencedStatutes: [], excerpts: [],
   })
-  const linkedCase = sampleCase('qa-t7-linked', '文书关联类案', 1)
+  const linkedCase = { ...sampleCase('qa-t7-linked', '文书关联类案', 1), caseType: '民事判决书', keywords: ['裁判摘要'] }
   const selectedCase = sampleCase('qa-t7-selected', '选入待核类案', 2)
   const skippedCase = sampleCase('qa-t7-skipped', '未选类案', 3)
   const blockedCase = sampleCase('qa-t7-blocked', '不可引用类案', 4)
@@ -218,7 +224,7 @@ module.exports.checkWordExport = async function checkWordExport({
     const caseVerification = (entry, allowCitation) => ({
       caseNumber: entry.caseNumber, name: entry.title, court: entry.courtName, judgmentDate: entry.judgmentDate,
       provider: 'qa-fixture', queryOutcome: 'ok', detailOutcome: 'ok', checkedAt: '2026-11-15', allowCitation,
-      effect: allowCitation ? 'effective' : 'vacated', match: allowCitation ? 'strict' : 'irrelevant',
+      effect: allowCitation ? 'effective' : 'vacated', match: allowCitation ? 'strict' : 'irrelevant', level: 'ordinary',
       documents: [{ id: entry.id, caseNumber: entry.caseNumber, provider: 'qa-fixture', url: entry.sourceUrl }],
     })
     caseDocument.verification.declarations.push(
@@ -442,7 +448,8 @@ module.exports.checkWordExport = async function checkWordExport({
   assert.equal(await evaluate("document.querySelector('.mat-scroll').textContent.includes('测试合同法')"), false)
   if (!assistantReportOnly) {
     await switchTo(reviewTitle)
-    await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes(${JSON.stringify(reviewFirst)})).click()`)
+    await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes(${JSON.stringify(reviewFirst)}))
+      .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
     await wait("document.querySelectorAll('.declaration-checks input').length === 2")
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.rc .ops button')).find(item=>item.textContent.trim()==='确认声明').disabled"), true)
     await evaluate("document.querySelectorAll('.declaration-checks input').forEach(input=>input.click())")
@@ -457,7 +464,8 @@ module.exports.checkWordExport = async function checkWordExport({
     await clickText('.note-box button', '保存批注')
     await wait(`!document.querySelector('.note-box') && document.querySelector('.rc').textContent.includes(${JSON.stringify(reviewNote)})`)
     await clickText('.pane-r button', '返回待办')
-    await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes(${JSON.stringify(reviewSecond)})).click()`)
+    await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes(${JSON.stringify(reviewSecond)}))
+      .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
     await wait("Array.from(document.querySelectorAll('.rc .ops button')).some(item=>item.textContent==='忽略预警'&&!item.disabled)")
     await clickText('.rc .ops button', '忽略预警')
     await wait("document.querySelector('.rc .ops button') && Array.from(document.querySelectorAll('.rc .ops button')).some(item=>item.textContent==='恢复预警')")
@@ -517,7 +525,22 @@ module.exports.checkWordExport = async function checkWordExport({
   await wait(`document.querySelector('.whole-document-content [data-el="${caseReportId}-declaration-linked"].sel')`)
   await evaluate("document.querySelector('button.rc-loc').click()")
   await wait(`document.querySelector('.new-drawer')?.textContent.includes(${JSON.stringify(linkedCase.holdingSummary)})`)
+  const caseDrawer = await evaluate(`(() => {
+    const drawer = document.querySelector('.case-drawer')
+    return {
+      subtitle: drawer?.querySelector('.st-n')?.textContent,
+      fields: Array.from(drawer?.querySelectorAll('.four b') ?? [], item => item.textContent),
+      highlight: drawer?.querySelector('.csq mark')?.textContent,
+      match: drawer?.querySelector('.pt [data-match]')?.textContent,
+      sourceLink: Boolean(drawer?.querySelector('.source-file-actions')),
+      duplicateExcerpt: Boolean(drawer?.querySelector('.ocr')),
+    }
+  })()`)
+  assert.deepEqual(caseDrawer, { subtitle: '民事判决书', fields: ['案号', '审理法院', '裁判日期', '效力层级'],
+    highlight: '裁判摘要', match: '严格命中', sourceLink: false, duplicateExcerpt: false })
   await clickText('.new-drawer button', 'Close')
+  await clickText('.review-detail-bar button', '返回待办')
+  await evaluate("document.querySelector('.review-todo-card[data-type=E-CASE][data-verdict=warn]').closest('.review-todo-entry').querySelector('.review-todo-manual').click()")
   const singleReport = await downloadWord('导出本句案例', 't6-single-case-report.docx', '.rc button')
   const { value: singleText } = await require('mammoth').extractRawText({ path: singleReport })
   for (const marker of [...linkedMarkers, linkedCase.sourceUrl]) assert.ok(singleText.includes(marker), `单案报告缺少 ${marker}`)
@@ -646,7 +669,8 @@ module.exports.checkWordExport = async function checkWordExport({
     await switchTo(deleteTitle)
     await wait("document.querySelector('.review-todo-tabs button[aria-selected=true]')?.textContent === '待办 2'")
     assert.equal(await evaluate("document.querySelector('.workspace-doc-strip [aria-selected=true] .workspace-doc-badge')?.title"), '2 项待处理')
-    await evaluate("Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes('缺源')).click()")
+    await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes('缺源'))
+      .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
     await clickText('.rc .ops button', '删除缺源声明')
     await clickText('[aria-label="确认修改声明"] button', '取消')
     await saved(state => assert.equal(state.certificates.find(item => item.id === deleteId).paragraphs[0].text, repeatedText.repeat(2)))

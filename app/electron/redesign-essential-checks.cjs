@@ -17,6 +17,10 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
     await clickText('[role=option]', text)
   }
   const uploadFile = async (label, name, content) => evaluate(`(() => {const input=document.querySelector('input[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');const dt=new DataTransfer();dt.items.add(new File([${JSON.stringify(content)}],${JSON.stringify(name)},{type:'text/plain'}));input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+  const linkMaterialFolder = async () => {
+    await evaluate("document.querySelector('.new-case-form .case-files-material .case-file-drop button').click()")
+    await wait("document.querySelector('.case-files-material .chip b')?.textContent === 'linked-files'")
+  }
   const selectLoanStatement = async () => {
     const highlight = "Array.from(document.querySelectorAll('.whole-document-content [data-el]')).find(item => item.textContent.startsWith('借款已交付。'))"
     await wait(highlight)
@@ -40,7 +44,9 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   })
   await reload(); await enter('必要工作流测试')
   assert.equal(await evaluate("Array.from(document.querySelectorAll('.case-review-bar button')).find(item=>item.textContent==='标记案件完成').disabled"), true)
-  await evaluate("Array.from(document.querySelectorAll('.review-todo-card')).find(item => item.querySelector('.review-todo-quote').textContent.startsWith('借款已交付。')).click()")
+  await evaluate(`Array.from(document.querySelectorAll('.review-todo-card'))
+    .find(item => item.querySelector('.review-todo-quote').textContent.startsWith('借款已交付。'))
+    .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
   await clickText('.ops button', '确认整段')
   await wait("document.querySelector('.essential-confirm-list')")
   assert.equal(await evaluate("document.querySelectorAll('.essential-confirm-list li').length"), 2)
@@ -92,26 +98,32 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
   await wait("document.querySelector('#field-name')")
   await fill('#field-name', '独立上传测试')
   await evaluate("document.querySelector('input[name=case-task][value=draft]').click()")
-  await uploadFile('选择案件原材料文件', '起草材料.txt', '当事人订立合同。')
+  await linkMaterialFolder()
   await clickText('.new-case-form .fm-ft button', '创建并起草')
   await wait("document.querySelector('#pg-ws .empty-doc')")
   await saved(state => { const c = state.cases.find(item => item.name === '独立上传测试'); assert.ok(state.evidences.some(item => item.caseId === c.id)); assert.ok(!state.certificates.some(item => item.caseId === c.id)) })
   await clickText('.add-mat', '导入材料或文书'); await wait("document.querySelector('.new-upload')")
-  await uploadFile('上传材料或文书', '独立文书.txt', '民事起诉状\n独立文书正文。')
+  await uploadFile('上传已撰写文书', '独立文书.txt', '民事起诉状\n独立文书正文。')
   await wait("document.querySelector('.upload-actions button:not(:disabled)')")
-  await clickText('.upload-actions button', '仅导入文书'); await wait("document.querySelector('.doc-paper') && !document.querySelector('.new-upload')")
+  await clickText('.upload-actions button', '导入并核验')
+  await wait("document.querySelector('#pg-proc .proc-actions')?.textContent.match(/返回工作台|查看核验结果/)")
   await saved(state => { const c = state.cases.find(item => item.name === '独立上传测试'); assert.ok(state.certificates.some(item => item.caseId === c.id)) })
+  if (await evaluate("document.querySelector('#pg-proc .proc-actions')?.textContent.includes('返回工作台')")) {
+    await clickText('.new-error button', '关闭')
+    await clickText('.proc-actions button', '返回工作台')
+  } else await clickText('.proc-actions button', '查看核验结果')
+  await wait("document.querySelector('.doc-paper') && !document.querySelector('.new-upload')")
 
   await clickText('.topbar button.brand-home', 'LawVerify 首页'); await clickText('.home-intro-actions button', '新建案件')
   await wait("document.querySelector('#field-name')")
   await fill('#field-name', '核验附件必传测试')
   await wait("document.querySelector('.case-files-document')")
-  await uploadFile('选择案件原材料文件', '案情材料.txt', '双方曾签订合同。')
+  await linkMaterialFolder()
   assert.equal(await evaluate("document.querySelector('.new-case-form button[type=submit]').disabled"), true)
-  await clickText('.case-files-material .chip button', '移除 案情材料.txt')
+  await clickText('.case-files-material .chip button', '移除 linked-files')
   await uploadFile('上传已撰写文书', '测试待核验文书.txt', '双方签订合同。')
   assert.equal(await evaluate("document.querySelector('.new-case-form button[type=submit]').disabled"), true)
-  await uploadFile('选择案件原材料文件', '案情材料.txt', '双方曾签订合同。')
+  await linkMaterialFolder()
   await evaluate(`(() => {
     const fetch = window.fetch;
     window.fetch = (input, init) => {

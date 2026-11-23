@@ -10,13 +10,24 @@ function seed(workspace) {
     ['p7', 'pass', '已核对借款本金。', '与银行流水一致。'],
   ]
   const source = { tier: 'l1', id: 'qa-evidence', name: '招商银行流水', locator: '第2段', quote: '2023年4月11日收到35,000元利息。' }
+  const statute = { tier: 'l2', id: 'qa-review-statute-675', name: '中华人民共和国民法典', locator: '第六百七十五条',
+    quote: '借款人应当按照约定的期限返还借款。', url: 'https://example.invalid/law/675' }
+  const remoteStatute = { ...statute, id: 'qa-review-statute-969', locator: '第九百六十九条',
+    quote: '合伙人的出资、因合伙事务依法取得的收益和其他财产，属于合伙财产。' }
+  workspace.knowledgeStatutes.push({
+    id: 'qa-review-civil-code', title: statute.name, docType: '法律', issuer: '主席令第六十三号', version: '',
+    effectiveStatus: 'effective', effectiveDate: '2021-01-01', publishDate: '', sourceUrl: statute.url, keywords: [],
+    articles: [{ id: statute.id, documentId: 'qa-review-civil-code', articleNumber: statute.locator,
+      content: statute.quote, plainText: statute.quote, aliases: [], topicTags: [] }],
+  })
   for (const [id, verdict, quote, reason] of cases) {
     if (!doc.paragraphIds.includes(id)) {
       doc.paragraphIds.push(id)
       doc.paragraphs.push({ id, text: quote, richText: `<p>${quote}</p>`, verified: false, links: [] })
     }
     doc.verification.declarations.push({
-      id: `todo-${id}`, type: 'E-FACT', quote, verdict, reason, checks: {}, conf: null, sources: [source],
+      id: `todo-${id}`, type: 'E-FACT', quote, verdict, reason, checks: {}, conf: null,
+      sources: id === 'p2' ? [source, statute, remoteStatute] : [source],
       location: { paragraphId: id, paragraphIndex: doc.paragraphIds.indexOf(id), start: 0, end: quote.length },
       ...(id === 'p2' && {
         verifiedText: source.quote, verifiedSources: [source],
@@ -36,6 +47,11 @@ function seed(workspace) {
   }
   workspace.certificates.push({
     ...doc, id: 'qa-empty-document', title: '空白核验文书', verification: undefined, paragraphIds: [], paragraphs: [],
+  }, {
+    ...doc, id: 'qa-pending-defense', title: '待核验答辩状', linkageInputKey: undefined, verification: undefined,
+    paragraphIds: ['qa-defense-title'],
+    paragraphs: [{ id: 'qa-defense-title', text: '民事答辩状', richText: '<p>民事答辩状</p>', verified: false,
+      note: '导入自答辩状.docx，可继续补充证据定位与核验批注。', links: [] }],
   })
 }
 
@@ -89,6 +105,33 @@ async function check({ evaluate, wait, clickText, screenshot, window, saved }) {
   await wait("document.querySelector('.new-drawer .dwt')?.textContent === '招商银行流水'")
   await clickText('.new-drawer button', 'Close')
   await wait("!document.querySelector('.new-drawer')")
+  assert.equal(await evaluate("document.querySelectorAll('.review-highlight-sources a').length"), 0, '核验出处只保留预览入口')
+  const openStatute = locator => evaluate(`Array.from(document.querySelectorAll('.review-highlight-sources .rc-loc'))
+    .find(button => button.textContent.includes(${JSON.stringify(locator)})).click()`)
+  await openStatute('第六百七十五条')
+  await wait("document.querySelector('.new-drawer .st-x')")
+  assert.match(await evaluate("document.querySelector('.new-drawer .st-x').textContent"), /借款人应当按照约定的期限返还借款/)
+  assert.match(await evaluate("document.querySelector('.new-drawer .dwb').textContent"), /现行有效.*2021-01-01/)
+  assert.equal(await evaluate("document.querySelector('.new-drawer .ocr, .new-drawer a')"), null)
+  await clickText('.new-drawer button', 'Close')
+  await wait("!document.querySelector('.new-drawer')")
+  await openStatute('第九百六十九条')
+  await wait("document.querySelector('.new-drawer .dws')?.textContent.includes('第九百六十九条')")
+  window.setSize(390, 900)
+  await wait("innerWidth <= 390")
+  assert.equal(await evaluate(`(() => {
+    const header = document.querySelector('.new-drawer .dwh');
+    const subtitle = header.querySelector('.dws').getBoundingClientRect();
+    const close = document.querySelector('.new-drawer [data-slot=sheet-close], .new-drawer button').getBoundingClientRect();
+    return subtitle.bottom < header.getBoundingClientRect().bottom && subtitle.right <= close.left;
+  })()`), true, '法条定位信息在窄窗完整显示，且与关闭按钮分开')
+  assert.match(await evaluate("document.querySelector('.new-drawer .dwb').textContent"), /核验引用摘录.*属于合伙财产/)
+  assert.equal(await evaluate("document.querySelector('.new-drawer .ocr, .new-drawer a')"), null)
+  await screenshot('statute-preview-390')
+  await clickText('.new-drawer button', 'Close')
+  await wait("!document.querySelector('.new-drawer')")
+  window.setSize(1440, 960)
+  await wait("innerWidth > 1000")
   await clickText(`${details} > summary`, '核验详情')
   assert.equal(await evaluate(`document.querySelectorAll('${details} tbody tr').length`), 2)
   const tags = `${details} .review-highlight-checks li`
@@ -156,6 +199,38 @@ async function check({ evaluate, wait, clickText, screenshot, window, saved }) {
   await clickText('.workspace-doc-strip [role=tab]', '空白核验文书')
   await wait("document.querySelector('.review-todos-empty button')?.textContent === 'AI 核验当前文书'")
   await screenshot('review-todos-empty')
+  await evaluate(`(() => {
+    const tab = Array.from(document.querySelectorAll('.workspace-doc-name')).find(item => item.textContent === '待核验答辩状').closest('[role=tab]');
+    tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+  })()`)
+  await wait("document.querySelector('.whole-document-content mark')?.textContent === '民事答辩状'")
+  window.webContents.focus()
+  const pendingMark = await evaluate(`(() => {
+    const rect = document.querySelector('.whole-document-content mark').getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  })()`)
+  window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...pendingMark })
+  window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...pendingMark })
+  await wait("document.querySelector('.review-highlight-status')?.textContent === '待核验'")
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-detail-bar button'), button => button.textContent.trim())"), ['返回待办'])
+  const pendingDetail = "document.querySelector('.review-detail-bar').outerHTML + document.querySelector('.review-highlight-result').outerHTML"
+  const detailFromDocument = await evaluate(pendingDetail)
+  await clickText('.review-detail-bar button', '返回待办')
+  await evaluate("document.querySelector('.review-todo-card[data-verdict=pending]').click()")
+  await wait("document.querySelector('.review-detail-bar')")
+  await screenshot('review-pending-todo')
+  assert.equal(await evaluate("document.querySelector('.review-highlight-status')?.textContent"), '待核验',
+    '从待办打开同一个待核验片段时应显示相同的核验详情')
+  assert.equal(await evaluate(pendingDetail), detailFromDocument, '正文和待办应显示同一套标题栏和详情内容')
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-highlight-result .ops button'), button => button.textContent.trim())"),
+    ['修改声明', '关联出处'])
+  await clickText('.review-detail-bar button', '返回待办')
+  await evaluate("document.querySelector('.review-todo-card[data-verdict=pending]').closest('.review-todo-entry').querySelector('.review-todo-manual').click()")
+  await wait("document.querySelector('.rc .user-tag')?.textContent === '整段待人工审阅'")
+  assert.match(await evaluate("document.querySelector('.rc').textContent"), /导入自答辩状\.docx/u)
+  await clickText('.review-detail-bar button', '返回核验详情')
+  await wait("document.querySelector('.review-highlight-status')?.textContent === '待核验'")
+  await clickText('.review-detail-bar button', '返回待办')
   await evaluate(`(() => {
     const tab = Array.from(document.querySelectorAll('.workspace-doc-name')).find(item => item.textContent === '民事起诉状').closest('[role=tab]');
     tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));

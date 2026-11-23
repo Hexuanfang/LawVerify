@@ -1,18 +1,18 @@
 const assert = require('node:assert/strict')
 
 module.exports = async function checkImportFlow({ evaluate, wait, clickText, screenshot, verification, saved }) {
-  const upload = async (names, verify = true) => {
+  const upload = async names => {
     await clickText('.add-mat', '导入材料或文书')
     await wait("document.querySelector('.new-upload')")
     await evaluate(`(() => {
-      const input = document.querySelector('input[aria-label="上传材料或文书"]')
+      const input = document.querySelector('input[aria-label="上传已撰写文书"]')
       const files = new DataTransfer()
       for (const name of ${JSON.stringify(names)}) files.items.add(new File(['民事起诉状\\n借款已经交付。'], name + '.txt', { type: 'text/plain' }))
       input.files = files.files
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })()`)
     await wait("document.querySelector('.upload-actions button:not(:disabled)')")
-    await clickText('.upload-actions button', verify ? '导入并核验' : '仅导入文书')
+    await clickText('.upload-actions button', '导入并核验')
   }
   const finish = async () => {
     await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('核验完成')")
@@ -56,29 +56,5 @@ module.exports = async function checkImportFlow({ evaluate, wait, clickText, scr
   await clickText('.proc-actions button', '重试')
   await finish()
   await saved(state => assert.equal(state.certificates.filter(item => item.title === '解析中取消').length, 1))
-  verification.parseCalls = 0
-  verification.parseFailAt = 0
-  verification.importDelay = 700
-  const verificationCount = verification.calls.length
-  await upload(['仅导入反馈'], false)
-  await wait("document.querySelector('.new-upload[aria-busy=true] .upload-import-feedback .import-spinner')")
-  await wait("document.querySelector('.upload-import-feedback')?.textContent.includes('仅导入反馈.txt')")
-  assert.equal(await evaluate("Array.from(document.querySelectorAll('.upload-actions button')).every(button => button.disabled)"), true)
-  assert.equal(await evaluate("Boolean(document.querySelector('.new-upload [data-slot=dialog-close]'))"), false)
-  assert.match(await evaluate("document.querySelector('.upload-actions button').textContent"), /正在导入/)
-  await screenshot('import-only-loading')
-  await wait("document.querySelector('#pg-ws') && !document.querySelector('.new-upload')")
-  assert.equal(verification.calls.length, verificationCount, '仅导入不能触发证据核验')
-  await saved(state => assert.equal(state.certificates.filter(item => item.title === '仅导入反馈').length, 1))
-  verification.parseCalls = 0
-  verification.parseFailAt = 1
-  await upload(['仅导入失败重试'], false)
-  await wait("document.querySelector('.new-error') && !document.querySelector('.upload-import-feedback')")
-  assert.equal(await evaluate("document.querySelector('.upload-actions button').disabled"), false, '失败后恢复按钮以便重试')
-  await clickText('.upload-actions button', '仅导入文书')
-  await wait("document.querySelector('#pg-ws') && !document.querySelector('.new-upload')")
-  await saved(state => assert.equal(state.certificates.filter(item => item.title === '仅导入失败重试').length, 1))
-  verification.importDelay = 100
-  console.log('PASS import-only immediate feedback, loading state and failure retry')
   console.log('PASS shared import progress, partial import retry without duplicates and parsing cancellation')
 }

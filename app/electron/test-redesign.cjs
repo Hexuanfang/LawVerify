@@ -87,11 +87,12 @@ ipcMain.handle('redesign-qa-account', async (_event, request) => {
     : { success: true, data: request.path.includes('logout') ? { ok: true } : qaProfile }) }
 })
 const preload = path.join(directory, 'qa-account-preload.cjs')
-fs.writeFileSync(preload, `const {contextBridge,ipcRenderer}=require('electron');
+fs.writeFileSync(preload, `const {contextBridge,ipcRenderer,webUtils}=require('electron');
 const directories = Object.fromEntries(Object.entries({ linkCaseDirectory:'link', pickCaseDirectory:'pick', attachCaseDirectory:'attach',
   scanCaseDirectories:'scan', clearCaseDirectories:'clear', readCaseDirectoryFile:'read',
 }).map(([method, action]) => [method, payload => ipcRenderer.invoke('lawverify:case-directories-' + action, payload)]));
 contextBridge.exposeInMainWorld('lawVerifyDesktop',{requestAccount:request=>ipcRenderer.invoke('redesign-qa-account',request),
+  stageDroppedCaseMaterials:(account,files,retainIds)=>ipcRenderer.invoke('lawverify:case-directories-stage-drop',{account,paths:files.map(file=>webUtils.getPathForFile(file)),retainIds}),
   openExternal:url=>ipcRenderer.invoke('redesign-qa-external',url), ...directories});
 window.addEventListener('DOMContentLoaded',()=>{const check=()=>{for(const message of ['正在加载 LawVerify…','正在读取案件工作区…','正在启动 LawVerify…'])if(document.body.textContent.includes(message))ipcRenderer.send('redesign-qa-loading',message)};new MutationObserver(check).observe(document.body,{subtree:true,childList:true,characterData:true});check()})`)
 
@@ -100,8 +101,15 @@ app.whenReady().then(async () => {
     const linkedDirectory = path.join(directory, 'linked-files')
     fs.mkdirSync(linkedDirectory)
     fs.writeFileSync(path.join(linkedDirectory, '测试材料.txt'), '双方于2026年11月15日约定货款100元。')
+    let onDirectoryPickerOpened
     require('./case-directories.cjs').registerCaseDirectories({ app, ipcMain, BrowserWindow,
-      dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [linkedDirectory] }) } })
+      dialog: { showOpenDialog: async () => {
+        if (!onDirectoryPickerOpened) return { canceled: false, filePaths: [linkedDirectory] }
+        const notify = onDirectoryPickerOpened
+        onDirectoryPickerOpened = undefined
+        return new Promise(resolve => notify(resolve))
+      } },
+    })
     const serverRoot = process.env.LAWVERIFY_REDESIGN_SERVER_DIST ?? path.resolve(root, '../server/dist')
     const { env } = await import(pathToFileURL(path.join(serverRoot, 'config/env.js')).href)
     Object.assign(env, { WORKSPACE_DATA_DIR: path.join(directory, 'data'), APP_DATA_ROOT: directory,
@@ -261,6 +269,16 @@ app.whenReady().then(async () => {
     window.webContents.on('paint', (_event, _dirty, image) => { latestImage = image })
     window.webContents.on('console-message', event => { if (failedDeleteCase && /status of 503/.test(event.message)) return; if (event.level === 'error' || event.level === 3 || /Uncaught|Invalid hook|validateDOMNesting/.test(event.message)) errors.push(event.message) })
     const evaluate = async code => { try { return await window.webContents.executeJavaScript(code) } catch (error) { throw new Error(`Renderer failed: ${code}`, { cause: error }) } }
+    const dropFiles = async (selector, files) => {
+      const point = await evaluate(`(() => {const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+        return {x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2)};})()`)
+      const debuggerClient = window.webContents.debugger
+      debuggerClient.attach()
+      try {
+        const data = { items: [], files, dragOperationsMask: 1 }
+        for (const type of ['dragEnter', 'dragOver', 'drop']) await debuggerClient.sendCommand('Input.dispatchDragEvent', { type, ...point, data })
+      } finally { debuggerClient.detach() }
+    }
     const wait = async expression => {
       const deadline = Date.now() + 20000
       while (Date.now() < deadline) {
@@ -511,28 +529,25 @@ app.whenReady().then(async () => {
       assert.equal(await evaluate("document.querySelectorAll('.material-actions button').length"), 1)
       await clickText('.material-actions button', '导入材料或文书')
       await wait("document.querySelector('.new-upload')")
+      const transfer = path.join(directory, '转账明细.txt')
+      const supplement = path.join(directory, '补充说明.txt')
+      fs.writeFileSync(transfer, '已收款100元。')
+      fs.writeFileSync(supplement, '其他证据正文。')
+      await dropFiles('.new-upload .case-files-material .case-file-drop', [transfer, supplement])
       await evaluate(`(() => {
-        const input = document.querySelector('input[aria-label="上传材料或文书"]')
+        const input = document.querySelector('input[aria-label="上传已撰写文书"]')
         const files = new DataTransfer()
         files.items.add(new File(['原告张某。'], '民事答辩状.txt'))
-        files.items.add(new File(['已收款100元。'], '转账明细.txt'))
-        files.items.add(new File(['其他文书正文。'], '补充说明.txt'))
         input.files = files.files
         input.dispatchEvent(new Event('change', { bubbles: true }))
       })()`)
-      await wait("document.querySelectorAll('.new-upload .upload-file-kind').length === 3")
-      assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.new-upload .upload-file-kind'), label => label.textContent.trim())"), ['待核验文书', '证据', '证据'])
+      await wait("document.querySelectorAll('.new-upload .case-files-material .chip').length === 2 && document.querySelector('.upload-actions button:not(:disabled)')")
       assert.equal(await evaluate("document.querySelector('.new-upload select, .new-upload [role=combobox]')"), null)
-      await clickText('.upload-directory', '管理本地文件夹联动')
-      await wait("document.querySelector('.new-directory')")
-      await wait("document.querySelector('.new-directory .directory-actions button:last-child:not(:disabled)')")
-      await clickText('.directory-actions button', '解除链接')
-      await wait("document.querySelector('.directory-confirm')")
-      await clickText('.directory-confirm button', '取消解除')
-      await clickText('.new-directory button', '完成')
-      await wait("document.querySelectorAll('.new-upload .upload-file-kind').length === 3")
       await screenshot('import-materials-or-documents')
-      await clickText('.upload-actions button', '仅导入')
+      verification.enabled = true
+      await clickText('.upload-actions button', '导入并核验')
+      await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('核验完成')")
+      await clickText('.proc-actions button', '查看核验结果')
       await wait("!document.querySelector('.new-upload') && document.querySelector('.material-categories')?.textContent.includes('转账明细.txt')")
       await saved(state => {
         assert.ok(state.evidences.some(item => item.caseId === 'qa-case' && item.fileName === '转账明细.txt' && item.storageKey))
@@ -575,21 +590,9 @@ app.whenReady().then(async () => {
       assert.equal(await evaluate("document.querySelector('.mat-scroll').scrollWidth <= document.querySelector('.mat-scroll').clientWidth"), true)
       await screenshot('evidence-categories-390')
       await clickText('.material-actions button', '导入材料或文书')
-      await wait("document.querySelector('.new-upload .upload-directory')")
-      await clickText('.upload-directory', '管理本地文件夹联动')
-      await wait("document.querySelector('.directory-actions button:not(:disabled)')")
-      await clickText('.directory-actions button', '链接目录')
-      await wait("document.querySelector('.directory-status')?.textContent === '目录已链接' && !document.querySelector('.new-directory button:disabled')")
-      await saved(state => assert.ok(state.evidences.some(item => item.caseId === 'qa-case' && item.fileName === '测试材料.txt' && item.directoryId && item.storageKey)))
-      await clickText('.directory-actions button', '解除链接')
-      await wait("document.querySelector('.directory-confirm')")
-      await clickText('.directory-confirm button', '确认解除并清除记录')
-      await wait("document.querySelector('.directory-list')?.textContent.includes('尚未链接') && !document.querySelector('.directory-confirm')")
-      await saved(state => {
-        assert.ok(!state.evidences.some(item => item.caseId === 'qa-case' && item.directoryId))
-        assert.ok(state.evidences.some(item => item.caseId === 'qa-case' && item.fileName === '转账明细.txt'))
-        assert.ok(state.certificates.some(item => item.caseId === 'qa-case' && item.title === '民事答辩状'))
-      })
+      await wait("document.querySelector('.new-upload .case-files-material .case-file-drop')")
+      assert.equal(await evaluate("document.querySelector('.new-upload').textContent.includes('管理本地材料链接')"), false)
+      await clickText('.new-upload [data-slot=dialog-close]', 'Close')
       assert.deepEqual(errors.filter(message => !/favicon|404/.test(message)), [])
       process.stdout.write(`PASS evidence categories, mixed import, directory linking and screenshots: ${directory}\n`)
       window.destroy(); await new Promise(resolve => server.close(resolve)); app.exit(0)
@@ -637,7 +640,7 @@ app.whenReady().then(async () => {
     const loadedChunks = () => evaluate("performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/assets/')&&entry.name.endsWith('.js')).map(entry=>new URL(entry.name).pathname.split('/').pop())")
     const homeChunks = await loadedChunks()
     assert.equal(homeChunks.some(chunk => chunk.startsWith('LegacyEntry-')), false, '应用不能加载旧版页面')
-    for (const name of ['Library', 'Report', 'DirectoryLinksModal', 'UploadModal', 'FormModal', 'PreviewDrawer', 'export-word']) {
+    for (const name of ['Library', 'Report', 'UploadModal', 'FormModal', 'PreviewDrawer', 'export-word']) {
       assert.equal(homeChunks.some(chunk => chunk.startsWith(name + '-')), false, name + ' 应在使用时加载')
     }
     await wait("performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.split('/').pop().startsWith('Workspace-'))")
@@ -801,7 +804,7 @@ app.whenReady().then(async () => {
     await wait("['CaseMemory-', 'WorkspaceAssistant-'].every(prefix => performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.split('/').pop().startsWith(prefix)))")
     await clickText('.topbar button', '案件记忆')
     await wait("document.querySelector('.case-memory-card')")
-    assert.equal(await evaluate("document.querySelector('.workspace-case-identity')?.textContent"), '王某 ｜ 李某')
+    assert.equal(await evaluate("document.querySelector('.workspace-case-identity')?.textContent"), '原告：王某 ｜ 被告（我方）：李某')
     assert.equal(await evaluate("document.querySelector('.workspace-topbar button[aria-label^=切换案件], .workspace-report-button')"), null)
     assert.doesNotMatch(await evaluate("document.querySelector('.case-memory-heading').textContent"), /编辑案件信息|梳理/)
     assert.match(await evaluate("document.querySelector('.case-basic-fields').textContent"), /原告王某被告李某我方被告/)
@@ -905,7 +908,8 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.topbar button')).some(button=>button.textContent.trim()==='编辑文书')"),false)
     const selectReviewedFixture = async () => {
       await wait("Array.from(document.querySelectorAll('.review-todo-card')).some(item=>item.textContent.includes('500,000元'))")
-      await evaluate("Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes('500,000元')).click()")
+      await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes('500,000元'))
+        .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
       await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
     }
     await selectReviewedFixture()
@@ -1130,64 +1134,58 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('.new-case-form .fm-ft button').getBoundingClientRect().bottom <= document.querySelector('.new-case-form').getBoundingClientRect().bottom"), true)
     await screenshot('document-import-390')
     window.setSize(...modalSize)
-    const openFileMenu = async (card, keyboard = false) => {
-      const trigger = `document.querySelector(${JSON.stringify(`${card} .case-file-drop button`)})`
-      if (keyboard) await evaluate(`${trigger}.focus(); ${trigger}.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))`)
-      else await evaluate(`${trigger}.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))`)
-      await wait("document.querySelector('[role=menu][data-state=open]')")
+    await wait("getComputedStyle(document.querySelector('.case-files-grid')).gridTemplateColumns.split(' ').length === 2")
+    assert.equal(await evaluate("document.querySelector('.new-case-form [aria-haspopup=menu]')"), null)
+    assert.equal(await evaluate("document.querySelector('.case-files-material input[type=file]')"), null)
+    const assertDocumentPicker = async (scope) => {
+      assert.equal(await evaluate(`(() => {
+        const cards = [...document.querySelectorAll('${scope} .case-files-grid > section')];
+        return cards.length === 2 && cards.every(card => card.firstElementChild.matches('.case-file-drop')) &&
+          cards[1].querySelector('.case-file-drop').textContent.includes('Word / TXT / Markdown');
+      })()`), true, '上传框上方应无标题，文书格式应显示在上传框内')
+      assert.equal(await evaluate(`(() => {
+        const area = document.querySelector('${scope} .case-files-document .case-file-drop');
+        let opened = false;
+        area.querySelector('input[type=file]').addEventListener('click', event => { event.preventDefault(); opened = true; }, { once: true });
+        area.querySelector('button').click();
+        return opened && !area.querySelector('[aria-haspopup]') && !area.querySelector('input[webkitdirectory]');
+      })()`), true, '应能点击上传文书并打开文件选择器')
     }
-    for (const [card, options] of [
-      ['.case-files-material', ['选择文件', '选择文件夹', '链接文件夹']],
-      ['.case-files-document', ['选择文件', '选择文件夹']],
-    ]) {
-      assert.equal(await evaluate(`document.querySelectorAll('${card} button').length`), 1, '每个上传区只应显示一个入口')
-      for (const [index, option] of options.slice(0, 2).entries()) {
-        await openFileMenu(card, index === 1)
-        assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('[role=menu][data-state=open] [role=menuitem]'), item => item.textContent.trim())"), options)
-        if (card === '.case-files-material' && index === 0) await screenshot('case-file-menu')
-        const input = index === 0 ? 'input[type=file]:not([webkitdirectory])' : 'input[webkitdirectory]'
-        await evaluate(`window.__casePickerOpened = false; document.querySelector('${card} ${input}').addEventListener('click', event => {
-          event.preventDefault(); window.__casePickerOpened = true;
-        }, { once: true })`)
-        await clickText('[role=menu][data-state=open] [role=menuitem]', option)
-        assert.equal(await evaluate('window.__casePickerOpened'), true)
-        await wait("!document.querySelector('[role=menu][data-state=open]')")
-      }
-    }
-    await evaluate(`(() => {
-      const documentInput = document.querySelector('input[aria-label="上传已撰写文书"]');
-      const transfer = new DataTransfer();
-      transfer.items.add(new File(['民事起诉状\\n\\n双方约定货款100元，被告未付款。'], '测试起诉状.txt', { type: 'text/plain' }));
-      documentInput.files = transfer.files;
-      documentInput.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`)
+    await assertDocumentPicker('.new-case-form')
+    const caseDocuments = path.join(directory, '待核验文书')
+    const caseDocumentTitles = ['测试起诉状', '测试答辩状', '测试代理意见']
+    fs.mkdirSync(path.join(caseDocuments, '补充文书'), { recursive: true })
+    fs.writeFileSync(path.join(caseDocuments, '测试起诉状.txt'), '民事起诉状\n\n双方约定货款100元，被告未付款。')
+    fs.writeFileSync(path.join(caseDocuments, '测试答辩状.txt'), '民事答辩状\n\n被告已按约定期限付清100元货款，并保留了付款凭证。')
+    fs.writeFileSync(path.join(caseDocuments, '补充文书', '测试代理意见.md'), '代理意见\n\n请核对合同和付款凭证记载的货款金额及付款日期。')
+    const directoryPickerOpened = new Promise(resolve => { onDirectoryPickerOpened = resolve })
+    await evaluate("document.querySelector('.new-case-form .case-files-material .case-file-drop button').click()")
+    const closeDirectoryPicker = await directoryPickerOpened
+    await dropFiles('.new-case-form .case-files-document .case-file-drop', [
+      path.join(caseDocuments, '测试起诉状.txt'), path.join(caseDocuments, '测试答辩状.txt'), path.join(caseDocuments, '补充文书'),
+    ])
+    await wait("document.querySelectorAll('.case-files-document .chip').length === 3")
     assert.equal(await evaluate("document.querySelector('.new-case-form button[type=submit]').disabled"), true, '仅有文书不能新建核验案件')
-    await evaluate(`(() => {
-      const materialInput = document.querySelector('.case-files-material input[webkitdirectory]');
-      const original = new DataTransfer();
-      const file = new File(['双方在合同中约定货款100元。'], '独立原材料.txt', { type: 'text/plain' });
-      Object.defineProperty(file, 'webkitRelativePath', { value: '材料目录/独立原材料.txt' });
-      original.items.add(file);
-      materialInput.files = original.files;
-      materialInput.dispatchEvent(new Event('change', { bubbles: true }));
-      const entry = { isFile: true, fullPath: '/原材料/子目录/子目录材料.txt', file: done =>
-        done(new File(['双方于2026年11月15日约定货款100元。'], '子目录材料.txt', { type: 'text/plain' })) };
-      const folder = (name, child) => ({ isFile: false, name, createReader() {
-        let entries = [child];
-        return { readEntries(done) { done(entries); entries = []; } };
-      } });
-      const drop = new DragEvent('drop', { bubbles: true, cancelable: true });
-      Object.defineProperty(drop, 'dataTransfer', { value: { files: [], items: [
-        { webkitGetAsEntry: () => ({ isFile: true, fullPath: '/拖入的单独材料.txt', file: done =>
-          done(new File(['双方约定于月底付款。'], '拖入的单独材料.txt', { type: 'text/plain' })) }) },
-        { webkitGetAsEntry: () => folder('原材料', folder('子目录', entry)) },
-      ] } });
-      document.querySelector('.case-files-material .case-file-drop').dispatchEvent(drop);
-    })()`)
-    await wait("[...document.querySelectorAll('.case-files-material .chip b')].some(name => name.textContent === '原材料/子目录/子目录材料.txt')")
-    assert.equal(await evaluate("[...document.querySelectorAll('.case-files-material .chip b')].some(name => name.textContent === '拖入的单独材料.txt')"), true)
+    const originals = path.join(directory, '原材料')
+    const standalone = path.join(directory, '独立原材料.txt')
+    fs.mkdirSync(path.join(originals, '子目录'), { recursive: true })
+    fs.writeFileSync(path.join(originals, '子目录', '子目录材料.txt'), '双方于2026年11月15日约定货款100元。')
+    fs.writeFileSync(standalone, '双方在合同中约定货款100元。')
+    await dropFiles('.new-case-form .case-files-material .case-file-drop', [standalone, originals])
+    await wait("document.querySelectorAll('.case-files-material .chip').length === 2")
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('.case-files-material .chip b')].map(name => name.textContent)"), ['独立原材料.txt', '原材料'])
     assert.equal(await evaluate("document.querySelector('.case-files-document [role=combobox]')"), null)
-    assert.equal(await evaluate("document.querySelector('.case-files-document .chip b').textContent"), '测试起诉状.txt')
+    assert.equal(await evaluate("document.querySelectorAll('.case-files-document .chip').length"), 3)
+    assert.equal(await evaluate("document.querySelector('.new-case-form button[type=submit]').disabled"), true, '关闭目录选择框前不能提交')
+    closeDirectoryPicker({ canceled: true, filePaths: [] })
+    await wait("!document.querySelector('.new-case-form button[type=submit]').disabled")
+    await assertDocumentPicker('.new-case-form')
+    await fill('#field-name', '')
+    assert.equal(await evaluate("document.querySelector('.new-case-form button[type=submit]').disabled"), true)
+    assert.match(await evaluate("document.querySelector('.new-case-form .fm-ft').textContent"), /请填写案件名称/)
+    await fill('#field-name', '新版回归测试案件')
+    await wait("!document.querySelector('.new-case-form button[type=submit]').disabled")
+    console.log('PASS material and document drops while the directory picker is open, then submit after closing')
     await saved(state => {
       assert.ok(!state.cases.some(item => item.name === '新版回归测试案件'))
       assert.ok(!state.certificates.some(item => item.title === '测试起诉状'))
@@ -1202,30 +1200,62 @@ app.whenReady().then(async () => {
         }
       };
       const fetch = window.fetch;
+      let firstDocumentResponse;
       window.fetch = async (input, init) => {
         const url = String(input);
         if (url.includes('/api/cases?response=compact') && init?.method === 'POST' && !window.__releaseCaseCreate) {
           await new Promise(resolve => { window.__releaseCaseCreate = resolve; });
         }
         observe(input);
-        if (url.includes('/api/documents/import') && !window.__releaseCaseDocument) {
-          await new Promise(resolve => { window.__releaseCaseDocument = resolve; });
+        if (url.includes('/api/documents/import')) {
+          if (!window.__releaseCaseDocument) {
+            await new Promise(resolve => { window.__releaseCaseDocument = resolve; });
+          }
+          if (firstDocumentResponse && !window.__allowRemainingCaseImports) return firstDocumentResponse.clone();
+          const response = await fetch(input, init);
+          if (!firstDocumentResponse && response.ok) firstDocumentResponse = response.clone();
+          return response;
+        }
+        if (url.includes('/auto-link/stream') && !window.__releaseCaseVerification) {
+          await new Promise(resolve => { window.__releaseCaseVerification = resolve; });
         }
         return fetch(input, init);
       };
       const open = XMLHttpRequest.prototype.open;
       XMLHttpRequest.prototype.open = function (method, url, ...options) { observe(url); return open.call(this, method, url, ...options); };
+      const send = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function (body) {
+        if (body instanceof FormData && body.has('manifest') && !window.__releaseCaseMaterials) {
+          window.__releaseCaseMaterials = () => send.call(this, body);
+          return;
+        }
+        return send.call(this, body);
+      };
     })()`)
     await clickText('.new-case-form .fm-ft button', '创建并核验')
     await wait("window.__releaseCaseCreate")
     assert.equal(await evaluate("Boolean(document.querySelector('#pg-proc') && !document.querySelector('.new-case-form'))"), true, '建案接口等待时已显示核验动画页')
     await evaluate('window.__releaseCaseCreate()')
+    await wait("window.__releaseCaseMaterials && document.querySelector('#pg-proc .ppct')?.textContent.includes('案件原材料')")
+    assert.match(await evaluate("document.querySelector('#pg-proc .pst.on')?.textContent"), /解析原材料与证据/)
+    assert.equal(await evaluate("document.querySelector('#pg-proc .ppct')?.textContent"), '正在链接案件原材料')
+    await evaluate('window.__releaseCaseMaterials()')
     await wait("document.querySelector('#pg-proc .proc-t')?.textContent.includes('《测试起诉状》')")
-    await wait("window.__releaseCaseDocument && document.querySelector('#pg-proc .pst.on')?.textContent.includes('读取文书与案件材料')")
-    assert.equal(await evaluate("document.querySelector('#pg-proc .pbar i').style.width"), '14%', '进度条应显示已经完成的阶段')
+    await wait("window.__releaseCaseDocument && document.querySelector('#pg-proc .ppct')?.textContent.includes('正在解析第')")
+    assert.match(await evaluate("document.querySelector('#pg-proc .pst.on')?.textContent"), /解析原材料与证据/)
+    assert.equal(await evaluate("document.querySelector('#pg-proc .pbar').getAttribute('aria-valuenow')"), '0', '文件准备期间应连续显示第一步进度，避免开始核验时回退')
     await evaluate('window.__releaseCaseDocument()')
+    await wait("window.__releaseCaseVerification || document.querySelector('.new-error')")
+    assert.equal(await evaluate('Boolean(window.__releaseCaseVerification)'), false, '三份文件返回同一个文书编号时不能只核验一份')
+    assert.match(await evaluate("document.querySelector('.new-error').textContent"), /未取得独立的导入结果/)
+    await clickText('.new-error button', '关闭')
+    await evaluate('window.__allowRemainingCaseImports = true')
+    await clickText('.proc-actions button', '重试')
+    await wait("window.__releaseCaseVerification && document.querySelector('#pg-proc .pst.on .pst-i')?.textContent === '1'")
+    assert.equal(await evaluate("document.querySelector('#pg-proc .ppct').textContent"), '准备读取材料解析状态')
+    await evaluate('window.__releaseCaseVerification()')
     await wait("document.querySelector('#pg-proc .ppct')?.textContent.includes('核验未完成') && document.querySelector('.new-error')?.textContent.includes('LLM API Key')")
-    assert.deepEqual(await evaluate('window.__caseFileRequests'), [true, true], '原材料和文书均在核验动画页打开后发起上传')
+    assert.deepEqual(await evaluate('window.__caseFileRequests'), [true, true, true, true, true, true], '重试应只补导未取得独立编号的文书')
     const importedId = await saved(state => state.certificates.find(item => item.title === '测试起诉状').id)
     assert.equal(await saved(state => state.certificates.find(item => item.id === importedId).verification), undefined)
     await clickText('.new-error button', '关闭')
@@ -1246,12 +1276,15 @@ app.whenReady().then(async () => {
     Object.assign(env, { LLM_BASE_URL: new URL('/qa-model', url).href, LLM_API_KEY: randomUUID(), LLM_MODEL: 'qa-model' })
     try {
       await clickText('.proc-actions button', '重试')
-      await wait("document.querySelectorAll('#pg-proc .pst.done').length === 7 && !document.querySelector('.proc-actions button')?.disabled")
+      await wait("document.querySelector('#pg-proc .ppct')?.textContent === '全部 3 份文书核验完成' && !document.querySelector('.proc-actions button')?.disabled")
     } finally {
       Object.assign(env, { LLM_BASE_URL: undefined, LLM_API_KEY: undefined, LLM_MODEL: previousModel })
     }
     await screenshot('homepage-import-verification-complete')
     await clickText('.proc-actions button', '查看核验结果')
+    await wait("document.querySelectorAll('#pg-ws .doc-tab').length === 3")
+    const firstDocumentTab = await evaluate("Array.from(document.querySelectorAll('#pg-ws .doc-tab')).find(tab => tab.textContent.includes('测试起诉状')).textContent.trim()")
+    await clickText('#pg-ws .doc-tab', firstDocumentTab)
     await wait("document.querySelector('#pg-ws .ctool h1')?.textContent === '测试起诉状'")
     assert.equal(await evaluate("document.querySelector('[aria-label=\"当前文书类型\"]').textContent"), '通用核验 · 待分类')
     await runWithWorkspaceAccount(account, async () => {
@@ -1259,28 +1292,49 @@ app.whenReady().then(async () => {
       const created = saved.cases.find(item => item.name === '新版回归测试案件')
       assert.equal(created.basicInfo.ourSide, 'plaintiff')
       assert.equal(created.basicInfo.plaintiff, '王某')
-      assert.ok(saved.evidences.some(item => item.caseId === created.id && item.fileName === '子目录材料.txt'))
-      assert.ok(saved.evidences.some(item => item.caseId === created.id && item.fileName === '独立原材料.txt' && item.parsing?.status === 'ready'))
+      assert.ok(saved.evidences.some(item => item.caseId === created.id && item.fileName === '子目录材料.txt' && item.directoryId))
+      assert.ok(saved.evidences.some(item => item.caseId === created.id && item.fileName === '独立原材料.txt' && item.directoryId && item.parsing?.status === 'ready'))
       const imported = saved.certificates.find(item => item.caseId === created.id && item.title === '测试起诉状')
       assert.equal(imported.id, importedId)
       assert.equal(imported.docKey, undefined)
-      assert.ok(imported.verification.revision && imported.verification.declarations.length > 0)
+      for (const title of caseDocumentTitles) {
+        const document = saved.certificates.find(item => item.caseId === created.id && item.title === title)
+        assert.ok(document?.verification?.revision && document.verification.declarations.length > 0, `《${title}》应保存核验结果`)
+      }
     })
     console.log('PASS one-step case setup, deferred material and document processing, and verification retry')
     if (layoutOnly) {
       await clickText('.add-mat', '导入材料或文书')
       await wait("document.querySelector('.new-upload')")
-      assert.equal(await evaluate(`(() => {
-        const area = document.querySelector('.new-upload .case-file-drop');
-        const input = area.querySelector('input[type=file]');
-        let opened = false;
-        input.addEventListener('click', event => { event.preventDefault(); opened = true; }, { once: true });
-        area.querySelector('button').click();
-        return opened && !area.querySelector('[aria-haspopup]') && !area.querySelector('input[webkitdirectory]');
-      })()`), true)
-      await clickText('.new-upload [data-slot=dialog-close]', 'Close')
-      await wait("!document.querySelector('.new-upload')")
-      console.log('PASS direct file picker in standalone import modal')
+      const importActions = "Array.from(document.querySelectorAll('.upload-actions button'), button => button.textContent.trim())"
+      assert.deepEqual(await evaluate(importActions), ['导入并核验'])
+      await assertDocumentPicker('.new-upload')
+      const additionalEvidence = path.join(directory, '补充原材料.txt')
+      const extraDoc = path.join(directory, '批量上传甲.txt')
+      const extraDocs = path.join(directory, '补充文书')
+      fs.mkdirSync(extraDocs)
+      fs.writeFileSync(additionalEvidence, '委托人确认合同已签字。')
+      fs.writeFileSync(extraDoc, '民事起诉状。')
+      fs.writeFileSync(path.join(extraDocs, '批量上传乙.txt'), '补充代理意见。')
+      await dropFiles('.new-upload .case-files-material .case-file-drop', [additionalEvidence])
+      await wait("document.querySelector('.new-upload .case-files-material .chip b')?.textContent === '补充原材料.txt'")
+      assert.deepEqual(await evaluate(importActions), ['导入并核验'])
+      assert.equal(await evaluate("document.querySelector('.upload-actions button').disabled"), true)
+      await dropFiles('.new-upload .case-files-document .case-file-drop', [extraDoc, extraDocs])
+      await wait("document.querySelectorAll('.new-upload .case-files-document .chip').length === 2")
+      assert.deepEqual(await evaluate(importActions), ['导入并核验'])
+      await wait("document.querySelector('.upload-actions button:not(:disabled)')")
+      verification.enabled = true
+      await clickText('.upload-actions button', '导入并核验')
+      await wait("document.querySelector('#pg-proc .ppct')?.textContent === '全部 2 份文书核验完成'")
+      await clickText('.proc-actions button', '查看核验结果')
+      await wait("document.querySelector('#pg-ws')")
+      await saved(state => {
+        const created = state.cases.find(item => item.name === '新版回归测试案件')
+        assert.ok(state.evidences.some(item => item.caseId === created.id && item.fileName === '补充原材料.txt' && item.directoryId))
+        assert.deepEqual(state.certificates.filter(item => item.caseId === created.id && item.title.startsWith('批量上传')).map(item => item.title).sort(), ['批量上传乙', '批量上传甲'])
+      })
+      console.log('PASS the sole import action links materials, uploads documents and starts verification')
       await clickText('.topbar button.brand-home', 'LawVerify 首页')
       await clickText('.home-intro-actions button', '新建案件')
       await wait("document.querySelector('#field-name')")
@@ -1290,8 +1344,7 @@ app.whenReady().then(async () => {
       assert.equal(await evaluate("document.querySelector('.case-files-document')"), null)
       assert.equal(await evaluate("document.querySelector('.new-case-form button[type=submit]').disabled"), true, '起草也必须有原材料')
       await screenshot('draft-upload')
-      await openFileMenu('.case-files-material')
-      await clickText('[role=menu][data-state=open] [role=menuitem]', '链接文件夹')
+      await evaluate("document.querySelector('.new-case-form .case-files-material .case-file-drop button').click()")
       await wait("document.querySelector('.case-files-material .chip b')?.textContent === 'linked-files'")
       await saved(state => assert.ok(!state.cases.some(item => item.name === '新建起草案件')))
       await clickText('.new-case-form .fm-ft button', '创建并起草')
@@ -1311,7 +1364,6 @@ app.whenReady().then(async () => {
       return
     }
     await require('./redesign-directory-checks.cjs')({ evaluate, wait, clickText, saved: fn => runWithWorkspaceAccount(account, async () => fn(await readWorkspace())), linkedDirectory, fs, path, setDeleteFailure: id => { failedDeleteCase = id } })
-    await clickText('.topbar button.brand-home', 'LawVerify 首页')
     await runAccountChecks()
     await runDocumentChecks()
     await require('./redesign-case-assistant-checks.cjs')({ evaluate, wait, clickText, fill, screenshot, saved, writeWorkspace, reload, enter })

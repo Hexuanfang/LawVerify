@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BookOpen, FileCheck, FileText, Sparkles } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Brand } from './Home'
@@ -163,18 +164,24 @@ export function Report() {
 
 export function Processing() {
   const app = useApp()
+  const { onProcessingMounted } = app
+  useEffect(onProcessingMounted, [onProcessingMounted])
   const stopped = Boolean(app.proc.error)
   const running = !app.proc.done && !stopped
-  const progress = app.proc.done ? 100 : Math.floor(Math.min(app.proc.step, 5) / 6 * 100)
+  const draft = app.proc.draft
+  const steps = draft ? ['导入并解析案件原材料'] : VERIFICATION_STEPS
+  const skippedMaterials = app.proc.skippedMaterials ?? []
+  const progress = app.proc.done ? 100 : Math.floor(Math.min(app.proc.step, steps.length - 1) / steps.length * 100)
+  const indeterminate = running && progress === 0
   return (
     <div className="page active" id="pg-proc">
       <div className="proc">
         <div className="proc-box fade">
           <div className="proc-t">
-            {app.proc.done ? '核验完成' : stopped ? '核验未完成' : '正在核验'}《{app.proc.title || app.certificate?.title || '文书'}》
+            {draft ? stopped ? '材料处理未完成' : '正在准备起草材料' : app.proc.done ? '核验完成' : stopped ? '核验未完成' : '正在核验'}《{app.proc.title || app.certificate?.title || '文书'}》
           </div>
-          <div className="proc-s">抽取声明 → 定位源头 → 逐项比对 → 绿黄红分档</div>
-          {VERIFICATION_STEPS.map((name, index) => {
+          {!draft && <div className="proc-s">抽取声明 → 定位源头 → 逐项比对 → 绿黄红分档</div>}
+          {steps.map((name, index) => {
             const state = verificationRowState(app.proc.step, index, app.proc.done, stopped)
             const label = { done: '已完成', active: '处理中', stopped: '已停止', pending: stopped ? '未执行' : '等待中' }[state]
             return (
@@ -185,10 +192,23 @@ export function Processing() {
               </div>
             )
           })}
-          <div className="pbar" role="progressbar" aria-label="核验阶段进度"
+          {skippedMaterials.length > 0 && (
+            <section className="proc-skipped" aria-labelledby="proc-skipped-heading">
+              <h2 id="proc-skipped-heading">已跳过 {skippedMaterials.length} 份原材料与证据</h2>
+              <ul tabIndex={0} aria-labelledby="proc-skipped-heading">
+                {skippedMaterials.map(item => (
+                  <li key={item.evidenceId}>
+                    <strong>{item.fileName}</strong>
+                    <div>{item.status === 'failed' ? '解析失败' : '待人工审核'} · {item.reason}</div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <div className="pbar" role="progressbar" aria-label={draft ? '材料处理进度' : '核验阶段进度'}
             aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}
-            aria-valuetext={app.proc.done ? '全部阶段已完成' : `${VERIFICATION_STEPS[Math.min(app.proc.step, 5)]}，${stopped ? '已停止' : '处理中'}`}>
-            <i className={running ? 'indeterminate' : ''} style={{ width: running ? '36%' : `${progress}%` }} />
+            aria-valuetext={app.proc.done ? '全部阶段已完成' : `${steps[Math.min(app.proc.step, steps.length - 1)]}，${stopped ? '已停止' : '处理中'}`}>
+            <i className={indeterminate ? 'indeterminate' : ''} style={{ width: indeterminate ? '36%' : `${progress}%` }} />
           </div>
           <div className="ppct" role="status">{app.proc.error || app.proc.message}</div>
           <div className="proc-actions">
@@ -198,11 +218,13 @@ export function Processing() {
               </Button>
             ) : stopped ? (
               <>
-                <Button className="btn btn-gh" disabled={app.busy} onClick={() => app.setPage('ws')}>返回工作台</Button>
+                <Button className="btn btn-gh" disabled={app.busy} onClick={() => app.setPage(app.caseId ? 'ws' : 'home')}>
+                  {app.caseId ? '返回工作台' : '返回案件列表'}
+                </Button>
                 <Button className="btn btn-pri" disabled={app.busy} onClick={() => void app.retryVerification()}>重试</Button>
               </>
             ) : (
-              <Button className="btn btn-gh" onClick={app.cancelVerification}>取消核验</Button>
+              <Button className="btn btn-gh" onClick={app.cancelVerification}>{draft ? '停止等待' : '取消核验'}</Button>
             )}
           </div>
         </div>

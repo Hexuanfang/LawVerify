@@ -6,7 +6,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from './components/ui/sheet'
-import { EvidenceManagePanel } from '../EvidenceManagePanel'
 import { useApp } from './AppContext'
 import { fetchWithWorkspaceAccount, getEvidenceSourceUrl } from '../api'
 
@@ -65,6 +64,21 @@ export function PreviewDrawer() {
     : undefined
   const judgmentUrl = caseVerification?.documents?.find(item => item.id === source?.targetId)?.url
   const url = evidence ? getEvidenceSourceUrl(evidence.id) : ''
+  const evidenceCase = evidence && app.projects.find(project => project.id === evidence.caseId)
+  const references = evidence ? (app.workspace?.certificates ?? [])
+    .filter(document => document.caseId === evidence.caseId)
+    .flatMap(document => {
+      const reviewedParagraphs = new Set((evidenceCase?.els[document.id] ?? [])
+        .filter(element => element.sources.some(item => item.st === 'l1' && item.targetId === evidence.id))
+        .map(element => element.paragraphId))
+      const paragraphs = document.paragraphs.flatMap((paragraph, index) => {
+        const links = paragraph.links?.length ? paragraph.links : paragraph.link ? [paragraph.link] : []
+        return reviewedParagraphs.has(paragraph.id) || links.some(link => link.evidenceId === evidence.id)
+          ? [{ id: paragraph.id, number: index + 1, text: paragraph.text }]
+          : []
+      })
+      return paragraphs.length ? [{ id: document.id, title: document.title, paragraphs }] : []
+    }) : []
   return (
     <Sheet
       open={Boolean(source)}
@@ -73,48 +87,64 @@ export function PreviewDrawer() {
       }}
     >
       <SheetContent className="new-drawer" side="right">
-        <SheetHeader className="dwh">
-          <SheetTitle className="dwt">{source?.name}</SheetTitle>
-          <SheetDescription className="dws">
-            {source?.st === 'l1'
-              ? 'L1 案件原材料'
-              : source?.st === 'l2'
-                ? 'L2 法条 · 版本信息'
-                : caseVerification ? 'L3 案例 · 裁判原文摘录' : 'L3 案例 · 索引与摘要'}{' '}
-            · {source?.loc}
-          </SheetDescription>
+        <SheetHeader className={evidence ? 'dwh evidence-drawer-title' : 'dwh'}>
+          <SheetTitle className="dwt" asChild={Boolean(evidence)}>
+            {evidence ? <h1 title={source?.name}>{source?.name}</h1> : source?.name}
+          </SheetTitle>
+          {evidence ? <SheetDescription className="sr-only">案件原材料</SheetDescription> : (
+            <SheetDescription className="dws">
+              {source?.st === 'l1'
+                ? 'L1 案件原材料'
+                : source?.st === 'l2'
+                  ? 'L2 法条 · 版本信息'
+                  : caseVerification ? 'L3 案例 · 裁判原文摘录' : 'L3 案例 · 索引与摘要'}{' '}
+              · {source?.loc}
+            </SheetDescription>
+          )}
         </SheetHeader>
         <div className="dwb">
-          <div className="pv-stage">
-            {evidence ? (
-              <>
-                <div className="source-file-actions">
-                  <a href={url} target="_blank" rel="noreferrer">
-                    打开原件 ↗
-                  </a>
+          {evidence ? (
+            <>
+              <section aria-labelledby="evidence-preview-heading">
+                <div className="evidence-preview-heading">
+                  <h2 id="evidence-preview-heading">原件预览</h2>
+                  <a href={url} target="_blank" rel="noreferrer">打开原件 ↗</a>
                 </div>
-                <Suspense fallback={<p>正在加载原件…</p>}>
-                  {evidence.type === 'pdf' ? (
-                    <PdfPreview sourceUrl={url} name={evidence.name} />
-                  ) : evidence.type === 'image' ? (
-                    <img
-                      className="source-image"
-                      src={url}
-                      alt={evidence.name}
-                    />
-                  ) : evidence.type === 'word' &&
-                    /\.docx$/i.test(evidence.fileName) ? (
-                    <WordPreview url={url} />
-                  ) : (
-                    <div className="pv-paper">
-                      <pre>
-                        {evidence.ocrText || '材料正在解析，完成后可查看原文。'}
-                      </pre>
-                    </div>
-                  )}
-                </Suspense>
-              </>
-            ) : law ? (
+                <div className="pv-stage evidence-preview-content" role="region" aria-label="原件内容" tabIndex={0}>
+                  <Suspense fallback={<p role="status">正在加载原件…</p>}>
+                    {evidence.type === 'pdf' ? (
+                      <PdfPreview sourceUrl={url} name={evidence.name} />
+                    ) : evidence.type === 'image' ? (
+                      <img className="source-image" src={url} alt={evidence.name} />
+                    ) : evidence.type === 'word' && /\.docx$/i.test(evidence.fileName) ? (
+                      <WordPreview url={url} />
+                    ) : (
+                      <div className="pv-paper">
+                        <pre>{evidence.ocrText || '材料正在解析，完成后可查看原文。'}</pre>
+                      </div>
+                    )}
+                  </Suspense>
+                </div>
+              </section>
+              <section className="evidence-references" aria-labelledby="evidence-references-heading">
+                <h2 id="evidence-references-heading">引用文书与段落</h2>
+                {references.length ? references.map(document => (
+                  <div className="evidence-reference-document" key={document.id}>
+                    <h3>{document.title}</h3>
+                    <ul role="list">
+                      {document.paragraphs.map(paragraph => (
+                        <li key={paragraph.id}>
+                          <strong>第 {paragraph.number} 段</strong>
+                          <p>{paragraph.text}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )) : <p className="evidence-references-empty">暂无文书引用此材料</p>}
+              </section>
+            </>
+          ) : <div className="pv-stage">
+            {law ? (
               <div className="pv-paper statute">
                 <div
                   className={
@@ -181,15 +211,13 @@ export function PreviewDrawer() {
                   <a className="source-file-actions" href={source.url} target="_blank" rel="noreferrer">打开来源 ↗</a>}
               </div>
             )}
-          </div>
+          </div>}
         </div>
-        {evidence && <div className="new-material-manage"><EvidenceManagePanel key={evidence.id} evidence={evidence} busy={app.busy}
-          onUpdate={patch => app.updateMaterial(evidence.id, patch)} onDelete={() => app.deleteMaterial(evidence.id)} /></div>}
-        {(source?.quote || evidence?.ocrText) && (
+        {!evidence && source?.quote && (
           <div className="ocr">
             <div className="ocr-l">OCR / 原文摘录 · 命中高亮</div>
             <div className="ocr-x">
-              {source?.quote || evidence?.ocrText?.slice(0, 5000)}
+              {source.quote}
             </div>
           </div>
         )}

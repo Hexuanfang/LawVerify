@@ -1,11 +1,12 @@
-import { useState, type ReactNode } from 'react'
-import { ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, FileText, FileUp, Folder, FolderOpen, LoaderCircle, Search } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, LoaderCircle, Plus, Search } from 'lucide-react'
 import { EVIDENCE_PARSING_LABELS, type Evidence } from '../types'
 import { useApp } from './AppContext'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip'
 import { linkedAuthorities } from './reviewOverview'
+import { evidenceCategory, evidenceCategoryKey, evidenceCategoryOrder, readEvidenceCategories, type EvidenceCategory } from './caseFileKind'
 
 const parsingStatusIcons = {
   queued: Clock,
@@ -15,70 +16,68 @@ const parsingStatusIcons = {
   failed: CircleX,
 }
 
-type MaterialFolder = {
-  id: string
-  name: string
-  linkedRoot: boolean
-  count: number
-  folders: Map<string, MaterialFolder>
-  files: Evidence[]
-}
+const evidenceDragType = 'application/x-lawverify-evidence'
 
-function evidenceTree(materials: Evidence[], keyword: string) {
-  const roots = new Map<string, MaterialFolder>()
-  const folderIds: string[] = []
-
+function groupEvidence(materials: Evidence[], keyword: string, overrides: ReadonlyMap<string, EvidenceCategory>) {
+  const groups = new Map(evidenceCategoryOrder.map(category => [category, [] as Evidence[]]))
   for (const item of materials) {
     const path = item.relativePath?.split(/[\\/]+/).filter(Boolean).slice(0, -1) ?? []
-    // 联动目录用后缀区分同名目录，界面只显示目录名。
     const suffix = '--' + item.directoryId
     if (item.directoryId && path[0]?.endsWith(suffix)) path[0] = path[0].slice(0, -suffix.length)
-    const names = path.length ? path : ['案件原材料']
-    const searchable = [item.number?.trim(), item.name, item.fileName, names.join('/')].join(' ').toLowerCase()
-    if (!searchable.includes(keyword)) continue
-
-    let folders = roots
-    names.forEach((name, depth) => {
-      const id = JSON.stringify(path.length ? [item.directoryId ?? '', ...names.slice(0, depth + 1)] : ['unfiled'])
-      let folder = folders.get(id)
-      if (!folder) {
-        const linkedRoot = depth === 0 && path.length > 0 && Boolean(item.directoryId)
-        folder = { id, name, linkedRoot, count: 0, folders: new Map(), files: [] }
-        folders.set(id, folder)
-        folderIds.push(id)
-      }
-      folder.count++
-      folders = folder.folders
-      if (depth === names.length - 1) folder.files.push(item)
-    })
+    const category = overrides.get(item.id) ?? evidenceCategory([item.name, item.fileName].join(' '), path)
+    const searchable = [item.number?.trim(), item.name, item.fileName, path.join('/'), category].join(' ').toLowerCase()
+    if (searchable.includes(keyword)) groups.get(category)!.push(item)
   }
-
-  return { roots, folderIds }
+  return groups
 }
 
 export function WorkspaceMaterials() {
   const app = useApp()
+  const caseId = app.project?.id ?? ''
+  const account = sessionStorage.getItem('lawverify-login-account') ?? ''
+  const storageKey = evidenceCategoryKey(account, caseId)
   const [query, setQuery] = useState('')
-  const [collapsedFolders, setCollapsedFolders] = useState<string[]>([])
+  const [collapsedCategories, setCollapsedCategories] = useState<string[]>([])
   const [collapsedMatches, setCollapsedMatches] = useState<string[]>([])
+  const [overrides, setOverrides] = useState(() => readEvidenceCategories(storageKey))
+  const [drag, setDrag] = useState<{ id: string; from: EvidenceCategory; over?: EvidenceCategory }>()
   const keyword = query.trim().toLowerCase()
-  const allMaterials = app.workspace?.evidences.filter(item => item.caseId === app.project?.id) ?? []
-  const { roots, folderIds } = evidenceTree(allMaterials, keyword)
-  const [collapsed, setCollapsed] = keyword ? [collapsedMatches, setCollapsedMatches] : [collapsedFolders, setCollapsedFolders]
+  const allMaterials = app.workspace?.evidences.filter(item => item.caseId === caseId) ?? []
+  const groups = [...groupEvidence(allMaterials, keyword, overrides)].filter(([, files]) => drag || files.length)
+  const [collapsed, setCollapsed] = keyword ? [collapsedMatches, setCollapsedMatches] : [collapsedCategories, setCollapsedCategories]
   const authorities = linkedAuthorities(app.elements, app.workspace ?? undefined)
     .filter(item => [item.name, item.version, ...item.locations.map(({ source }) => source.loc)].join(' ').toLowerCase().includes(keyword))
   const law = authorities.filter(item => item.tier === 'l2')
   const cases = authorities.filter(item => item.tier === 'l3')
-  const allGroups = [...folderIds, 'l2', 'l3']
+  const allGroups = [...groups.map(([category]) => category), 'l2', 'l3']
   const folded = new Set(collapsed)
   const anyFolded = allGroups.some(id => folded.has(id))
   const toggle = (id: string) => setCollapsed(current => current.includes(id) ? current.filter(group => group !== id) : [...current, id])
+  const moveEvidence = (id: string, category: EvidenceCategory) => {
+    const item = allMaterials.find(file => file.id === id)
+    if (!item || !account || !caseId) return false
+    const next = new Map(overrides).set(id, category)
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(next)))
+    } catch {
+      app.toast('证据分类暂时无法保存，请重试')
+      return false
+    }
+    setOverrides(next)
+    setCollapsedCategories(current => current.filter(group => group !== category))
+    if (keyword && !groupEvidence([item], keyword, next).get(category)?.length) {
+      setQuery('')
+      setCollapsedMatches([])
+    } else setCollapsedMatches(current => current.filter(group => group !== category))
+    app.toast(`已移至「${category}」`)
+    return true
+  }
   const heading = (id: string, title: string, count: number) => (
     <button type="button" className="mat-gn material-group-toggle" aria-expanded={!folded.has(id)} onClick={() => toggle(id)}>
       <ChevronDown size={13} aria-hidden="true" />{title}<span className="n">{count}</span>
     </button>
   )
-  const fileRow = (item: Evidence) => {
+  const fileRow = (item: Evidence, category: EvidenceCategory) => {
     const number = item.number?.trim()
     const title = number ? number + ' · ' + item.name : item.name
     const status = item.parsing?.status
@@ -88,9 +87,26 @@ export function WorkspaceMaterials() {
       <li key={item.id}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" className="mat-it material-file"
+            <button type="button" className="mat-it material-file" draggable data-evidence-id={item.id}
+              data-dragging={drag?.id === item.id || undefined} aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+              onDragStart={event => {
+                event.dataTransfer.setData(evidenceDragType, item.id)
+                event.dataTransfer.effectAllowed = 'move'
+                setDrag({ id: item.id, from: category })
+              }}
+              onDragEnd={() => setDrag(undefined)}
+              onKeyDown={event => {
+                if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
+                event.preventDefault()
+                const offset = event.key === 'ArrowUp' ? -1 : 1
+                const destination = evidenceCategoryOrder[evidenceCategoryOrder.indexOf(category) + offset]
+                const list = event.currentTarget.closest('.material-categories')
+                if (destination && moveEvidence(item.id, destination)) {
+                  requestAnimationFrame(() => list?.querySelector<HTMLButtonElement>(`[data-evidence-id="${CSS.escape(item.id)}"]`)?.focus())
+                }
+              }}
               onClick={() => app.setDrawer({ st: 'l1', targetId: item.id, name: title, loc: item.fileName, quote: '' })}>
-              <FileText size={14} aria-hidden="true" className="material-file-icon" />
+              <span className="fico l1" aria-hidden="true">材</span>
               <span className="mat-nm">{title}</span>
               {StatusIcon && <>
                 <StatusIcon className="material-parsing-status" data-status={status} size={15} strokeWidth={2.25} aria-hidden="true" />
@@ -102,30 +118,9 @@ export function WorkspaceMaterials() {
             <div>{title}</div>
             {item.fileName !== item.name && <div>{item.fileName}</div>}
             {statusLabel && <div>{statusLabel}</div>}
+            <div>拖到分类标题可调整归类，也可按 Alt + ↑ / ↓</div>
           </TooltipContent>
         </Tooltip>
-      </li>
-    )
-  }
-  const folderRow = (folder: MaterialFolder): ReactNode => {
-    const open = !folded.has(folder.id)
-    const FolderIcon = open ? FolderOpen : Folder
-    return (
-      <li className="material-branch" key={folder.id}>
-        <button type="button" className="mat-gn material-group-toggle material-folder" aria-expanded={open}
-          title={folder.name} onClick={() => toggle(folder.id)}>
-          <ChevronDown className="material-chevron" size={12} aria-hidden="true" />
-          <FolderIcon className="material-folder-icon" size={15} aria-hidden="true" />
-          <span className="material-folder-label">
-            <span className="material-folder-name">{folder.name}</span>
-            {folder.linkedRoot && <span className="mat-bd l1">L1</span>}
-          </span>
-          <span className="n">{folder.count}<span className="sr-only"> 份材料</span></span>
-        </button>
-        {open && <ul className="material-branch-children" role="list">
-          {Array.from(folder.folders.values(), folderRow)}
-          {folder.files.map(fileRow)}
-        </ul>}
       </li>
     )
   }
@@ -139,16 +134,41 @@ export function WorkspaceMaterials() {
         </div>
         <div className="search">
           <Search size={13} aria-hidden="true" />
-          <Input className="new-search-input" aria-label="按编号或名称搜索材料、目录和关联依据" placeholder="搜索材料、目录或依据…" value={query} onChange={event => {
+          <Input className="new-search-input" aria-label="搜索材料、法条和案例" placeholder="搜索材料 / 法条 / 案例" value={query} onChange={event => {
             setQuery(event.target.value)
             setCollapsedMatches([])
           }} />
         </div>
       </div>
       <div className="mat-scroll">
-        {roots.size > 0 ? <ul className="material-tree" role="list" aria-label="证据目录">
-          {Array.from(roots.values(), folderRow)}
-        </ul> : <p className="lib-empty">{keyword ? '未找到材料' : '暂无案件原材料'}</p>}
+        <div className="material-categories" role="region" aria-label="证据目录">
+          {groups.length ? groups.map(([category, files]) => (
+            <div className="mat-g" key={category} data-category={category}
+              data-drop-target={drag?.over === category || undefined}
+              onDragOver={event => {
+                if (!drag || drag.from === category) return
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+                if (drag.over !== category) setDrag({ ...drag, over: category })
+              }}
+              onDragLeave={event => {
+                if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+                setDrag(current => current?.over === category ? { ...current, over: undefined } : current)
+              }}
+              onDrop={event => {
+                if (!drag) return
+                event.preventDefault()
+                setDrag(undefined)
+                if (drag.from !== category && event.dataTransfer.getData(evidenceDragType) === drag.id)
+                  moveEvidence(drag.id, category)
+              }}>
+              {heading(category, category, files.length)}
+              {!folded.has(category) && <ul className="material-category-files" role="list" aria-label={category}>
+                {files.map(item => fileRow(item, category))}
+              </ul>}
+            </div>
+          )) : <p className="lib-empty">{keyword ? '未找到材料' : '暂无案件原材料'}</p>}
+        </div>
         <h2 className="material-authority-title">关联依据</h2>
         {([
           ['l2', '法条 L2', law],
@@ -176,10 +196,8 @@ export function WorkspaceMaterials() {
         ))}
       </div>
       <div className="material-actions">
-        <Button variant="outline" className="add-mat" onClick={() => app.setUploadCase(app.project?.id ?? null)}>
-          <FolderOpen size={15} />本地文件夹联动</Button>
-        <Button variant="ghost" className="add-doc" onClick={() => app.setDocumentCase(app.project?.id ?? null)}>
-          <FileUp size={15} />导入待核验文书</Button>
+        <Button variant="outline" className="add-mat" onClick={() => app.setDocumentCase(app.project?.id ?? null)}>
+          <Plus size={15} aria-hidden="true" />导入材料或文书</Button>
       </div>
     </aside>
   )

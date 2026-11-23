@@ -1,46 +1,44 @@
-import { useRef, useState } from 'react'
-import { FileUp, LoaderCircle, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { FolderOpen, LoaderCircle } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog'
 import { api } from '../api'
 import { useApp } from './AppContext'
 import { importDocument } from './services'
-import { documentFileAccept, documentFileHint, supportsDocumentFile } from './documentFile'
-import type { DocKey } from '../types'
-import { DocumentTypeSelect } from './DocumentTypeSelect'
-import { DirectoryLinksModal } from './DirectoryLinksModal'
+import { CaseFileCard } from './CaseFileCard'
+import { detectCaseFileKind, type CaseFileKind } from './caseFileKind'
+import { prepareEvidenceUpload } from './caseSetup'
 
-type CaseFileSetup = { caseId: string; task: 'verify' | 'draft'; onImported: () => void; onContinue: () => void }
-
-export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
+export function UploadModal() {
   const app = useApp()
-  const [documents, setDocuments] = useState<File[]>([])
-  const [docKeys, setDocKeys] = useState(new Map<File, DocKey | undefined>())
+  const [files, setFiles] = useState<File[]>([])
+  const [kinds, setKinds] = useState(new Map<File, CaseFileKind>())
   const [progress, setProgress] = useState('')
   const [importing, setImporting] = useState(false)
+  const [reading, setReading] = useState(false)
   const submitting = useRef(false)
-  const busy = app.busy || importing
+  const busy = app.busy || importing || reading
   const imported = useRef(new Map<File, string>())
-  const project = app.projects.find(item => item.id === (setup?.caseId ?? app.documentCase))
-  const draftOnly = setup?.task === 'draft'
-  const close = () => setup ? setup.onContinue() : app.setDocumentCase(null)
-  const finishImport = () => setup ? setup.onImported() : app.setDocumentCase(null)
-  const select = (files: File[]) => {
-    if (files.some(file => !supportsDocumentFile(file.name))) {
-      app.toast(documentFileHint)
-      return
-    }
-    setDocuments(current => [
-      ...current,
-      ...files.filter(file => !current.some(previous =>
-        previous.name === file.name &&
-        previous.size === file.size &&
-        previous.lastModified === file.lastModified,
-      )),
-    ])
-  }
+  const importedEvidence = useRef(new Set<File>())
+  const project = app.projects.find(item => item.id === app.documentCase)
+  const close = () => app.setDocumentCase(null)
+  const documents = files.filter(file => kinds.get(file) === 'document')
+  const evidence = files.filter(file => kinds.get(file) === 'evidence')
+  const detecting = documents.length + evidence.length < files.length
+  const canVerify = Boolean(project?.mats.length || evidence.length)
+  useEffect(() => {
+    const pending = files.filter(file => !kinds.has(file))
+    if (!pending.length) return
+    let active = true
+    void Promise.all(pending.map(async file => [file, await detectCaseFileKind(file)] as const)).then(results => {
+      if (!active) return
+      setKinds(current => new Map([...current, ...results]))
+    })
+    return () => { active = false }
+  }, [files, kinds])
+
   const start = async (verifyAfter: boolean) => {
-    if (!project || submitting.current || app.busy) return
+    if (!project || submitting.current || busy || detecting || !files.length) return
     submitting.current = true
     setImporting(true)
     setProgress('正在准备导入，保存当前文书草稿…')
@@ -51,20 +49,32 @@ export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
       }
       const caseId = project.id
       const parseOrder = [...documents].sort((left, right) => left.size - right.size)
+      const uploadEvidence = prepareEvidenceUpload(caseId, importedEvidence.current)
+      const session = sessionStorage.getItem('lawverify-auth-session')
+      const account = sessionStorage.getItem('lawverify-login-account')
+      const check = (signal?: AbortSignal) => {
+        signal?.throwIfAborted()
+        if (session !== sessionStorage.getItem('lawverify-auth-session') || account !== sessionStorage.getItem('lawverify-login-account'))
+          throw new Error('当前登录账号已变化，请重新打开页面。')
+      }
       if (verifyAfter) {
         app.setCaseIdForUpload(caseId, '')
-        finishImport()
+        close()
         await app.verify([], async (signal, report) => {
+          await uploadEvidence(evidence, () => check(signal), message => {
+            if (!signal.aborted) report(message, project.name)
+          })
+          check(signal)
           if (app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready')
             await api.updateCase(caseId, { status: 'in_review' })
           for (const [index, file] of parseOrder.entries()) {
-            signal.throwIfAborted()
+            check(signal)
             report(
               '导入第 ' + (index + 1) + '/' + documents.length + ' 份 · ' + (imported.current.has(file) ? '已导入文书' : '正在解析文书') + ' ' + file.name,
               file.name,
             )
             if (!imported.current.has(file)) {
-              const saved = await importDocument(caseId, file, signal, undefined, docKeys.get(file))
+              const saved = await importDocument(caseId, file, signal)
               imported.current.set(file, saved.certificate.id)
             }
           }
@@ -73,89 +83,65 @@ export function UploadModal({ setup }: { setup?: CaseFileSetup }) {
         return
       }
       const saved = await app.run(async () => {
-        if (app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready')
+        await uploadEvidence(evidence, check, setProgress)
+        check()
+        if (documents.length && app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready')
           await api.updateCase(caseId, { status: 'in_review' })
         for (const [index, file] of parseOrder.entries()) {
+          check()
           if (!imported.current.has(file)) {
             const result = await importDocument(caseId, file, undefined, message => {
               setProgress('第 ' + (index + 1) + '/' + documents.length + ' 份 · ' + message + ' ' + file.name)
-            }, docKeys.get(file))
+            })
             imported.current.set(file, result.certificate.id)
           }
         }
-        setProgress('正在刷新案件工作区，完成后打开文书…')
+        setProgress('正在刷新案件工作区…')
       })
       if (saved) {
         const lastFile = documents.at(-1)
-        const nextDoc = lastFile ? imported.current.get(lastFile)! : project.docs[0] ?? ''
-        app.setCaseIdForUpload(caseId, nextDoc)
-        finishImport()
-        app.toast('文书已导入，可直接编辑或稍后核验')
+        if (lastFile) app.setCaseIdForUpload(caseId, imported.current.get(lastFile)!)
+        close()
+        app.toast(evidence.length ? (documents.length ? '材料和文书已导入' : '材料已导入，正在后台解析') : '文书已导入，可直接编辑或稍后核验')
       } else setProgress('导入未完成，请查看错误提示后重试。')
     } finally {
       submitting.current = false
       setImporting(false)
     }
   }
-  if (!project) return null
+  if (!project || app.uploadCase) return null
   return <Dialog open onOpenChange={open => { if (!open && !busy) close() }}>
-    <DialogContent className={`fm-box new-upload${setup ? ' case-files-setup' : ''}${draftOnly ? ' case-files-draft' : ''}`} aria-busy={busy}
+    <DialogContent className="fm-box new-upload" aria-busy={busy}
       onInteractOutside={event => { if (busy) event.preventDefault() }}
       onEscapeKeyDown={event => { if (busy) event.preventDefault() }} showCloseButton={!busy}>
       <DialogHeader>
-        <DialogTitle>{setup ? '添加案件文件' : '导入待核验文书'} · {project.name}</DialogTitle>
-        <DialogDescription>{setup
-          ? draftOnly ? '链接合同、流水、沟通记录等原材料，供 AI 起草参考。' : '链接证据目录并选择待核验文书，也可以先导入文书，稍后补充材料。'
-          : '导入起诉状、答辩状等已撰写文书，在工作台中直接编辑和核验。'}</DialogDescription>
+        <DialogTitle>导入材料或文书 · {project.name}</DialogTitle>
+        <DialogDescription>可一起上传证据和待核验文书，系统会自动识别各文件的导入类型。</DialogDescription>
       </DialogHeader>
       <div className="case-files-grid">
-        {setup && <section className="case-files-material" aria-labelledby="case-files-material-heading">
-          <div className="case-files-card-head"><h3 id="case-files-material-heading">案件原材料</h3><span>{project.mats.length} 份</span></div>
-          <p>首次链接会导入目录内的材料。文件有变动时，点击「立即同步」。</p>
-          <DirectoryLinksModal embeddedCaseId={setup.caseId} disabled={importing} />
-        </section>}
-        {!draftOnly && <section className="case-files-document" aria-labelledby="case-files-document-heading">
-          <div className="case-files-card-head"><h3 id="case-files-document-heading">待核验文书</h3><span>Word / TXT / Markdown</span></div>
-          <label className={`dz ${busy ? 'disabled' : ''}`} onDragOver={event => event.preventDefault()}
-        onDrop={event => { event.preventDefault(); if (!busy) select(Array.from(event.dataTransfer.files)) }}>
-        <input type="file" multiple disabled={busy} className="sr-only" aria-label="上传已撰写文书" accept={documentFileAccept}
-          onChange={event => { select(Array.from(event.target.files ?? [])); event.target.value = '' }} />
-        <FileUp size={23} aria-hidden="true" />
-        <b>拖拽或点击选择文书</b>
-      </label>
-      <div className="chips">
-        {documents.map((file, index) => (
-          <div className="chip" key={`${file.name}-${index}`}>
-            <div className="fico l2">文</div>
-            <div className="document-import-name">
-              <div className="n">{file.name}</div>
-              <div className="s">{(file.size / 1024).toFixed(1)} KB</div>
-              <DocumentTypeSelect value={docKeys.get(file)} label={`${file.name}的文书类型`} disabled={busy || imported.current.has(file)}
-                onChange={value => setDocKeys(current => new Map(current).set(file, value))} />
-            </div>
-            <Button variant="ghost" size="icon" disabled={busy} aria-label={`移除 ${file.name}`}
-              onClick={() => setDocuments(current => current.filter(item => item !== file))}>
-              <X size={12} />
-            </Button>
-          </div>
-        ))}
+        <CaseFileCard files={files} onFiles={setFiles} disabled={busy} onReading={setReading} fileKind={file => {
+          const kind = kinds.get(file)
+          const saved = imported.current.has(file) || importedEvidence.current.has(file)
+          if (!kind) return <small role="status">正在识别…</small>
+          return <small className="upload-file-kind">{kind === 'document' ? '待核验文书' : '证据'}{saved ? ' · 已导入' : ''}</small>
+        }} />
       </div>
-        </section>}
-      </div>
+      <Button className="btn btn-gh upload-directory" disabled={busy} onClick={() => app.setUploadCase(project.id)}>
+        <FolderOpen size={15} aria-hidden="true" />管理本地文件夹联动
+      </Button>
       {importing && <div className="upload-import-feedback" role="status" aria-live="polite" aria-atomic="true">
         <div className="upload-import-heading">
           <LoaderCircle className="import-spinner" size={20} aria-hidden="true" />
-          <div><b>{progress}</b><p>处理完成后自动打开文书，请稍候。</p></div>
+          <div><b>{progress}</b>{documents.length > 0 && <p>处理完成后自动打开文书，请稍候。</p>}</div>
         </div>
         <div className="upload-import-track" aria-hidden="true"><i /></div>
       </div>}
       <div className="upload-actions">
-        {draftOnly ? <Button className="btn btn-pri" onClick={close} disabled={busy}>进入起草</Button> : <>
-          {!importing && <span role="status">{progress || (!project.mats.length ? '链接证据目录后可开始核验。' : '')}</span>}
-          {setup && <Button variant="ghost" disabled={busy} onClick={close}>进入工作台</Button>}
-          <Button className="btn btn-gh" disabled={!documents.length || busy} onClick={() => void start(false)}>{importing ? <><LoaderCircle className="import-spinner" size={14} aria-hidden="true" />正在导入…</> : '仅导入文书'}</Button>
-          <Button className="btn btn-pri" disabled={!documents.length || !project.mats.length || busy} onClick={() => void start(true)}>导入并核验</Button>
-        </>}
+        {!importing && <span role="status">{progress || (documents.length > 0 && !canVerify ? '添加证据后可开始核验。' : '')}</span>}
+        <Button className={documents.length ? 'btn btn-gh' : 'btn btn-pri'} disabled={!files.length || busy || detecting} onClick={() => void start(false)}>
+          {importing ? <><LoaderCircle className="import-spinner" size={14} aria-hidden="true" />正在导入…</> : documents.length ? (evidence.length ? '仅导入' : '仅导入文书') : '导入材料'}
+        </Button>
+        <Button className="btn btn-pri" disabled={!documents.length || !canVerify || busy || detecting} onClick={() => void start(true)}>导入并核验</Button>
       </div>
     </DialogContent>
   </Dialog>

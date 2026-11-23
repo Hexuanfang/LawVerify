@@ -89,8 +89,8 @@ function Shell() {
           </Suspense>
           <Dock />
           <Suspense fallback={<div className="toast show" role="status">正在加载…</div>}>
-            {app.uploadCase && <DirectoryLinksModal key={app.uploadCase} />}
-            {app.documentCase && <UploadModal key={app.documentCase} />}
+            {app.uploadCase && <DirectoryLinksModal key={`directory:${app.uploadCase}`} />}
+            {app.documentCase && <UploadModal key={`import:${app.documentCase}`} />}
             {app.form && <FormModal key={`${app.form.tab}:${app.form.id ?? ''}`} />}
             {app.drawer && <PreviewDrawer />}
           </Suspense>

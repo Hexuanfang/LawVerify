@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { FolderOpen, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import {
   Dialog,
@@ -18,8 +19,8 @@ import {
   SelectValue,
 } from './components/ui/select'
 import { useApp } from './AppContext'
-import { caseNoteKey } from './caseNotes'
-import { UploadModal } from './UploadModal'
+import { CaseFileCard } from './CaseFileCard'
+import { prepareCaseFiles } from './caseSetup'
 import { api } from '../api'
 import type { KnowledgeCase, KnowledgeStatuteDocument } from '../types'
 export function FormModal() {
@@ -28,6 +29,7 @@ export function FormModal() {
   const project = form?.tab === 'proj' ? app.workspace?.cases.find((item) => item.id === form.id) : undefined
   const caseForm = form?.tab === 'proj'
   const editingProject = caseForm && Boolean(form.id)
+  const creatingProject = caseForm && !editingProject
   const [values, setValues] = useState<Record<string, string>>(() => ({
     name: project?.name ?? '',
     plaintiff: project?.basicInfo?.plaintiff ?? '',
@@ -38,7 +40,33 @@ export function FormModal() {
     caseNumber: project?.basicInfo?.caseNumber ?? '',
   }))
   const [task, setTask] = useState<'verify' | 'draft'>('verify')
-  const [newCaseId, setNewCaseId] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [documents, setDocuments] = useState<File[]>([])
+  const [directories, setDirectories] = useState<Array<{ id: string; name: string }>>([])
+  const [directoryError, setDirectoryError] = useState('')
+  const [reading, setReading] = useState(0)
+  const onReading = (active: boolean) => setReading(current => current + (active ? 1 : -1))
+  const blocked = app.busy || reading > 0
+  const missingCaseFiles = (!files.length && !directories.length) || (task === 'verify' && !documents.length)
+  const desktop = window.lawVerifyDesktop
+  const canLinkDirectory = desktop?.pickCaseDirectory && desktop.attachCaseDirectory && desktop.readCaseDirectoryFile
+  const pickDirectory = async () => {
+    if (blocked || !canLinkDirectory) return
+    const account = sessionStorage.getItem('lawverify-login-account') || ''
+    const session = sessionStorage.getItem('lawverify-auth-session')
+    onReading(true)
+    setDirectoryError('')
+    try {
+      const directory = await desktop.pickCaseDirectory!({ account })
+      if (directory && account === sessionStorage.getItem('lawverify-login-account') && session === sessionStorage.getItem('lawverify-auth-session')) {
+        setDirectories(current => current.some(item => item.id === directory.id) ? current : [...current, directory])
+      }
+    } catch (error) {
+      setDirectoryError(error instanceof Error ? error.message : '无法读取文件夹，请重新选择。')
+    } finally {
+      onReading(false)
+    }
+  }
   const law = app.workspace?.knowledgeStatutes.find(
     (item) =>
       item.id === form?.id ||
@@ -107,30 +135,58 @@ export function FormModal() {
       if (editingProject) app.setError('请输入案件名称。')
       return
     }
-    let createdId = ''
+    if (creatingProject) {
+      if (blocked || missingCaseFiles) return
+      const ourSide = values.ourSide === 'plaintiff' || values.ourSide === 'defendant' ? values.ourSide : null
+      const party = ourSide ? values[ourSide]?.trim() : ''
+      const goals = (values.position || '').split(/\r?\n/u).map(line => line.trim()).filter(Boolean)
+      if (goals.length && (!party || !ourSide || party.length > 200 || goals.length > 12 || goals.some(goal => goal.length > 1000))) {
+        app.setError(!party || !ourSide ? '填写代理立场时，请指定我方并填写当事人名称。' : '当事人名称最多 200 字，办案目标最多 12 项，每项最多 1000 字。')
+        return
+      }
+      const name = values.name.trim()
+      let caseId = ''
+      let prepareFiles: ReturnType<typeof prepareCaseFiles> | undefined
+      app.setCaseIdForUpload('', '', false)
+      app.setForm(null)
+      await app.verify([], async (signal, report) => {
+        if (!caseId) caseId = (await api.createCase(name, values.court)).caseFolder.id
+        signal.throwIfAborted()
+        app.setCaseIdForUpload(caseId, '', false)
+        if (!prepareFiles) {
+          report('正在保存案件信息', name)
+          await api.updateCase(caseId, {
+            name, basicInfo: { plaintiff: values.plaintiff, defendant: values.defendant, ourSide,
+              cause: values.cause, court: values.court, caseNumber: values.caseNumber },
+          })
+          signal.throwIfAborted()
+          prepareFiles = prepareCaseFiles({ caseId, name, files, directories,
+            documents: task === 'verify' ? documents : [],
+            position: party && ourSide && goals.length ? { party, role: ourSide, goals, admissions: [], disputes: [], boundaries: [] } : undefined,
+          })
+        }
+        return prepareFiles(signal, report)
+      }, undefined, { title: name, openDraft: task === 'draft' ? () => {
+        app.setPage('ws')
+        app.setAssistantRequest({ mode: 'document' })
+      } : undefined })
+      return
+    }
     const saved = await app.run(async () => {
       if (form.tab === 'proj') {
-        if (form.id) {
-          if (!project) throw new Error('案件不存在，请关闭后刷新案件列表。')
-          const ourSide = values.ourSide
-          await api.updateCase(form.id, {
-            name: values.name.trim(),
-            basicInfo: {
-              plaintiff: values.plaintiff,
-              defendant: values.defendant,
-              ourSide: ourSide === 'plaintiff' || ourSide === 'defendant' ? ourSide : null,
-              cause: values.cause,
-              court: values.court,
-              caseNumber: values.caseNumber,
-            },
-          })
-        } else
-          createdId = (
-            await api.createCase(
-              values.name.trim(),
-              values.court || values.gist,
-            )
-          ).caseFolder.id
+        if (!form.id || !project) throw new Error('案件不存在，请关闭后刷新案件列表。')
+        const ourSide = values.ourSide
+        await api.updateCase(form.id, {
+          name: values.name.trim(),
+          basicInfo: {
+            plaintiff: values.plaintiff,
+            defendant: values.defendant,
+            ourSide: ourSide === 'plaintiff' || ourSide === 'defendant' ? ourSide : null,
+            cause: values.cause,
+            court: values.court,
+            caseNumber: values.caseNumber,
+          },
+        })
       } else if (form.tab === 'law') {
         if (!values.art?.trim()) throw new Error('条号必填')
         if (lawArticle && values.art.trim() !== lawArticle.articleNumber)
@@ -225,37 +281,17 @@ export function FormModal() {
         await api.importKnowledgeCases({ items: [item] })
       }
     }, editingProject ? '案件信息已保存' : caseForm ? undefined : '已保存')
-    if (saved) {
-      if (createdId) {
-        const note = values.note?.trim()
-        if (note && app.workspace) {
-          try { localStorage.setItem(caseNoteKey(app.workspace.user.id, createdId), note) }
-          catch { app.setError('案件已创建，律师笔记未写入本机存储。') }
-        }
-        setNewCaseId(createdId)
-      } else app.setForm(null)
-    }
-  }
-  if (newCaseId) {
-    return <UploadModal setup={{ caseId: newCaseId, task,
-      onImported: () => app.setForm(null),
-      onContinue: () => {
-        if (task === 'draft') {
-          app.setCaseIdForUpload(newCaseId, '')
-          app.setAssistantRequest({ mode: 'document' })
-        } else app.enter(newCaseId)
-        app.setForm(null)
-      },
-    }} />
+    if (saved) app.setForm(null)
   }
   return (
     <Dialog
       open={Boolean(form)}
       onOpenChange={(open) => {
-        if (!open && !app.busy) app.setForm(null)
+        if (!open && !blocked) app.setForm(null)
       }}
     >
-      <DialogContent className={`fm-box new-form${caseForm ? ' case-info-form' : ''}`} showCloseButton={!caseForm}
+      <DialogContent className={`fm-box new-form${caseForm ? ' case-info-form' : ''}${creatingProject ? ' new-case-form' : ''}`} showCloseButton={!caseForm}
+        aria-busy={blocked}
         onOpenAutoFocus={caseForm ? event => {
           const input = document.getElementById('field-name')
           if (input) { event.preventDefault(); input.focus() }
@@ -266,10 +302,11 @@ export function FormModal() {
               `${form?.id ? '编辑' : '新增'} · ${form?.tab === 'law' ? '法条' : form?.tab === 'case' ? '案例' : '案件'}`}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            填写信息后保存到当前工作区。
+            {creatingProject ? '填写案件信息并选择文件，提交后处理文件。' : '填写信息后保存到当前工作区。'}
           </DialogDescription>
           {caseForm && <DialogClose asChild>
-            <Button variant="ghost" size="sm" disabled={app.busy}>关闭</Button>
+            {creatingProject ? <Button variant="ghost" size="icon" aria-label="关闭" disabled={blocked}><X size={18} aria-hidden="true" /></Button>
+              : <Button variant="ghost" size="sm" disabled={blocked}>关闭</Button>}
           </DialogClose>}
         </DialogHeader>
         <form onSubmit={(event) => void save(event)}>
@@ -329,9 +366,9 @@ export function FormModal() {
               </div>
               {field('gist', '裁判要旨', true)}
             </>
-          ) : editingProject ? (
+          ) : (
             <div className="edit-case-body">
-              {field('name', '案件名称（必填）', false, true)}
+              {field('name', '案件名称（必填）', false, true, creatingProject ? '例如，王某诉李某民间借贷纠纷' : undefined)}
               <section className="edit-case-parties" aria-labelledby="edit-case-parties-heading">
                 <div className="edit-case-parties-heading">
                   <h3 id="edit-case-parties-heading">当事人</h3><small>顶栏将标注「我方」</small>
@@ -354,37 +391,44 @@ export function FormModal() {
                 </div>
               </section>
               <details className="edit-case-more">
-                <summary>更多案件信息 <small>案由 / 法院 / 案号，选填</small></summary>
+                <summary>{creatingProject ? '案件记忆与更多信息' : '更多案件信息'} <small>{creatingProject ? '选填' : '案由 / 法院 / 案号，选填'}</small></summary>
+                {creatingProject && <div className="new-case-memory-fields">
+                  {field('position', '代理立场（填写我方的办案目标）', true)}
+                </div>}
                 <div className="edit-case-extra-fields">
                   {field('cause', '案由')}
                   {field('court', '受诉法院')}
                   {field('caseNumber', '案号')}
                 </div>
               </details>
-            </div>
-          ) : (
-            <div className="edit-case-body">
-              {field('name', '案件名称（必填）', false, true, '例如，王某诉李某民间借贷纠纷')}
-              <fieldset className="new-case-task">
+              {creatingProject && <fieldset className="new-case-task">
                 <legend>办案任务</legend>
                 <div className="new-case-task-options">
                   <label><input type="radio" name="case-task" value="verify" checked={task === 'verify'} onChange={() => setTask('verify')} />
-                    <span><b>AI 核验已有文书</b><small>案件原材料与待核验文书</small></span></label>
+                    <span><b>AI 核验文书</b><small>案件原材料与待核验文书</small></span></label>
                   <label><input type="radio" name="case-task" value="draft" checked={task === 'draft'} onChange={() => setTask('draft')} />
-                    <span><b>AI 起草新文书</b><small>案件原材料与代理立场</small></span></label>
+                    <span><b>AI 起草文书</b><small>案件原材料与代理立场</small></span></label>
                 </div>
-              </fieldset>
-              <details className="edit-case-more">
-                <summary>案件记忆与更多信息 <small>选填</small></summary>
-                <div className="new-case-memory-fields">
-                  {field('note', '律师笔记（本机保存，用作 AI 助手上下文）', true)}
-                  {field('court', '受诉法院 / 案件说明')}
-                </div>
-              </details>
+              </fieldset>}
+              {creatingProject && <div className={`case-files-grid${task === 'verify' ? ' case-files-verify' : ''}`}>
+                <CaseFileCard material required allowFolderUpload files={files} onFiles={setFiles} disabled={blocked} onReading={onReading}
+                  onLinkDirectory={canLinkDirectory ? pickDirectory : undefined}>
+                  {directoryError && <p className="case-file-feedback" role="status">{directoryError}</p>}
+                  {directories.length > 0 && <ul className="case-file-list" aria-label="待链接的材料文件夹">
+                    {directories.map(directory => <li key={directory.id} className="chip">
+                      <FolderOpen size={17} aria-hidden="true" />
+                      <div><b>{directory.name}</b><small>创建后链接</small></div>
+                      <Button variant="ghost" size="icon" type="button" disabled={blocked} aria-label={`移除文件夹 ${directory.name}`}
+                        onClick={() => setDirectories(current => current.filter(item => item.id !== directory.id))}><X size={14} aria-hidden="true" /></Button>
+                    </li>)}
+                  </ul>}
+                </CaseFileCard>
+                {task === 'verify' && <CaseFileCard required allowFolderUpload files={documents} onFiles={setDocuments} disabled={blocked} onReading={onReading} />}
+              </div>}
             </div>
           )}
           <div className="fm-ft">
-            <DialogClose asChild>
+            {!creatingProject && <DialogClose asChild>
               <Button
                 type="button"
                 className="btn btn-gh btn-sm"
@@ -392,13 +436,13 @@ export function FormModal() {
               >
                 取消
               </Button>
-            </DialogClose>
+            </DialogClose>}
             <Button
               type="submit"
               className="btn btn-pri btn-sm"
-              disabled={app.busy}
+              disabled={blocked || (creatingProject && (!values.name?.trim() || missingCaseFiles))}
             >
-              {app.busy ? '保存中…' : editingProject ? '保存案件信息' : caseForm ? '下一步：添加文件' : '保存'}
+              {creatingProject ? (task === 'verify' ? '创建并核验' : '创建并起草') : app.busy ? '保存中…' : editingProject ? '保存案件信息' : '保存'}
             </Button>
           </div>
         </form>

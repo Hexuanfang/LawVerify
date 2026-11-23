@@ -4,6 +4,7 @@ import { api } from '../api'
 import { resumeCaseDirectorySync, stopCaseDirectorySync } from '../CaseDirectorySync'
 import { removeCaseDrafts } from '../draft-store'
 import { caseNoteKey } from './caseNotes'
+import { evidenceCategoryKey } from './caseFileKind'
 import { removeCaseReviewAudits } from './review-audit-store'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog'
@@ -87,6 +88,7 @@ export function CaseDeleteDialog({ target, onClose }: { target: CaseDeleteTarget
         await window.lawVerifyDesktop?.clearCaseDirectories?.({ account, caseId: id })
         await Promise.all([removeCaseDrafts(account, docs), removeCaseReviewAudits(account, docs, id)])
         localStorage.removeItem(caseNoteKey(userId, id))
+        localStorage.removeItem(evidenceCategoryKey(account, id))
         const recent = `lawverify-new-last:${userId}`
         let savedCaseId: string | undefined
         try { savedCaseId = JSON.parse(localStorage.getItem(recent) ?? 'null')?.caseId }

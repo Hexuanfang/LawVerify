@@ -6,10 +6,10 @@ import { useApp } from './AppContext'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog'
 
-export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embeddedCaseId?: string; disabled?: boolean }) {
+export function DirectoryLinksModal() {
   const app = useApp()
   const { setError } = app
-  const caseId = embeddedCaseId ?? app.uploadCase!
+  const caseId = app.uploadCase!
   const project = app.projects.find(item => item.id === caseId)
   const account = sessionStorage.getItem('lawverify-login-account') || ''
   const session = sessionStorage.getItem('lawverify-auth-session')
@@ -60,8 +60,14 @@ export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embe
     const saved = await app.run(async () => {
       await stopCaseDirectorySync(account, caseId)
       if (!authorized()) return
+      const { workspace } = await api.getWorkspace()
+      const linkedEvidence = workspace.evidences.filter(item => item.caseId === caseId && item.directoryId)
+      for (const item of linkedEvidence) {
+        if (!authorized()) return
+        await api.deleteDirectoryEvidence(item.id)
+      }
+      if (!authorized()) return
       await desktop!.clearCaseDirectories!({ account, caseId })
-      await api.clearCaseDirectoryEvidences(caseId)
     }, '已清除文件夹链接及对应目录证据')
     if (saved && authorized()) {
       setDirectories([])
@@ -73,7 +79,7 @@ export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embe
     if (app.page === 'home' && project) app.enter(project.id)
   }
   if (!project) return null
-  const busy = app.busy || disabled
+  const busy = app.busy
   const contents = supported ? <>
         <div className="directory-status" role="status">{loading ? '正在读取已链接目录…' : progress || (directories.length ? '目录已链接' : '尚未链接本地材料目录')}</div>
         <div className="directory-list">
@@ -86,18 +92,18 @@ export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embe
               </div>
             </div>
           ))}
-          {!embeddedCaseId && !loading && !directories.length && <p>尚未链接本地材料目录</p>}
+          {!loading && !directories.length && <p>尚未链接本地材料目录</p>}
         </div>
         <div className="directory-actions">
           <Button className="btn btn-pri" disabled={busy || loading} onClick={() => void sync(true)}>
             <Link2 size={15} />链接目录
           </Button>
-          {(!embeddedCaseId || directories.length > 0) && <><Button className="btn btn-gh" disabled={busy || loading || !directories.length} onClick={() => void sync(false)}>
+          <Button className="btn btn-gh" disabled={busy || loading || !directories.length} onClick={() => void sync(false)}>
             <RefreshCw size={15} />立即同步
           </Button>
           <Button className="btn btn-gh" disabled={busy || loading} onClick={() => setConfirmClear(true)}>
             解除链接
-          </Button></>}
+          </Button>
         </div>
         {confirmClear && <div className="directory-confirm" role="alert">
           <p>解除此案件的全部文件夹链接，并清除系统内对应的目录证据记录。本地原文件、单独导入的文书和其他材料会保留。</p>
@@ -105,7 +111,6 @@ export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embe
           <Button className="btn btn-pri" disabled={busy} onClick={() => void clear()}>确认解除并清除记录</Button>
         </div>}
       </> : <p role="status">链接和同步本地文件夹需要使用 LawVerify 桌面客户端。</p>
-  if (embeddedCaseId) return <div className="directory-content">{contents}</div>
   return <Dialog open onOpenChange={open => { if (!open && !busy) close() }}>
     <DialogContent className="fm-box new-directory" showCloseButton={false}
       onInteractOutside={event => { if (busy) event.preventDefault() }}
@@ -116,7 +121,6 @@ export function DirectoryLinksModal({ embeddedCaseId, disabled = false }: { embe
       </DialogHeader>
       {contents}
       <div className="fm-ft">
-        <Button className="btn btn-gh" disabled={busy} onClick={() => { close(); app.setDocumentCase(caseId) }}>导入待核验文书</Button>
         <Button className="btn btn-pri" disabled={busy} onClick={close}>完成</Button>
       </div>
     </DialogContent>

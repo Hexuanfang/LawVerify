@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
-import { getCurrentActorProfile, loginAccount, logoutAccount, registerAccount, verifyToken } from '../commercial/auth-service.js'
+import { changeAccountPassword, getCurrentActorProfile, loginAccount, logoutAccount, registerAccount, updateAccountProfile, verifyToken } from '../commercial/auth-service.js'
 import { createUserFeedback } from '../feedback-service.js'
 import { getBillingAccountSummary, getUsageSummary, listRechargePointLedger } from '../billing-service.js'
 import { sendSuccess } from '../http.js'
@@ -25,6 +25,16 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().min(1, '请输入注册邮箱。'),
   password: z.string().min(6, '密码至少 6 位。'),
+})
+
+const profileSchema = z.strictObject({
+  displayName: z.string().trim().min(1, '请输入显示名称。').max(24, '显示名称最多 24 个字符。').optional(),
+  organizationName: z.string().trim().min(2, '律所 / 单位名称至少 2 个字。').max(48, '律所 / 单位名称最多 48 个字符。').optional(),
+}).refine(value => value.displayName !== undefined || value.organizationName !== undefined, '请提供要保存的账号资料。')
+
+const passwordSchema = z.strictObject({
+  currentPassword: z.string().min(1, '请输入当前密码。').max(1024),
+  newPassword: z.string().min(8, '新密码至少 8 位。').refine(value => Buffer.byteLength(value, 'utf8') <= 72, '新密码长度超过 72 字节。'),
 })
 
 const pointActionSchema = z.object({
@@ -116,6 +126,16 @@ accountRouter.post('/logout', authenticate, async (request, response) => {
 accountRouter.get('/profile', authenticate, requirePermission('account.read'), async (request, response) => {
   const result = await getCurrentActorProfile(request.actor!)
   sendSuccess(response, result)
+})
+
+accountRouter.put('/profile', authenticate, requirePermission('account.read'), async (request, response) => {
+  response.setHeader('Cache-Control', 'no-store')
+  sendSuccess(response, await updateAccountProfile(request.actor!, profileSchema.parse(request.body ?? {})))
+})
+
+accountRouter.put('/password', authenticate, requirePermission('account.read'), async (request, response) => {
+  response.setHeader('Cache-Control', 'no-store')
+  sendSuccess(response, await changeAccountPassword(request.actor!, passwordSchema.parse(request.body ?? {})))
 })
 
 accountRouter.get('/me', authenticate, requirePermission('account.read'), async (request, response) => {

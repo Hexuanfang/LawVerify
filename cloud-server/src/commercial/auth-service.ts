@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import type { SignOptions } from 'jsonwebtoken'
+import type { PoolClient } from 'pg'
 
 import { config } from '../config.js'
 import { AppError } from '../core/app-error.js'
-import { readDevStore, updateDevStore } from '../infrastructure/dev-store.js'
+import { readDevStore, updateDevStore, type DevStoreShape } from '../infrastructure/dev-store.js'
 import { isDatabaseEnabled, query, getPool } from '../infrastructure/postgres.js'
 import { recordAuditEvent } from './audit-service.js'
 import type { AuthClaims, AuthenticatedActor, LoginAccountInput, RegisterAccountInput } from './types.js'
@@ -48,13 +49,18 @@ export function verifyToken(token: string) {
   return jwt.verify(token, config.JWT_SECRET) as AuthClaims
 }
 
-async function persistSession(userId: string, sessionId: string, token: string) {
+function sessionExpiry(token: string) {
   const decoded = jwt.decode(token) as { exp: number }
-  const expiresAt = new Date(decoded.exp * 1000).toISOString()
+  return new Date(decoded.exp * 1000).toISOString()
+}
+
+async function persistSession(userId: string, sessionId: string, token: string, expectedHash: string) {
+  const expiresAt = sessionExpiry(token)
   if (!isDatabaseEnabled()) {
     await updateDevStore(store => {
       const user = store.users.find(item => item.id === userId)
       if (!user) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+      if (user.passwordHash !== expectedHash) throw new AppError('密码已变更，请重新登录。', 401, 'INVALID_CREDENTIALS')
       const legacyId = user.currentSessionId
       user.sessions ??= legacyId ? [{ id: legacyId, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() }] : []
       user.sessions = user.sessions.filter(item => !item.revokedAt && Date.parse(item.expiresAt) > Date.now())
@@ -63,8 +69,11 @@ async function persistSession(userId: string, sessionId: string, token: string) 
     })
     return
   }
-  await query('INSERT INTO account_sessions (id, user_id, expires_at) VALUES ($1, $2, $3)',
-    [sessionId, userId, expiresAt])
+  // 校验密码后若遇到并发改密，旧密码不能签发新的登录会话。
+  const inserted = await query(`INSERT INTO account_sessions (id, user_id, expires_at)
+    SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND u.status = 'active' AND u.password_hash = $4
+    FOR UPDATE OF u`, [sessionId, userId, expiresAt, expectedHash])
+  if (!inserted.rowCount) throw new AppError('密码已变更，请重新登录。', 401, 'INVALID_CREDENTIALS')
 }
 
 export async function registerAccount(input: RegisterAccountInput) {
@@ -427,7 +436,8 @@ export async function loginAccount(input: LoginAccountInput) {
       throw new AppError('邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
     }
 
-    const passwordMatched = await bcrypt.compare(input.password, ensurePasswordHash(user.passwordHash))
+    const passwordHash = ensurePasswordHash(user.passwordHash)
+    const passwordMatched = await bcrypt.compare(input.password, passwordHash)
     if (!passwordMatched) {
       throw new AppError('邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
     }
@@ -446,7 +456,7 @@ export async function loginAccount(input: LoginAccountInput) {
       sessionId,
     })
 
-    await persistSession(user.id, sessionId, token)
+    await persistSession(user.id, sessionId, token, passwordHash)
 
     return {
       token,
@@ -498,7 +508,8 @@ export async function loginAccount(input: LoginAccountInput) {
   }
 
   const account = result.rows[0]
-  const passwordMatched = await bcrypt.compare(input.password, ensurePasswordHash(account.password_hash))
+  const passwordHash = ensurePasswordHash(account.password_hash)
+  const passwordMatched = await bcrypt.compare(input.password, passwordHash)
   if (!passwordMatched) {
     throw new AppError('邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
   }
@@ -512,7 +523,7 @@ export async function loginAccount(input: LoginAccountInput) {
     sessionId,
   })
 
-  await persistSession(account.user_id, sessionId, token)
+  await persistSession(account.user_id, sessionId, token, passwordHash)
 
   await recordAuditEvent({
     organizationId: account.organization_id,
@@ -609,6 +620,118 @@ export async function getCurrentActorProfile(claims: AuthClaims | AuthenticatedA
       role: profile.role,
     },
   }
+}
+
+async function withAccountTransaction<T>(operation: (client: PoolClient) => Promise<T>) {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await operation(client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
+}
+
+function activeDevAccount(store: DevStoreShape, actor: AuthenticatedActor) {
+  const user = store.users.find(item => item.id === actor.userId && item.status === 'active')
+  const membership = store.memberships.find(item => item.id === actor.membershipId && item.userId === actor.userId
+    && item.organizationId === actor.organizationId && item.status === 'active')
+  const organization = store.organizations.find(item => item.id === actor.organizationId && item.status === 'active')
+  if (!user || !membership || !organization) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+  const session = user.sessions?.find(item => item.id === actor.sessionId)
+  const active = session && !session.revokedAt && Date.parse(session.expiresAt) > Date.now()
+  if (!active && !(user.sessions === undefined && user.currentSessionId === actor.sessionId)) {
+    throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+  }
+  return { user, membership, organization }
+}
+
+const accountSettingsQuery = `
+  SELECT u.password_hash, m.role FROM users u JOIN account_sessions s ON s.user_id = u.id
+  JOIN organization_memberships m ON m.user_id = u.id
+  JOIN organizations o ON o.id = m.organization_id
+  WHERE u.id = $1 AND m.organization_id = $2 AND m.id = $3 AND s.id = $4
+    AND u.status = 'active' AND m.status = 'active' AND o.status = 'active'
+    AND s.revoked_at IS NULL AND s.expires_at > NOW()`
+
+export async function updateAccountProfile(actor: AuthenticatedActor, input: { displayName?: string; organizationName?: string }) {
+  const checkOrganizationPermission = (role: AuthenticatedActor['role']) => {
+    if (input.organizationName !== undefined && role !== 'owner') {
+      throw new AppError('仅机构所有者可以修改律所 / 单位名称。', 403, 'FORBIDDEN')
+    }
+  }
+  if (!isDatabaseEnabled()) {
+    await updateDevStore(store => {
+      const { user, membership, organization } = activeDevAccount(store, actor)
+      checkOrganizationPermission(membership.role)
+      if (input.displayName !== undefined) user.name = input.displayName
+      if (input.organizationName !== undefined) organization.name = input.organizationName
+    })
+  } else {
+    await withAccountTransaction(async client => {
+      const result = await client.query<{ role: AuthenticatedActor['role'] }>(accountSettingsQuery + ' FOR UPDATE OF u, s, m, o',
+        [actor.userId, actor.organizationId, actor.membershipId, actor.sessionId])
+      const membership = result.rows[0]
+      if (!membership) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+      checkOrganizationPermission(membership.role)
+      if (input.displayName !== undefined) await client.query('UPDATE users SET name = $1, updated_at = NOW() WHERE id = $2',
+        [input.displayName, actor.userId])
+      if (input.organizationName !== undefined) await client.query('UPDATE organizations SET name = $1, updated_at = NOW() WHERE id = $2',
+        [input.organizationName, actor.organizationId])
+    })
+  }
+  return getCurrentActorProfile(actor)
+}
+
+export async function changeAccountPassword(actor: AuthenticatedActor, input: { currentPassword: string; newPassword: string }) {
+  const hashReplacement = async (storedHash: string | null) => {
+    const hash = ensurePasswordHash(storedHash)
+    if (!await bcrypt.compare(input.currentPassword, hash)) throw new AppError('当前密码不正确。', 400, 'INCORRECT_PASSWORD')
+    if (await bcrypt.compare(input.newPassword, hash)) throw new AppError('新密码不能与当前密码相同。', 400, 'PASSWORD_UNCHANGED')
+    return bcrypt.hash(input.newPassword, 10)
+  }
+  const replacement = (role: AuthenticatedActor['role']) => {
+    const id = randomUUID()
+    const token = signToken({ sub: actor.userId, email: actor.email, organizationId: actor.organizationId,
+      membershipId: actor.membershipId, role, sessionId: id })
+    return { token, id, expiresAt: sessionExpiry(token) }
+  }
+  const assertUnchanged = (current: string | null, previous: string | null) => {
+    if (current !== previous) throw new AppError('密码已变更，请重新登录。', 401, 'INVALID_SESSION')
+  }
+  // 密码哈希计算在锁外执行，写入前重新校验会话及已核验的哈希。
+  if (!isDatabaseEnabled()) {
+    const previous = activeDevAccount(await readDevStore(), actor).user.passwordHash
+    const passwordHash = await hashReplacement(previous)
+    return updateDevStore(store => {
+      const { user, membership } = activeDevAccount(store, actor)
+      assertUnchanged(user.passwordHash, previous)
+      const next = replacement(membership.role)
+      user.passwordHash = passwordHash
+      user.currentSessionId = null
+      user.sessions = [{ id: next.id, expiresAt: next.expiresAt }]
+      return { token: next.token }
+    })
+  }
+  type PasswordAccount = { password_hash: string | null; role: AuthenticatedActor['role'] }
+  const accountIds = [actor.userId, actor.organizationId, actor.membershipId, actor.sessionId]
+  const original = (await query<PasswordAccount>(accountSettingsQuery, accountIds)).rows[0]
+  if (!original) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+  const passwordHash = await hashReplacement(original.password_hash)
+  return withAccountTransaction(async client => {
+    const account = (await client.query<PasswordAccount>(accountSettingsQuery + ' FOR UPDATE OF u, s, m, o', accountIds)).rows[0]
+    if (!account) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
+    assertUnchanged(account.password_hash, original.password_hash)
+    const next = replacement(account.role)
+    await client.query('UPDATE users SET password_hash = $1, current_session_id = NULL, updated_at = NOW() WHERE id = $2',
+      [passwordHash, actor.userId])
+    await client.query('UPDATE account_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [actor.userId])
+    await client.query('INSERT INTO account_sessions (id, user_id, expires_at) VALUES ($1, $2, $3)', [next.id, actor.userId, next.expiresAt])
+    return { token: next.token }
+  })
 }
 
 export async function assertSessionIsActive(claims: AuthClaims) {

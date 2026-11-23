@@ -2,6 +2,8 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import path from 'node:path'
 
 import { config } from '../config.js'
+import { cocreateApplicationSchema, submitCocreateApplication } from '../cocreate-service.js'
+import { assertSessionIsActive, verifyToken } from '../commercial/auth-service.js'
 import { AppError } from '../core/app-error.js'
 import { sendSuccess } from '../http.js'
 import { sitePlans } from '../mock-data.js'
@@ -27,6 +29,38 @@ siteRouter.get('/plans', (_request, response) => {
   sendSuccess(response, {
     items: sitePlans,
   })
+})
+
+async function getCocreateApplicantUserId(authorization: string | undefined) {
+  if (!authorization?.startsWith('Bearer ')) return null
+  let claims: ReturnType<typeof verifyToken>
+  try {
+    claims = verifyToken(authorization.slice('Bearer '.length).trim())
+  } catch {
+    return null
+  }
+  try {
+    await assertSessionIsActive(claims)
+  } catch (error) {
+    // 已失效的登录态可匿名提交，校验服务故障时让用户重试以保留账号关联。
+    if (error instanceof AppError && error.statusCode === 401) return null
+    throw new AppError('暂时无法验证产品账号，请稍后重试。', 503, 'COCREATE_ACCOUNT_UNAVAILABLE')
+  }
+  return claims.sub
+}
+
+siteRouter.post('/cocreate/applications', async (request, response) => {
+  if (typeof request.body?.contact === 'string' && request.body.email === undefined && request.body.phone === undefined) {
+    throw new AppError('报名表单已更新，请刷新页面后填写邮箱和手机号。', 400, 'COCREATE_FORM_UPDATED')
+  }
+  const application = cocreateApplicationSchema.parse(request.body)
+  const applicantUserId = await getCocreateApplicantUserId(request.header('authorization'))
+  const result = await submitCocreateApplication(application, applicantUserId).catch(error => {
+    if (error instanceof AppError && error.statusCode < 500) throw error
+    throw new AppError('暂时无法保存报名，请稍后重试。', 503, 'COCREATE_SUBMISSION_UNAVAILABLE')
+  })
+  response.setHeader('Cache-Control', 'no-store')
+  sendSuccess(response, result)
 })
 
 siteRouter.get('/releases/latest', async (request, response) => {

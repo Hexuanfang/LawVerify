@@ -24,7 +24,7 @@ const statusLabels = {
   pass: '通过',
 }
 
-export function ReviewTodos({ hidden, onOpen }: { hidden: boolean; onOpen: (id: string, trigger: HTMLButtonElement) => void }) {
+export function ReviewTodos({ hidden, onOpen }: { hidden: boolean; onOpen: (id: string, trigger: HTMLButtonElement, manual?: boolean) => void }) {
   const app = useApp()
   const [view, setView] = useState<ReviewView>('todo')
   const groups = useMemo(() => groupReview(app.elements), [app.elements])
@@ -79,21 +79,25 @@ export function ReviewTodos({ hidden, onOpen }: { hidden: boolean; onOpen: (id: 
                 const finding = currentReviewFinding(certificate, element)
                 const suggestion = finding && element.sources.length
                   ? declarationEditRange(element.original.text, finding, 'adopt')?.replacement : undefined
-                return <button type="button" key={element.id} className="review-todo-card" data-verdict={element.verdict} data-type={element.type}
-                  onClick={event => onOpen(element.id, event.currentTarget)}>
-                  <span className="review-todo-meta">
-                    <b>{statusLabels[element.verdict]}</b>
-                    <span>{category}</span>
-                    <span className="review-todo-location">{paragraph ? `第 ${paragraph} 段` : '正文'}
-                      {element.sentenceIndex !== undefined && ` · 第 ${element.sentenceIndex + 1} 句`}</span>
-                  </span>
-                  <b className="review-todo-reason">{element.reason || '等待处理'}</b>
-                  <small className="review-todo-quote">{element.quote}</small>
-                  {view === 'annotated' && element.note && <small className="review-todo-note">批注 · {element.note}</small>}
-                  {suggestion && <small className="review-todo-fix">建议改为：{suggestion}</small>}
-                  {element.ignored && <small className="review-todo-note">已忽略，仍保留在报告</small>}
-                  <span className="review-todo-open">查看核验详情 →</span>
-                </button>
+                return <div key={element.id} className="review-todo-entry">
+                  <button type="button" className="review-todo-card" data-verdict={element.verdict} data-type={element.type}
+                    onClick={event => onOpen(element.id, event.currentTarget)}>
+                    <span className="review-todo-meta">
+                      <b>{statusLabels[element.verdict]}</b>
+                      <span>{category}</span>
+                      <span className="review-todo-location">{paragraph ? `第 ${paragraph} 段` : '正文'}
+                        {element.sentenceIndex !== undefined && ` · 第 ${element.sentenceIndex + 1} 句`}</span>
+                    </span>
+                    <b className="review-todo-reason">{element.reason || '等待处理'}</b>
+                    <small className="review-todo-quote">{element.quote}</small>
+                    {view === 'annotated' && element.note && <small className="review-todo-note">批注 · {element.note}</small>}
+                    {suggestion && <small className="review-todo-fix">建议改为：{suggestion}</small>}
+                    {element.ignored && <small className="review-todo-note">已忽略，仍保留在报告</small>}
+                    <span className="review-todo-open">查看核验详情 →</span>
+                  </button>
+                  <Button variant="ghost" size="sm" className="review-todo-manual" aria-label={`人工审阅 · ${element.quote}`}
+                    onClick={event => onOpen(element.id, event.currentTarget, true)}>人工审阅</Button>
+                </div>
               }) : <p className="review-view-empty">此分组暂无条目。</p>)}
             </Tabs.Content>)}
           </Tabs.Root>

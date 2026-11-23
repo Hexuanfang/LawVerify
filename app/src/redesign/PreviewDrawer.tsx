@@ -7,7 +7,25 @@ import {
   SheetTitle,
 } from './components/ui/sheet'
 import { useApp } from './AppContext'
+import { CASE_MATCH_LABELS } from './caseResearchReport'
 import { fetchWithWorkspaceAccount, getEvidenceSourceUrl } from '../api'
+import { isPlaceholderStatuteContent } from '../../../server/src/intelligence/statute-version'
+
+const caseLevelLabels = {
+  guiding: '指导性案例',
+  gazette: '公报案例',
+  'high-court-reference': '高院参考案例',
+  ordinary: '普通案例 · 参考',
+}
+
+function highlightCaseExcerpt(text: string, keywords: string[]) {
+  const matches = [...new Set(keywords.map(word => word.trim()).filter(word => word && text.includes(word)))]
+  if (!matches.length) return text
+  const pattern = matches.sort((left, right) => right.length - left.length)
+    .map(word => word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('|')
+  return text.split(new RegExp(`(${pattern})`, 'gu')).map((part, index) =>
+    index % 2 ? <mark key={index}>{part}</mark> : part)
+}
 
 const PdfPreview = lazy(() =>
   import('../PdfPreview').then((module) => ({ default: module.PdfPreview })),
@@ -47,22 +65,50 @@ function WordPreview({ url }: { url: string }) {
 export function PreviewDrawer() {
   const app = useApp()
   const source = app.drawer
-  const evidence = app.workspace?.evidences.find(
+  const isStatute = source?.st === 'l2'
+  const caseSource = source?.st === 'l3' ? source : undefined
+  const evidence = source?.st === 'l1' ? app.workspace?.evidences.find(
     (item) => item.id === source?.targetId,
-  )
-  const law = app.workspace?.knowledgeStatutes.find(
+  ) : undefined
+  const law = isStatute ? app.workspace?.knowledgeStatutes.find(
     (item) =>
       item.id === source?.targetId ||
       item.articles.some((article) => article.id === source?.targetId),
-  )
+  ) : undefined
   const article = law?.articles.find((item) => item.id === source?.targetId)
-  const knowledgeCase = app.workspace?.knowledgeCases.find(
-    (item) => item.id === source?.targetId || item.excerpts?.some(excerpt => excerpt.id === source?.targetId),
+  const articleNumber = article?.articleNumber || source?.loc
+  const articleText = [article?.plainText, article?.content]
+    .find((text) => !isPlaceholderStatuteContent(text))?.trim()
+  const quotedText = source?.quote.trim()
+  const statuteExcerpt = isPlaceholderStatuteContent(quotedText) ? '' : quotedText
+  const matchStart = articleText && statuteExcerpt && statuteExcerpt !== articleText
+    ? articleText.indexOf(statuteExcerpt) : -1
+  const effectiveDate = law?.effectiveDate?.split('T')[0]
+  const effectiveStatus = law?.effectiveStatus === 'effective'
+    ? '现行有效' : law?.effectiveStatus === 'repealed' ? '已废止' : '已修正'
+  const knowledgeCase = caseSource && app.workspace?.knowledgeCases.find(
+    item => item.id === caseSource.targetId || item.excerpts?.some(excerpt => excerpt.id === caseSource.targetId),
   )
-  const caseVerification = source?.st === 'l3'
-    ? app.elements.find(element => element.sources.includes(source))?.caseVerification
-    : undefined
-  const judgmentUrl = caseVerification?.documents?.find(item => item.id === source?.targetId)?.url
+  const caseElement = caseSource && app.elements.find(element => element.caseVerification && element.sources.includes(caseSource))
+  const caseVerification = caseElement?.caseVerification
+  const judgment = caseVerification?.documents?.find(item => item.id === caseSource?.targetId)
+  const caseNumber = judgment?.caseNumber || caseVerification?.caseNumber || knowledgeCase?.caseNumber || caseSource?.caseDetails?.caseNumber
+  const caseTitle = caseVerification?.name || knowledgeCase?.title || caseSource?.name
+  const caseCourt = caseVerification?.court || knowledgeCase?.courtName || caseSource?.caseDetails?.court
+  const caseDate = caseVerification?.judgmentDate || knowledgeCase?.judgmentDate || caseSource?.caseDetails?.judgmentDate
+  const caseLevel = caseVerification?.level ? caseLevelLabels[caseVerification.level] : caseVerification?.sourceLevel || knowledgeCase?.courtLevel
+  const caseType = [knowledgeCase?.caseType, caseTitle].join(' ').match(/(?:民事|刑事|行政|执行|国家赔偿)?(?:判决书|裁定书|调解书|决定书)|支付令/u)?.[0]
+    || (/^(?:民事|刑事|行政|执行|国家赔偿)$/u.test(knowledgeCase?.caseType ?? '') ? `${knowledgeCase?.caseType}裁判文书` : '裁判文书')
+  const localCaseExcerpt = knowledgeCase?.excerpts?.find(excerpt => excerpt.id === caseSource?.targetId)
+  const caseCitation = caseSource?.quote.trim() || ''
+  const localCaseText = localCaseExcerpt?.content || knowledgeCase?.holdingSummary
+  const caseExcerpt = localCaseText && localCaseText.includes(caseCitation) ? localCaseText : caseCitation
+  const caseKeywords = [...(localCaseExcerpt?.keywords ?? []), ...(knowledgeCase?.keywords ?? []),
+    ...Array.from(caseElement?.quote.matchAll(/[“「]([^”」]+)[”」]/gu) ?? [], match => match[1])]
+  const caseHighlights = caseKeywords.some(word => word.trim() && caseExcerpt.includes(word.trim()))
+    ? caseKeywords : [caseCitation !== caseExcerpt ? caseCitation : '']
+  const caseMatch = caseVerification?.match
+  const caseMatchReason = caseElement?.declaration?.checks.C4?.reason
   const url = evidence ? getEvidenceSourceUrl(evidence.id) : ''
   const evidenceCase = evidence && app.projects.find(project => project.id === evidence.caseId)
   const references = evidence ? (app.workspace?.certificates ?? [])
@@ -86,19 +132,16 @@ export function PreviewDrawer() {
         if (!open) app.setDrawer(null)
       }}
     >
-      <SheetContent className="new-drawer" side="right">
+      <SheetContent className={isStatute ? 'new-drawer statute-drawer' : caseSource ? 'new-drawer case-drawer' : 'new-drawer'} side="right">
         <SheetHeader className={evidence ? 'dwh evidence-drawer-title' : 'dwh'}>
           <SheetTitle className="dwt" asChild={Boolean(evidence)}>
-            {evidence ? <h1 title={source?.name}>{source?.name}</h1> : source?.name}
+            {evidence ? <h1 title={source?.name}>{source?.name}</h1> : law?.title || caseNumber || source?.name}
           </SheetTitle>
           {evidence ? <SheetDescription className="sr-only">案件原材料</SheetDescription> : (
             <SheetDescription className="dws">
-              {source?.st === 'l1'
-                ? 'L1 案件原材料'
-                : source?.st === 'l2'
-                  ? 'L2 法条 · 版本信息'
-                  : caseVerification ? 'L3 案例 · 裁判原文摘录' : 'L3 案例 · 索引与摘要'}{' '}
-              · {source?.loc}
+              {caseSource ? ['L3', caseSource.loc || [caseCourt, caseDate].filter(Boolean).join(' · ') || '案例资料'].join(' · ') : (
+                <>{isStatute ? '法条' : 'L1 案件原材料'}{articleNumber && ` · ${articleNumber}`}</>
+              )}
             </SheetDescription>
           )}
         </SheetHeader>
@@ -144,68 +187,48 @@ export function PreviewDrawer() {
               </section>
             </>
           ) : <div className="pv-stage">
-            {law ? (
-              <div className="pv-paper statute">
-                <div
-                  className={
-                    law.effectiveStatus === 'effective'
-                      ? 'badge-ok'
-                      : 'text-fail'
-                  }
-                >
-                  {law.effectiveStatus === 'effective'
-                    ? '● 现行有效'
-                    : law.effectiveStatus === 'repealed'
-                      ? '● 已废止'
-                      : '● 已修正'}{' '}
-                  ｜ {law.effectiveDate} 施行
-                </div>
-                <div className="st-t">{law.title}</div>
-                <div className="st-n">{[law.issuer, law.version].filter(Boolean).join(' · ')}</div>
-                {article ? <>
-                  <div className="st-a">{article.articleNumber}</div>
-                  <div className="st-x hl">{article.plainText || article.content || source?.quote}</div>
-                </> : <div className="st-x">{source?.quote || '可按具体条号检索原文。'}</div>}
-                {law.sourceUrl && /^https?:\/\//i.test(law.sourceUrl) &&
-                  <a className="source-file-actions" href={law.sourceUrl} target="_blank" rel="noreferrer">打开法规来源 ↗</a>}
-              </div>
-            ) : caseVerification ? (
-              <div className="pv-paper casepv">
-                <div className="st-t">{caseVerification.name || source?.name}</div>
-                <div className="four">
-                  <div><b>案号</b><span>{caseVerification.caseNumber}</span></div>
-                  <div><b>审理法院</b><span>{caseVerification.court || '待核对'}</span></div>
-                  <div><b>裁判日期</b><span>{caseVerification.judgmentDate || '待核对'}</span></div>
-                  <div><b>原文位置</b><span>{source?.loc || '待核对'}</span></div>
-                </div>
-                <div className="csq">{source?.quote}</div>
-                {judgmentUrl?.startsWith('https://') &&
-                  <a className="source-file-actions" href={judgmentUrl} target="_blank" rel="noreferrer">打开裁判原文 ↗</a>}
-              </div>
-            ) : knowledgeCase ? (
-              <div className="pv-paper casepv">
-                <div className="st-t">{knowledgeCase.title}</div>
-                <div className="st-n">民事判决书</div>
+            {isStatute ? (
+              <article className="pv-paper statute">
+                <h3 className="st-a">{articleNumber || '法条内容'}</h3>
+                {law && <p className="statute-preview-meta">
+                  <strong className={law.effectiveStatus === 'effective' ? 'text-pass' : 'text-fail'}>{effectiveStatus}</strong>
+                  {effectiveDate && <span>{effectiveDate} 施行</span>}
+                  {law.issuer && <span>{law.issuer}</span>}
+                  {law.version && <span>{law.version}</span>}
+                </p>}
+                {!articleText && statuteExcerpt && <p className="statute-preview-label">核验引用摘录</p>}
+                <p className="st-x">
+                  {articleText && statuteExcerpt && matchStart >= 0 ? <>
+                    {articleText.slice(0, matchStart)}<mark>{statuteExcerpt}</mark>{articleText.slice(matchStart + statuteExcerpt.length)}
+                  </> : articleText || statuteExcerpt || (law && !article ? '请选择具体条号查看原文。' : '暂无可预览的条文。')}
+                </p>
+              </article>
+            ) : caseSource ? (
+              <article className="pv-paper casepv">
+                <h3 className="st-t">{caseTitle}</h3>
+                <p className="st-n">{caseType}</p>
                 <div className="four">
                   {[
-                    ['案号', knowledgeCase.caseNumber],
-                    ['审理法院', knowledgeCase.courtName],
-                    ['裁判日期', knowledgeCase.judgmentDate],
-                    ['效力层级', knowledgeCase.courtLevel],
+                    ['案号', caseNumber],
+                    ['审理法院', caseCourt],
+                    ['裁判日期', caseDate],
+                    ['效力层级', caseLevel],
                   ].map(([label, value]) => (
-                    <div key={label}>
-                      <b>{label}</b>
-                      <span>{value || '未提供'}</span>
-                    </div>
+                    <div key={label}><b>{label}</b><span>{value || '未提供'}</span></div>
                   ))}
                 </div>
-                <div className="csq">{knowledgeCase.excerpts?.find(item => item.id === source?.targetId)?.content || knowledgeCase.holdingSummary}</div>
-                <p>{knowledgeCase.reasoningSummary}</p>
-                <p>{knowledgeCase.resultSummary}</p>
-              </div>
+                <blockquote className="csq">
+                  {caseExcerpt ? highlightCaseExcerpt(caseExcerpt, caseHighlights) : '暂无可预览的裁判摘录。'}
+                </blockquote>
+                {caseMatch && <div className="pt"><div>
+                  <span data-match={caseMatch}>{CASE_MATCH_LABELS[caseMatch]}</span>
+                  {caseMatchReason && <span>{caseMatchReason}</span>}
+                </div></div>}
+                {!caseVerification && knowledgeCase?.reasoningSummary && <p>{knowledgeCase.reasoningSummary}</p>}
+                {!caseVerification && knowledgeCase?.resultSummary && <p>{knowledgeCase.resultSummary}</p>}
+              </article>
             ) : (
               <div className="pv-paper">
-                {source?.caseDetails && <p>{[source.caseDetails.caseNumber, source.caseDetails.court, source.caseDetails.judgmentDate].filter(Boolean).join(' · ')}</p>}
                 <p>{source?.quote || '关联出处已不存在，请重新关联。'}</p>
                 {source?.url && /^https?:\/\//iu.test(source.url) &&
                   <a className="source-file-actions" href={source.url} target="_blank" rel="noreferrer">打开来源 ↗</a>}
@@ -213,7 +236,7 @@ export function PreviewDrawer() {
             )}
           </div>}
         </div>
-        {!evidence && source?.quote && (
+        {!evidence && !isStatute && !caseSource && source?.quote && (
           <div className="ocr">
             <div className="ocr-l">OCR / 原文摘录 · 命中高亮</div>
             <div className="ocr-x">

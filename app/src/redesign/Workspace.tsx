@@ -44,13 +44,14 @@ function Topbar({ memory, onMemory }: { memory: boolean; onMemory: () => void })
   const memoryRecord = app.workspace?.caseContextMemories.find(item => item.caseId === project.id)
   const basics = folder?.basicInfo
   const parties = (['plaintiff', 'defendant'] as const).flatMap(side => {
-    const name = basics?.[side]
+    const rawName = basics?.[side]
+    const name = memory ? rawName?.trim() : rawName
     const ours = basics?.ourSide === side
     if (!name && !ours) return []
     const label = side === 'plaintiff' ? '原告' : '被告'
     return [`${label}${ours ? '（我方）' : ''}${name ? `：${name}` : ''}`]
   })
-  const identity = (memory ? [basics?.plaintiff?.trim(), basics?.defendant?.trim()] : [
+  const identity = (memory ? parties : [
     ...(parties.length ? parties : (memoryRecord?.parties ?? []).slice(0, 2)), basics?.caseNumber, basics?.court || folder?.description,
   ]).filter(Boolean).join(' ｜ ')
   return (
@@ -231,19 +232,16 @@ function LinkageCard({ element, compact }: { element: ReviewElement; compact: bo
     }}>{pendingEdit === 'adopt' ? '确认替换' : '确认删除'}</Button>
     <Button className="op" disabled={app.busy} onClick={() => setPendingEdit(null)}>取消</Button>
   </div>
-  const sources = element.sources.length ? <ul className="review-detail-sources">{element.sources.map((source, index) => {
-    const url = source.url ?? finding?.sources.find(item => item.tier === source.st && item.id === source.targetId
-      && (item.locator ?? '') === source.loc && (item.quote ?? '') === source.quote)?.url
-    return <li key={`${source.targetId}-${index}`}>
+  const sources = element.sources.length ? <ul className="review-detail-sources">{element.sources.map((source, index) => (
+    <li key={`${source.targetId}-${index}`}>
       <button type="button" className="rc-loc" onClick={() => app.setDrawer(source)}>
         <span className={`src-dot ${source.st}`} />
         <span><b className="nm">{source.name}</b>{source.loc && <small>{source.loc}</small>}</span>
         <span className="source-preview-link">预览 →</span>
       </button>
       {source.quote && <blockquote>{source.quote}</blockquote>}
-      {url && /^https?:\/\//iu.test(url) && <a href={url} target="_blank" rel="noreferrer">打开来源 ↗</a>}
     </li>
-  })}</ul> : <p className="review-view-empty">{element.verdict === 'pending' ? '此声明待核验，暂无可回查出处。' : '暂无可回查出处。'}</p>
+  ))}</ul> : <p className="review-view-empty">{element.verdict === 'pending' ? '此声明待核验，暂无可回查出处。' : '暂无可回查出处。'}</p>
   return (
     <div className={`rc st-${sk}${compact ? ' review-highlight-result' : ''}`}>
       {compact ? <>
@@ -459,7 +457,7 @@ export function Workspace() {
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 880px)').matches)
   const [materialsOpen, setMaterialsOpen] = useState<boolean>()
   const [reviewPane, setReviewPane] = useState<{ selected: string; open?: boolean }>({ selected: '' })
-  const [highlightSelection, setHighlightSelection] = useState<{ documentId: string; id: string }>()
+  const [summarySelection, setSummarySelection] = useState<{ documentId: string; id: string }>()
   const [memoryCase, setMemoryCase] = useState<string | null>(null)
   const [documentSelection, setDocumentSelection] = useState<AssistantSelection & { documentId: string; left?: number; top?: number }>()
   const [contextSelection, setContextSelection] = useState<AssistantSelection>()
@@ -475,7 +473,7 @@ export function Workspace() {
   const selection = documentSelection?.documentId === documentId ? documentSelection : undefined
   const memory = Boolean(caseId && memoryCase === caseId)
   const selected = element?.id ?? ''
-  const compactReview = Boolean(selected && highlightSelection?.documentId === documentId && highlightSelection.id === selected)
+  const compactReview = Boolean(selected && summarySelection?.documentId === documentId && summarySelection.id === selected)
   const assistantTab = Boolean(assistantRequest && assistantRequest !== backgroundAssistantRequest)
   const rightOpen = !narrow || assistantTab || Boolean(selected && selected !== reviewPane.selected) || reviewPane.open === true
   const leftOpen = !narrow || (materialsOpen && !rightOpen)
@@ -553,9 +551,9 @@ export function Workspace() {
     else ask()
   }
   const assistantIcon = <img className="workspace-assistant-icon" src={walnut} alt="" />
-  const openReview = (id: string, trigger: HTMLButtonElement) => {
+  const openReview = (id: string, trigger: HTMLButtonElement, manual = false) => {
     todoTrigger.current = trigger
-    setHighlightSelection(undefined)
+    setSummarySelection(manual ? undefined : { documentId, id })
     app.setFilter('all')
     app.select(id)
     requestAnimationFrame(() => detailHeading.current?.focus({ preventScroll: true }))
@@ -563,7 +561,7 @@ export function Workspace() {
   const returnToTodos = () => {
     const trigger = todoTrigger.current
     todoTrigger.current = null
-    setHighlightSelection(undefined)
+    setSummarySelection(undefined)
     setReviewPane({ selected: '', open: true })
     app.select('')
     requestAnimationFrame(() => {
@@ -613,7 +611,7 @@ export function Workspace() {
                 if (!(target instanceof Element) || !target.closest('.whole-document-content')) return
                 const id = target.closest<HTMLElement>('[data-el]')?.dataset.el ?? ''
                 todoTrigger.current = null
-                setHighlightSelection(id ? { documentId, id } : undefined)
+                setSummarySelection(id ? { documentId, id } : undefined)
                 if (id) {
                   setBackgroundAssistantRequest(assistantRequest)
                   if (narrow) setReviewPane({ selected: id, open: true })
@@ -659,8 +657,14 @@ export function Workspace() {
               <TabsContent className="workspace-right-panel" value="review" forceMount hidden={assistantTab}>
                 <ReviewTodos key={app.docId} hidden={Boolean(element)} onOpen={openReview} />
                 {element && <>
-                  <div className="review-pane-head review-detail-bar"><h2 ref={detailHeading} tabIndex={-1}>本句核验</h2>
-                    <Button variant="ghost" size="sm" onClick={returnToTodos}>返回待办</Button></div>
+                  <div className="review-pane-head review-detail-bar">
+                    <h2 ref={detailHeading} tabIndex={-1}>本句核验</h2>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {!compactReview && <Button variant="ghost" size="sm"
+                        onClick={() => setSummarySelection({ documentId, id: element.id })}>返回核验详情</Button>}
+                      <Button variant="ghost" size="sm" onClick={returnToTodos}>返回待办</Button>
+                    </div>
+                  </div>
                   <div className="rp" key={element.id}>
                     <LinkageCard key={`${element.verificationRevision ?? ''}:${compactReview}`} element={element} compact={compactReview} />
                   </div>

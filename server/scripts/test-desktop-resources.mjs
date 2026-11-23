@@ -50,7 +50,7 @@ test('复现 Mac runner 的 PDF 队列阻塞，修正采样后可分配 CPU work
   assert.ok(worker.memoryMB + 512 <= (17650 + 177687 + 11528) * 16384 / MiB)
 })
 
-test('真实低内存仍不允许启动 PDF worker', () => {
+test('真实低内存时常规预算不分配 PDF worker', () => {
   const limited = statistics.replace('177687.', '0.').replace('11528.', '0.')
   const budget = singleWorkerBudget(resourceBudget({
     cores: 3, totalBytes, freeBytes: availableMacMemory(limited, 128 * MiB, totalBytes), cpuLoad: 0,

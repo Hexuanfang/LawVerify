@@ -100,6 +100,7 @@ def main():
     configured_memory = os.environ.get("LAWVERIFY_PARSER_MEMORY_MB", "").strip()
     memory_mb = int(configured_memory) if configured_memory.isdecimal() else 0
     limited = memory_mb > 0
+    disk_backed = limited and os.environ.get("LAWVERIFY_PARSER_DISK_BACKED") == "1"
     accelerated = limited and os.environ.get("MINERU_MODEL_ONNX_DEVICE") == "auto"
     threading.Thread(target=watch_parent, args=(os.getppid(),), daemon=True).start()
     root = Path(os.environ["LAWVERIFY_PARSER_ROOT"])
@@ -123,7 +124,7 @@ def main():
         os.environ.update({name: threads for name in ("MINERU_CPU_NUM_THREADS", "MKL_NUM_THREADS",
                             "OPENBLAS_NUM_THREADS", "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS")})
         # 减少同时驻留在内存中的页面和推理中间结果，页码仍由 MinerU 统一生成。
-        pdf_window = min(3, max(1, memory_mb // 1024))
+        pdf_window = 1 if disk_backed else min(3, max(1, memory_mb // 1024))
         os.environ.update(MINERU_PROCESSING_WINDOW_SIZE=str(pdf_window),
                           MINERU_PDF_RENDER_THREADS=str(min(pdf_window, int(threads))))
     if accelerated:
@@ -178,13 +179,16 @@ def main():
             path = Path(job["inputPath"])
             if not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
                 raise ValueError("原件不存在或超过512MB")
-            if action == "pdf-info" or (job.get("pdfWhole") and 0 < memory_mb < 3072):
+            if action == "pdf-info" or (job.get("pdfWhole") and (disk_backed or 0 < memory_mb < 3072)):
                 pages = pdf_page_count(path)
                 if not 1 <= pages <= 1000:
                     raise ValueError("PDF 页数无效或超过1000页")
-                if action == "pdf-info" or pages > 20:
+                if action == "pdf-info" or disk_backed or pages > 20:
+                    info = {"pdfPages": pages, "engineVersion": parser.version}
+                    if disk_backed:
+                        info["pdfSegmentPages"] = 4
                     respond({"id": job["id"], "memoryMB": current_worker_memory_mb(),
-                             "result": {"pdfPages": pages, "engineVersion": parser.version}})
+                             "result": info})
                     continue
             if accelerated:
                 with contextlib.redirect_stdout(sys.stderr):

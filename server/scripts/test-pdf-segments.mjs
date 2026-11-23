@@ -16,9 +16,11 @@ async function fixture(pages, onRange, fullMode = 'low') {
   const calls = []
   const run = async job => {
     calls.push(job.pdfRange ?? job.action)
+    if (!job.pdfRange && fullMode === 'disk') return { pdfPages: pages, engineVersion: 'fixture', pdfSegmentPages: 4 }
     if (job.action === 'pdf-info') return { pdfPages: pages, engineVersion: 'fixture' }
     if (!job.pdfRange && fullMode === 'memory') throw memoryError()
     if (!job.pdfRange && fullMode === 'low') return { pdfPages: pages, engineVersion: 'fixture' }
+    if (fullMode === 'disk') assert.equal(job.pdfDiskBacked, true)
     const [start, end] = job.pdfRange ?? [1, pages]
     onRange?.(start, end)
     const blocks = Array.from({ length: end - start + 1 }, (_, i) => ({
@@ -30,9 +32,34 @@ async function fixture(pages, onRange, fullMode = 'low') {
       text: `【来源：第 5 页的合同】\n【来源：第 ${start} 页 · 原生文本】\n金额 123456.78`, reviewRequired: start > 1 }))
     return { pid: 1 }
   }
-  return { calls, parse: (signal = new AbortController().signal) =>
+  return { calls, setMode(mode) { fullMode = mode }, parse: (signal = new AbortController().signal) =>
     parsePdfOnDisk({ directory, input, checkpoint, readArtifact, run, signal }).then(() => readArtifact(input.outputPath)) }
 }
+
+test('落盘模式直接按小段解析，单页 PDF 也能进入分段流程', async () => {
+  for (const [pages, ranges] of [[9, [[1, 4], [5, 8], [9, 9]]], [1, [[1, 1]]]]) {
+    const job = await fixture(pages, undefined, 'disk')
+    const result = await job.parse()
+    assert.equal(result.pages, pages)
+    assert.deepEqual(job.calls, ['parse', ...ranges])
+    assert.deepEqual(result.blocks.map(block => block.page), Array.from({ length: pages }, (_, i) => i + 1))
+  }
+})
+
+test('低内存续跑旧断点时保留已解析的整段，只拆分剩余页', async () => {
+  let resumed = false
+  const job = await fixture(25, start => {
+    if (start === 21 && !resumed) throw new Error('模拟解析中断')
+  })
+  await assert.rejects(job.parse(), /模拟解析中断/)
+  job.calls.length = 0
+  job.setMode('disk')
+  resumed = true
+  const result = await job.parse()
+  assert.equal(result.pages, 25)
+  assert.deepEqual(job.calls, ['pdf-info', [21, 24], [25, 25]])
+  assert.deepEqual(result.blocks.map(block => block.page), Array.from({ length: 25 }, (_, i) => i + 1))
+})
 
 test('低内存 PDF 每段最多 20 页，合并后保留原页码、文字、坐标和警告', async () => {
   const job = await fixture(45, undefined)

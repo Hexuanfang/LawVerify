@@ -2,6 +2,7 @@ import { PythonWorkerPool } from './python-workers.ts'
 import { allocateWorker, createResourceSampler, fitsWorker, resourceBudget, singleWorkerBudget } from './desktop-resources.mjs'
 
 const minImageMemoryMB = 1536
+const diskWorkerMemoryMB = 3072
 const batchThreshold = 4
 const desktopIdleMs = 15_000
 
@@ -40,7 +41,8 @@ export class HttpWorkerPool {
     this.owners.set(account, owner)
     owner.pending++
     return new Promise((resolve, reject) => {
-      const job = { input, signal, account, owner, resolve, reject, slot: null, stopping: null }
+      const job = { input, signal, account, owner, resolve, reject, slot: null, stopping: null,
+        diskBacked: input.pdfDiskBacked === true }
       job.abort = () => {
         if (job.slot) job.stopping ??= job.slot.pool.close()
         else this.removeQueued(job, signal.reason)
@@ -81,6 +83,8 @@ export class HttpWorkerPool {
       const job = this.queue.reduce((best, item) => {
         if (item.owner.active) return best
         if (!best) return item
+        if (this.resources && (item.input.action === 'warmup' || best.input.action === 'warmup')
+          && item.input.action !== best.input.action) return item.input.action === 'warmup' ? best : item
         if (this.resources && item.input.action === 'parse' && best.input.action === 'parse') {
           return (item.input.sizeBytes ?? Infinity) < (best.input.sizeBytes ?? Infinity) ? item : best
         }
@@ -102,11 +106,16 @@ export class HttpWorkerPool {
     const fallbackBudget = singleWorkerBudget(budget)
     const resident = this.residentSlot()
     const keepCpu = budget.freeMB < 384 && this.slots.find(slot => !slot.retiring && slot.profile?.device === 'cpu'
-      && fitsWorker(fallbackBudget, [], workerProfile(slot)))
+      && !slot.profile.diskBacked && fitsWorker(fallbackBudget, [], workerProfile(slot)))
     const poolIdle = !this.queue.length && !this.slots.some(slot => slot.active)
     for (const slot of this.slots) {
       if (!slot.pool || slot.active || slot.retiring) continue
       const idleMs = Date.now() - slot.idleSince
+      if (slot.profile.diskBacked) {
+        // PDF 分段之间复用基础 OCR，空闲后释放整个落盘进程。
+        if (idleMs >= desktopIdleMs) this.retire(slot)
+        continue
+      }
       if (slot === resident && fallbackBudget.freeMB >= 0) {
         if (poolIdle && slot.hasParsed && (budget.freeMB < 384 || idleMs >= desktopIdleMs)) {
           // 常驻进程保留基础 OCR，空闲时归还文档推理模型占用的内存。
@@ -129,7 +138,7 @@ export class HttpWorkerPool {
     this.maintenance ??= setInterval(() => {
       this.schedule()
       if (this.resources.keepWarm && !this.queue.length && !this.residentSlot()?.pool.hasWorker
-        && !this.slots.some(slot => slot.active || slot.retiring)) {
+        && !this.slots.some(slot => slot.active || slot.retiring || slot.profile?.diskBacked)) {
         // 每个维护周期最多尝试一次，资源不足时由现有队列等待。
         void this.run({ action: 'warmup' }, AbortSignal.timeout(this.options.startupTimeoutMs ?? 120000)).catch(() => {})
       }
@@ -151,8 +160,9 @@ export class HttpWorkerPool {
     const active = this.slots.filter(slot => slot.active || slot.retiring).map(workerProfile)
     const idle = this.slots.filter(slot => !slot.active && !slot.retiring)
     const resident = this.residentSlot()
+    if (job.diskBacked) return active.length ? undefined : this.chooseDiskSlot(idle)
     if (job.input.pdfWhole === 'prefer' && !active.length) {
-      const whole = idle.find(slot => slot.profile?.device === 'cpu' && slot.profile.memoryMB >= 3072
+      const whole = idle.find(slot => slot.profile?.device === 'cpu' && !slot.profile.diskBacked && slot.profile.memoryMB >= 3072
         && fitsWorker(budget, active, workerProfile(slot)))
       if (whole) return whole
       const profile = allocateWorker(budget, active, 'cpu', 3072)
@@ -172,7 +182,8 @@ export class HttpWorkerPool {
 
     // PDF 和图片会加载版面及 OCR 模型，空闲预热所需的预算无法覆盖这个峰值。
     const minimumMB = visualJob(job.input) ? minImageMemoryMB : 1024
-    const cpuSlots = idle.filter(slot => slot.profile?.device === 'cpu' && slot.profile.memoryMB >= minimumMB)
+    const cpuSlots = idle.filter(slot => slot.profile?.device === 'cpu' && !slot.profile.diskBacked
+      && slot.profile.memoryMB >= minimumMB)
     const existing = resident && cpuSlots.includes(resident) && fitsWorker(budget, active, workerProfile(resident))
       ? resident : cpuSlots.find(slot => fitsWorker(budget, active, workerProfile(slot)))
     if (existing === resident && existing && !this.resources.preferGpu) return existing
@@ -203,19 +214,34 @@ export class HttpWorkerPool {
       profile = allocateWorker(budget, active, 'cpu', minimumMB)
     }
     if (!profile) {
+      if (job.input.action !== 'warmup' && idle.some(slot => slot.profile?.diskBacked)) return this.chooseDiskSlot(idle)
       // 已缓存的模型也占用物理内存。回收后如果能启动更小的 worker，就立即腾出这些内存。
-      const cached = idle.filter(slot => slot.pool).sort((a, b) => b.pool.measuredMemoryMB - a.pool.measuredMemoryMB)
+      const cached = idle.filter(slot => slot.pool && !slot.profile.diskBacked)
+        .sort((a, b) => b.pool.measuredMemoryMB - a.pool.measuredMemoryMB)
       const reclaimedMB = cached.reduce((sum, slot) => sum + slot.pool.measuredMemoryMB, 0)
       if (reclaimedMB && allocateWorker({ ...budget, freeMB: budget.freeMB + reclaimedMB }, active, 'cpu', minimumMB)) {
         this.retire(cached[0])
+        return undefined
       }
-      return undefined
+      return job.input.action === 'warmup' ? undefined : this.chooseDiskSlot(idle)
     }
     const empty = idle.find(slot => !slot.pool)
     if (empty) return this.configure(empty, { ...profile, resident: makeResident })
     const replacement = idle.find(slot => slot !== resident) ?? idle[0]
     if (replacement) this.retire(replacement)
     return undefined
+  }
+
+  chooseDiskSlot(idle) {
+    const existing = idle.find(slot => slot.profile?.diskBacked)
+    if (existing) return existing
+    const cached = idle.filter(slot => slot.pool)
+    if (cached.length) {
+      for (const slot of cached) this.retire(slot)
+      return undefined
+    }
+    // 此处仅有一个任务运行，暂时超出物理内存预算的部分可由操作系统换页。
+    if (idle[0]) return this.configure(idle[0], { device: 'cpu', threads: 1, offset: 0, memoryMB: diskWorkerMemoryMB, diskBacked: true })
   }
 
   chooseBatchSlot(budget, active, idle, resident) {
@@ -257,12 +283,13 @@ export class HttpWorkerPool {
       ...this.options.workerEnv, MINERU_MODEL_ONNX_DEVICE: profile.device,
       LAWVERIFY_PARSER_THREADS: String(profile.threads), LAWVERIFY_PARSER_CPU_OFFSET: String(profile.offset),
       LAWVERIFY_PARSER_MEMORY_MB: String(profile.memoryMB),
+      LAWVERIFY_PARSER_DISK_BACKED: profile.diskBacked ? '1' : '0',
     } })
     return slot
   }
 
   async execute(slot, job) {
-    let retryOnCpu = false
+    let retry = false
     try {
       const result = await slot.pool.run(job.input)
       if (this.resources && job.input.pdfRange && !job.signal?.aborted && !this.closed) {
@@ -277,18 +304,25 @@ export class HttpWorkerPool {
       if (job.signal?.aborted) throw job.signal.reason
       job.resolve(result)
     } catch (error) {
-      if (this.resources && error.code === 'PARSER_MEMORY_LIMIT') job.stopping ??= slot.pool.close()
+      if (this.resources && error.code === 'PARSER_MEMORY_LIMIT') {
+        job.stopping ??= slot.pool.close()
+        if (slot.profile.device === 'cpu' && slot.profile.memoryMB < diskWorkerMemoryMB
+          && ['parse', 'pdf-info'].includes(job.input.action)) {
+          job.diskBacked = true
+          retry = true
+        }
+      }
       if (slot.profile?.device === 'auto' && !job.signal?.aborted && !this.closed
         && ['PARSER_GPU_BUSY', 'PARSER_GPU_FAILED', 'PARSER_WORKER_EXIT', 'PARSER_START_TIMEOUT', 'PARSER_MEMORY_LIMIT'].includes(error.code)) {
         this.gpuRetryAt = Date.now() + 60_000
         job.skipGpu = true
         job.stopping ??= slot.pool.close()
-        retryOnCpu = true
+        retry = true
       }
       // 等原进程退出后才让 HTTP 层删除文件。
       await job.stopping
-      if (job.signal?.aborted || this.closed) retryOnCpu = false
-      if (!retryOnCpu) job.reject(job.signal?.aborted ? job.signal.reason : error)
+      if (job.signal?.aborted || this.closed) retry = false
+      if (!retry) job.reject(job.signal?.aborted ? job.signal.reason : error)
     } finally {
       if (job.stopping && this.resources) {
         slot.pool = null
@@ -300,7 +334,7 @@ export class HttpWorkerPool {
       slot.idleSince = Date.now()
       job.slot = null
       job.owner.active = false
-      if (retryOnCpu) {
+      if (retry) {
         job.stopping = null
         this.queue.unshift(job)
       }

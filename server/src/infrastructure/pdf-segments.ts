@@ -9,6 +9,7 @@ const maxArtifactBytes = 64 * 1024 ** 2
 interface PdfInfo {
   pdfPages: number
   engineVersion: string
+  pdfSegmentPages?: number
 }
 
 interface Range {
@@ -34,6 +35,8 @@ function isPdfInfo(value: unknown): value is PdfInfo {
   const info = value as Partial<PdfInfo> | undefined
   return !!info && Number.isInteger(info.pdfPages) && info.pdfPages! >= 1 && info.pdfPages! <= maxPages
     && typeof info.engineVersion === 'string'
+    && (info.pdfSegmentPages === undefined || (Number.isInteger(info.pdfSegmentPages)
+      && info.pdfSegmentPages >= 1 && info.pdfSegmentPages <= segmentPages))
 }
 
 function isRangeArtifact(artifact: ParsedArtifact, range: Range, engineVersion: string) {
@@ -67,7 +70,7 @@ function newProgress(info: PdfInfo, pagesPerSegment: number): Progress {
   for (let first = 1; first <= info.pdfPages; first += pagesPerSegment) {
     ranges.push({ first, last: Math.min(first + pagesPerSegment - 1, info.pdfPages) })
   }
-  return { ...info, ranges }
+  return { pdfPages: info.pdfPages, engineVersion: info.engineVersion, ranges }
 }
 
 function memoryLimit(error: unknown) {
@@ -123,8 +126,10 @@ export async function parsePdfOnDisk({ directory, input, checkpoint, signal, run
     try {
       let result = await submit({ ...input, pdfWhole: 'auto' })
       if (!isPdfInfo(result)) return
-      result = await submit({ ...input, pdfWhole: 'prefer' })
-      if (!isPdfInfo(result)) return
+      if (!result.pdfSegmentPages) {
+        result = await submit({ ...input, pdfWhole: 'prefer' })
+        if (!isPdfInfo(result)) return
+      }
       info = result
     } catch (error) {
       if (!memoryLimit(error)) throw error
@@ -132,12 +137,14 @@ export async function parsePdfOnDisk({ directory, input, checkpoint, signal, run
       info = await inspect()
     }
   }
-  if (fullMemoryLimit && info.pdfPages === 1) {
+  if (fullMemoryLimit && info.pdfPages === 1 && !info.pdfSegmentPages) {
     throw Object.assign(new Error('第 1 页解析达到本机内存上限。'), { code: 'PARSER_MEMORY_LIMIT' })
   }
+  const pagesPerSegment = info.pdfSegmentPages ?? segmentPages
   if (progress?.pdfPages !== info.pdfPages || progress.engineVersion !== info.engineVersion) {
-    const initialSize = fullMemoryLimit && info.pdfPages <= segmentPages ? Math.floor(info.pdfPages / 2) : segmentPages
-    progress = newProgress(info, initialSize)
+    const initialSize = fullMemoryLimit && info.pdfPages > 1 && info.pdfPages <= segmentPages
+      ? Math.floor(info.pdfPages / 2) : segmentPages
+    progress = newProgress(info, Math.min(initialSize, pagesPerSegment))
   }
   const partFile = path.join(directory, 'pdf-segment.json')
   const stage = path.join(directory, 'pdf-progress.tmp')
@@ -148,9 +155,15 @@ export async function parsePdfOnDisk({ directory, input, checkpoint, signal, run
       index++
       continue
     }
+    const last = range.first + pagesPerSegment - 1
+    if (range.last > last) {
+      // 续跑旧断点时只拆分待处理页，已落盘的结果继续使用。
+      progress.ranges.splice(index, 1, { first: range.first, last }, { first: last + 1, last: range.last })
+      continue
+    }
     try {
       await submit({ ...input, batchSize: undefined, outputPath: partFile, pdfScope: directory,
-        pdfRange: [range.first, range.last] })
+        pdfDiskBacked: Boolean(info.pdfSegmentPages), pdfRange: [range.first, range.last] })
       signal.throwIfAborted()
       const artifact = await readArtifact(partFile)
       if (!isRangeArtifact(artifact, range, info.engineVersion)) throw new Error('PDF 分段结果页码无效。')

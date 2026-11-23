@@ -123,7 +123,7 @@ test('大 PDF 可用内存恢复时升级到 3 GiB worker', async () => {
   } finally { await pool.close() }
 })
 
-test('桌面解析按资源增长并发，可用内存低时保留排队任务', async () => {
+test('低内存下实际任务越过预热并串行启动，可用内存恢复后按资源并发', async () => {
   const GiB = 1024 ** 3
   let freeBytes = GiB
   const pool = new HttpWorkerPool({ ...options, size: 4, desktopResources: {
@@ -131,14 +131,29 @@ test('桌面解析按资源增长并发，可用内存低时保留排队任务',
     intervalMs: 20,
   } })
   try {
-    let started = false
-    const first = pool.run({ value: 'first', delay: 0.15, batchSize: 4 }).then(result => { started = true; return result })
-    const second = pool.run({ value: 'second', delay: 0.15, batchSize: 4 })
-    await new Promise(resolve => setTimeout(resolve, 250))
-    assert.equal(started, false, '内存紧张时没有分派任务')
+    const controller = new AbortController()
+    const warmup = assert.rejects(pool.run({ action: 'warmup' }, controller.signal), { name: 'AbortError' })
+    const submit = () => pool.run({ action: 'resource-test', fileName: 'scan.pdf', delay: 0.1, batchSize: 4 },
+      AbortSignal.timeout(2000))
+    const low = await Promise.all([submit(), submit()])
+    assert.equal(low[0].pid, low[1].pid)
+    assert.ok(low.every(result => result.threads === 1 && result.device === 'cpu' && result.diskBacked))
+    controller.abort()
+    await warmup
     freeBytes = 20 * GiB
-    const results = await Promise.all([first, second])
+    const results = await Promise.all([submit(), submit()])
     assert.notEqual(results[0].pid, results[1].pid, '资源充足时并行分派给两个进程')
+  } finally { await pool.close() }
+})
+
+test('正常 CPU worker 内存超限后，实际任务改用单线程落盘 worker 重试', async () => {
+  const MiB = 1024 ** 2
+  const pool = new HttpWorkerPool({ ...options, desktopResources: {
+    sample: () => ({ cores: 8, totalBytes: 16384 * MiB, freeBytes: 2304 * MiB, cpuLoad: 0.5 }),
+  }, workerEnv: { LAWVERIFY_TEST_MIN_MEMORY_MB: '2048' } })
+  try {
+    const result = await pool.run({ action: 'pdf-info', fileName: 'scan.pdf' }, AbortSignal.timeout(2500))
+    assert.deepEqual(result, { diskBacked: true, threads: 1 })
   } finally { await pool.close() }
 })
 

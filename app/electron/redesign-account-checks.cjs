@@ -1,6 +1,49 @@
 const assert = require('node:assert/strict')
+const { randomUUID } = require('node:crypto')
 
-module.exports = async function checkAccount({ evaluate, wait, clickText, fill, screenshot, setAccountStatus }) {
+module.exports = async function checkAccount({ evaluate, wait, clickText, fill, screenshot, window, setAccountStatus }) {
+  await wait("document.querySelector('#pg-home .case-card') && document.querySelector('.dock-ava')")
+  const dockPoint = await evaluate(`(() => {
+    const dock = document.querySelector('.dock-ava');
+    const {left, top, width, height} = dock.getBoundingClientRect();
+    return {x: Math.round(left + width / 2), y: Math.round(top + height / 2)};
+  })()`)
+  window.webContents.sendInputEvent({ type: 'mouseMove', ...dockPoint })
+  await new Promise(resolve => setTimeout(resolve, 200))
+  assert.equal(await evaluate("document.querySelector('.new-dock-menu')?.checkVisibility() ?? false"), false, '账号入口不应展开库菜单')
+  await evaluate("document.querySelector('.dock-ava').click()")
+  await wait("document.querySelector('#pg-account h1')?.textContent === '账号设置'")
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.account-settings-section h2'), heading => heading.textContent)"), ['基本资料', '登录邮箱', '修改密码'])
+  assert.equal(await evaluate("document.querySelector('#account-login-email').value"), 'redesign-qa@test.invalid')
+  assert.equal(await evaluate("document.querySelector('#account-login-email').readOnly"), true)
+  assert.equal(await evaluate("document.querySelector('#account-display-name').value === document.querySelector('.account-settings-identity strong').textContent"), true)
+  await wait("document.querySelector('.account-settings-credits strong')?.textContent === '2,468'")
+  await screenshot('account-settings')
+  const desktopSize = window.getSize()
+  window.setSize(390, 900)
+  await wait("innerWidth <= 390 && document.querySelector('#pg-account main').scrollWidth <= document.querySelector('#pg-account main').clientWidth")
+  await screenshot('account-settings-390')
+  window.setSize(...desktopSize)
+  await wait("innerWidth > 880")
+  await wait("!document.querySelector('#account-display-name').readOnly")
+  await fill('#account-display-name', '账号设置回归律师')
+  await fill('#account-profile-heading + form label:nth-child(2) input', '账号设置回归律所')
+  await clickText('.account-settings-actions button', '保存资料')
+  await wait("document.querySelector('.account-settings-identity strong')?.textContent === '账号设置回归律师'")
+  assert.equal(await evaluate("document.querySelector('#account-profile-heading + form label:nth-child(2) input').value"), '账号设置回归律所')
+
+  await evaluate("window.__beforePasswordChange = [sessionStorage.getItem('lawverify-auth-session'), localStorage.getItem('lawverify-cloud-token')]")
+  const passwordFields = '#account-password-heading + form input'
+  const replacement = randomUUID()
+  await fill(`${passwordFields}[autocomplete="current-password"]`, randomUUID())
+  await fill(`#account-password-heading + form label:nth-child(2) input`, replacement)
+  await fill(`#account-password-heading + form label:nth-child(3) input`, replacement)
+  await clickText('.account-settings-actions button', '修改密码')
+  await wait("localStorage.getItem('lawverify-cloud-token') !== window.__beforePasswordChange[1] && !document.querySelector('#account-password-heading + form input').value")
+  await evaluate("window.dispatchEvent(new Event('focus'))")
+  await wait("document.querySelector('.toast')?.textContent === '密码已修改。'")
+  assert.equal(await evaluate("Boolean(document.querySelector('#pg-account')) && sessionStorage.getItem('lawverify-auth-session') === window.__beforePasswordChange[0]"), true)
+  await evaluate("document.querySelector('.account-settings-services summary').click()")
   await wait("document.querySelector('.account-services-balance strong')?.textContent === '2,468'")
   assert.match(await evaluate("document.querySelector('.account-services-points').textContent"), /回归充值/)
   await clickText('.account-services-points button', '查看积分流水')
@@ -66,4 +109,7 @@ module.exports = async function checkAccount({ evaluate, wait, clickText, fill, 
   await evaluate("window.dispatchEvent(new Event('focus'))")
   await wait("!Array.from(document.querySelectorAll('.account-services-points button')).some(button => button.textContent === '同步中…')")
   await screenshot('account-services')
+  await clickText('#pg-account .topbar button', '返回首页')
+  await wait("document.querySelector('#pg-home .case-card')")
+  assert.equal(await evaluate("document.querySelector('.dock-ava b').textContent"), '账号设置回归律师')
 }

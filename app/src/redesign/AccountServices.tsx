@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { useApp } from './AppContext'
+import { changeSessionPassword, saveSessionProfile } from './session'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Textarea } from './components/ui/textarea'
@@ -18,6 +19,7 @@ const feedbackTypes: { value: FeedbackType; label: string }[] = [
   { value: 'other', label: '其他' },
 ]
 const number = new Intl.NumberFormat('zh-CN')
+const emptyPassword = { current: '', next: '', confirmation: '' }
 function message(cause: unknown, fallback: string) {
   return cause instanceof Error && cause.message ? cause.message : fallback
 }
@@ -37,7 +39,11 @@ export function AccountServices() {
 
 function AccountServicesContent() {
   const app = useApp()
-  const email = app.workspace?.user.email?.trim() ?? ''
+  const profile = app.cloudProfile
+  const user = app.workspace!.user
+  const email = user.email?.trim() ?? ''
+  const displayName = profile?.user.name ?? user.name ?? ''
+  const organization = profile?.organization.name ?? user.organization ?? ''
   const [session] = useState(() => ({
     account: sessionStorage.getItem('lawverify-login-account'),
     auth: sessionStorage.getItem('lawverify-auth-session'),
@@ -64,10 +70,73 @@ function AccountServicesContent() {
   const [feedbackError, setFeedbackError] = useState('')
   const [sending, setSending] = useState(false)
   const [billingBusy, setBillingBusy] = useState(false)
-  const isCurrent = useCallback(() => live.current
-    && session.account === sessionStorage.getItem('lawverify-login-account')
+  const [profileDraft, setProfileDraft] = useState<{ name?: string; organization?: string }>({})
+  const [password, setPassword] = useState(emptyPassword)
+  const [profileError, setProfileError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [logoutOpen, setLogoutOpen] = useState(false)
+  const [settingsBusy, setSettingsBusy] = useState(false)
+  const savingSettings = useRef(false)
+  const sameSession = useCallback(() => session.account === sessionStorage.getItem('lawverify-login-account')
     && session.auth === sessionStorage.getItem('lawverify-auth-session')
     && session.token === localStorage.getItem('lawverify-cloud-token'), [session])
+  const isCurrent = useCallback(() => live.current && sameSession(), [sameSession])
+  const canEditProfile = Boolean(profile && session.token?.trim())
+  const canRenameOrganization = canEditProfile && profile?.organization.role === 'owner'
+  const draftName = profileDraft.name ?? displayName
+  const draftOrganization = profileDraft.organization ?? organization
+  const organizationChanged = canRenameOrganization && draftOrganization.trim() !== organization.trim()
+  const nameChanged = draftName.trim() !== displayName.trim()
+  const canSaveProfile = (nameChanged || organizationChanged) && (!nameChanged || Boolean(draftName.trim()))
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!isCurrent() || !canEditProfile || !canSaveProfile || savingSettings.current) return
+    if (organizationChanged && draftOrganization.trim().length < 2) {
+      setProfileError('律所 / 单位名称至少 2 个字。')
+      return
+    }
+    savingSettings.current = true
+    setSettingsBusy(true)
+    setProfileError('')
+    try {
+      const updated = await saveSessionProfile({
+        displayName: nameChanged ? draftName.trim() : undefined,
+        organizationName: organizationChanged ? draftOrganization.trim() : undefined,
+      })
+      if (!sameSession()) return
+      app.setCloudProfile(updated)
+      if (live.current) setProfileDraft({})
+      app.toast('账号资料已保存。')
+    } catch (cause) {
+      if (isCurrent()) setProfileError(message(cause, '账号资料保存失败，请稍后重试。'))
+    } finally {
+      savingSettings.current = false
+      if (isCurrent()) setSettingsBusy(false)
+    }
+  }
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!isCurrent() || !session.token?.trim() || !password.current || !password.next || !password.confirmation || savingSettings.current) return
+    setPasswordError('')
+    if (password.next.length < 8) { setPasswordError('新密码至少 8 位。'); return }
+    if (new TextEncoder().encode(password.next).length > 72) { setPasswordError('新密码长度超过 72 字节。'); return }
+    if (password.next !== password.confirmation) { setPasswordError('两次输入的新密码不一致。'); return }
+    if (password.next === password.current) { setPasswordError('新密码不能与当前密码相同。'); return }
+    savingSettings.current = true
+    setSettingsBusy(true)
+    try {
+      if (!await changeSessionPassword({ currentPassword: password.current, newPassword: password.next })) return
+      if (live.current) setPassword(emptyPassword)
+      app.toast('密码已修改。')
+    } catch (cause) {
+      if (isCurrent()) setPasswordError(message(cause, '密码修改失败，请稍后重试。'))
+    } finally {
+      savingSettings.current = false
+      if (live.current) setSettingsBusy(false)
+    }
+  }
 
   const refresh = useCallback(async () => {
     if (!isCurrent()) return
@@ -204,7 +273,7 @@ function AccountServicesContent() {
     </table></div>
   }
 
-  return <div className="account-services">
+  const services = <div className="account-services">
     <section className="account-services-card account-services-points" aria-labelledby="account-services-points-heading">
       <div className="account-services-heading"><h3 id="account-services-points-heading">积分与支付</h3>
         <Button variant="ghost" size="sm" disabled={loading} onClick={() => void refresh()}>{loading ? '同步中…' : '刷新'}</Button></div>
@@ -251,6 +320,80 @@ function AccountServicesContent() {
           <div className="account-services-actions account-services-form-actions"><Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>关闭</Button>
             <Button type="submit" disabled={sending}>{sending ? '提交中…' : '提交反馈'}</Button></div>
         </form>
+      </DialogContent>
+    </Dialog>
+  </div>
+
+  return <div className="page active" id="pg-account">
+    <header className="topbar account-settings-topbar">
+      <Button variant="ghost" size="sm" aria-label="返回首页" onClick={() => app.setPage('home')}><span aria-hidden="true">←</span>返回首页</Button>
+      <h1>账号设置</h1>
+      <Button variant="ghost" size="sm" disabled={settingsBusy} onClick={() => setLogoutOpen(true)}>退出登录</Button>
+    </header>
+    <main className="account-settings-scroll">
+      <div className="account-settings">
+        <div className="account-settings-hero">
+          <span className="avatar" aria-hidden="true">{displayName[0] || '律'}</span>
+          <div className="account-settings-identity"><strong>{displayName || '律师'}</strong><span>{email || '未绑定邮箱'}</span></div>
+          <div className="account-settings-credits"><span>可用积分</span><strong>{balance === null ? '—' : number.format(balance)}</strong></div>
+        </div>
+        <section className="account-settings-section" aria-labelledby="account-profile-heading">
+          <h2 id="account-profile-heading">基本资料</h2>
+          <form onSubmit={saveProfile}>
+            <label className="account-settings-field"><span>显示名称</span>
+              <input id="account-display-name" value={draftName} maxLength={24} readOnly={!canEditProfile || settingsBusy}
+                onChange={event => setProfileDraft(current => ({ ...current, name: event.target.value }))} />
+            </label>
+            <label className="account-settings-field"><span>律所 / 单位</span>
+              <input value={draftOrganization} placeholder="如：北京某某律师事务所" maxLength={48} readOnly={!canRenameOrganization || settingsBusy}
+                onChange={event => setProfileDraft(current => ({ ...current, organization: event.target.value }))} />
+            </label>
+            {profileError && <p className="account-settings-error" role="alert">{profileError}</p>}
+            <div className="account-settings-actions">
+              <Button className="btn btn-pri btn-sm" type="submit" disabled={settingsBusy || !canEditProfile || !canSaveProfile}>保存资料</Button>
+              {profile && !canRenameOrganization && <small>律所 / 单位名称由机构所有者修改。</small>}
+              {!profile && <small>等待同步账号资料。</small>}
+            </div>
+          </form>
+        </section>
+        <section className="account-settings-section" aria-labelledby="account-email-heading">
+          <h2 id="account-email-heading">登录邮箱</h2>
+          <label className="account-settings-field"><span>邮箱</span>
+            <span className="account-settings-email"><input id="account-login-email" readOnly value={email} aria-describedby="account-email-hint" /><small>不可修改</small></span>
+          </label>
+          <p id="account-email-hint">邮箱为登录凭证，如需变更请联系管理员。</p>
+        </section>
+        <section className="account-settings-section" aria-labelledby="account-password-heading">
+          <h2 id="account-password-heading">修改密码</h2>
+          <form onSubmit={changePassword}>
+            <label className="account-settings-field"><span>当前密码</span>
+              <input type="password" autoComplete="current-password" maxLength={1024} disabled={settingsBusy || !session.token}
+                value={password.current} onChange={event => setPassword(current => ({ ...current, current: event.target.value }))} />
+            </label>
+            <label className="account-settings-field"><span>新密码</span>
+              <input type="password" autoComplete="new-password" placeholder="至少 8 位" maxLength={72} disabled={settingsBusy || !session.token}
+                value={password.next} onChange={event => setPassword(current => ({ ...current, next: event.target.value }))} />
+            </label>
+            <label className="account-settings-field"><span>确认新密码</span>
+              <input type="password" autoComplete="new-password" maxLength={72} disabled={settingsBusy || !session.token}
+                value={password.confirmation} onChange={event => setPassword(current => ({ ...current, confirmation: event.target.value }))} />
+            </label>
+            {passwordError && <p className="account-settings-error" role="alert">{passwordError}</p>}
+            <div className="account-settings-actions"><Button className="btn btn-pri btn-sm" type="submit"
+              disabled={settingsBusy || !session.token || !password.current || !password.next || !password.confirmation}>修改密码</Button></div>
+          </form>
+        </section>
+        <details className="account-settings-services">
+          <summary>积分与其他服务</summary>
+          {services}
+        </details>
+      </div>
+    </main>
+    <Dialog open={logoutOpen} onOpenChange={setLogoutOpen}>
+      <DialogContent className="fm-box new-form"><DialogHeader><DialogTitle>退出当前账号？</DialogTitle>
+        <DialogDescription>本机案件和已保存草稿会保留，退出后需重新登录。</DialogDescription></DialogHeader>
+        <div className="fm-ft"><Button className="btn btn-gh" onClick={() => setLogoutOpen(false)}>取消</Button>
+          <Button className="btn btn-pri" disabled={app.busy || settingsBusy} onClick={app.logout}>确认退出</Button></div>
       </DialogContent>
     </Dialog>
   </div>

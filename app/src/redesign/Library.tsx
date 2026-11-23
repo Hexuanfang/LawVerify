@@ -6,13 +6,6 @@ import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from './components/ui/tabs'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './components/ui/select'
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -30,21 +23,17 @@ const TABS = {
   law: '法条库',
   case: '案例库',
   proj: '案件库',
-  acct: '账号与团队',
+  acct: '账号设置',
 }
 
 export function Library() {
   const app = useApp()
-  const [logoutOpen, setLogoutOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [pendingCaseDelete, setPendingCaseDelete] = useState<CaseDeleteTarget | null>(null)
   const [pendingDelete, setPendingDelete] = useState<{
     id: string
     title: string
   } | null>(null)
-  const [displayName, setDisplayName] = useState(app.workspace?.user.name || '')
-  const [memberName, setMemberName] = useState('')
-  const [role, setRole] = useState('律师助理 · 可上传与标问题')
   const tab = app.libTab
   const workspace = app.workspace!
   const lower = query.toLowerCase()
@@ -138,6 +127,9 @@ export function Library() {
       </div>
     )
   }
+  if (tab === 'acct') {
+    return <Suspense fallback={<p className="boot-status" role="status">正在读取账号设置…</p>}><AccountServices /></Suspense>
+  }
   return (
     <div className="page active" id="pg-lib">
       <div className="topbar">
@@ -158,150 +150,49 @@ export function Library() {
             ))}
           </TabsList>
         </Tabs>
-        {tab !== 'acct' && (
-          <Button
-            className="btn btn-pri btn-sm ml-auto"
-            onClick={() => app.setForm({ tab })}
-          >
-            ＋ 新增
-          </Button>
-        )}
+        <Button
+          className="btn btn-pri btn-sm ml-auto"
+          onClick={() => app.setForm({ tab })}
+        >
+          ＋ 新增
+        </Button>
       </div>
       <div className="lib" key={tab} ref={library}>
         <div className="lib-in fade">
-          {tab !== 'acct' ? (
-            <>
-              <div className="lib-head">
-                <div>
-                  <h2>{TABS[tab]}</h2>
-                  <div className="sub">
-                    {tab === 'law'
-                      ? '法条效力与条文版本 ｜ 核验时请复核适用时点'
-                      : tab === 'case'
-                        ? '案号四要素 ｜ 指导性案例应当参照，其余仅参考'
-                        : '在办案件与已归档材料 ｜ 可新建、打开核验、删除'}
-                  </div>
-                </div>
-                <div className="lib-tools">
-                  <div className="lib-search">
-                    <Search size={13} />
-                    <Input
-                      value={query}
-                      placeholder="搜索…"
-                      onChange={(event) => setQuery(event.target.value)}
-                    />
-                  </div>
-                  <Button
-                    className="btn btn-gh btn-sm"
-                    onClick={() => void sync()}
-                  >
-                    ⟳ 同步资料库
-                  </Button>
-                </div>
-              </div>
-              <div className="rowlist">
-                {tab === 'law' ? <LawLibraryRows statutes={workspace.knowledgeStatutes} query={lower} renderRow={renderRow} />
-                  : entries.length ? entries.map(renderRow) : <div className="lib-empty">未找到，试试清空搜索或新增一条</div>}
-              </div>
-            </>
-          ) : (
-            <div className="acct-grid">
-              <Suspense fallback={<p role="status">正在读取账号服务…</p>}><AccountServices /></Suspense>
-              <div className="acct-card">
-                <h3>执业人</h3>
-                <Button className="btn btn-gh btn-sm" onClick={() => setLogoutOpen(true)}>退出登录</Button>
-                <div className="account-profile">
-                  <div className="avatar">
-                    {workspace.user.name?.[0] || '律'}
-                  </div>
-                  <div>
-                    <b>{workspace.user.name || '律师'}</b>
-                    <div>{workspace.user.organization}</div>
-                    <div className="mat-description">
-                      {workspace.user.title}
-                    </div>
-                  </div>
-                </div>
-                <div className="fld" style={{ marginTop: 14 }}>
-                  <label htmlFor="account-name">显示名</label>
-                  <Input
-                    id="account-name"
-                    value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
-                  />
-                </div>
-                <Button
-                  className="op pri"
-                  onClick={() => app.toast('账号显示名更新接口待接入。')}
-                >
-                  保存显示名
-                </Button>
-              </div>
-              <div className="acct-card">
-                <h3>团队与权限</h3>
-                <div className="mem">
-                  <div className="av">{workspace.user.name?.[0] || '律'}</div>
-                  <div>
-                    <b>{workspace.user.name}</b>
-                    <div className="mat-description">当前账号</div>
-                  </div>
-                  <span className="r">本人</span>
-                </div>
-                <div className="team-add">
-                  <Input
-                    placeholder="姓名"
-                    value={memberName}
-                    onChange={(event) => setMemberName(event.target.value)}
-                  />
-                  <Select value={role} onValueChange={setRole}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        '律师助理 · 可上传与标问题',
-                        '质控 · 只读报告与抽查',
-                      ].map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {value}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    className="op pri"
-                    onClick={() =>
-                      app.toast(
-                        memberName.trim()
-                          ? '团队成员管理接口待接入。'
-                          : '请填姓名',
-                      )
-                    }
-                  >
-                    添加
-                  </Button>
-                </div>
-              </div>
-              <div className="acct-card" style={{ gridColumn: '1/-1' }}>
-                <h3>数据与隐私</h3>
-                <p>
-                  案件材料与文书使用当前账号的本机工作区。AI
-                  核验及法条、案例检索按现有服务配置执行。
-                  <br />
-                  导出 Word 记录生成时间、软件版本与人工核验状态。
-                </p>
+          <div className="lib-head">
+            <div>
+              <h2>{TABS[tab]}</h2>
+              <div className="sub">
+                {tab === 'law'
+                  ? '法条效力与条文版本 ｜ 核验时请复核适用时点'
+                  : tab === 'case'
+                    ? '案号四要素 ｜ 指导性案例应当参照，其余仅参考'
+                    : '在办案件与已归档材料 ｜ 可新建、打开核验、删除'}
               </div>
             </div>
-          )}
+            <div className="lib-tools">
+              <div className="lib-search">
+                <Search size={13} />
+                <Input
+                  value={query}
+                  placeholder="搜索…"
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+              <Button
+                className="btn btn-gh btn-sm"
+                onClick={() => void sync()}
+              >
+                ⟳ 同步资料库
+              </Button>
+            </div>
+          </div>
+          <div className="rowlist">
+            {tab === 'law' ? <LawLibraryRows statutes={workspace.knowledgeStatutes} query={lower} renderRow={renderRow} />
+              : entries.length ? entries.map(renderRow) : <div className="lib-empty">未找到，试试清空搜索或新增一条</div>}
+          </div>
         </div>
       </div>
-      <Dialog open={logoutOpen} onOpenChange={setLogoutOpen}>
-        <DialogContent className="fm-box new-form"><DialogHeader><DialogTitle>退出当前账号？</DialogTitle>
-          <DialogDescription>本机案件和已保存草稿会保留；退出后需重新登录。正在进行的核验会停止。</DialogDescription></DialogHeader>
-          <div className="fm-ft"><Button className="btn btn-gh" onClick={() => setLogoutOpen(false)}>取消</Button>
-            <Button className="btn btn-pri" disabled={app.busy} onClick={app.logout}>确认退出</Button></div>
-        </DialogContent>
-      </Dialog>
       <CaseDeleteDialog target={pendingCaseDelete} onClose={() => setPendingCaseDelete(null)} />
       <Dialog
         open={Boolean(pendingDelete)}

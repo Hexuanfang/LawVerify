@@ -11,7 +11,7 @@ import {
 } from 'react'
 import { api } from '../api'
 import type { CertificateParagraph } from '../types'
-import type { DeclarationEditAction, DeclarationReviewAction } from '../../../server/src/intelligence/verification/protocol'
+import type { DeclarationEditAction, DeclarationReviewAction, SkippedVerificationMaterial } from '../../../server/src/intelligence/verification/protocol'
 import { declarationEditRange } from '../../../server/src/intelligence/verification/review-status.ts'
 import { reviewReadiness, reanchorParagraph } from './workflow'
 import { endSession, useSession } from './session'
@@ -27,10 +27,11 @@ import {
 import { exportDocument } from './services'
 import { useWorkspace } from './useWorkspace'
 import { replaceRichText } from './richText'
-import { verificationStep } from './verificationProgress'
+import { VERIFICATION_STEPS, verificationStep } from './verificationProgress'
 import { appendReviewAudit, readCaseAssistantAudits, readReviewAudits, type ReviewAudit } from './review-audit-store'
 
-type VerificationPreparation = (signal: AbortSignal, report: (message: string, title: string) => void) => Promise<Array<{ id: string; title: string }>>
+type VerificationPreparation = (signal: AbortSignal, report: (message: string, title: string, step?: 0 | 1) => void) => Promise<Array<{ id: string; title: string }>>
+type CaseSetupProgress = { title: string; openDraft?: () => void }
 
 type Page = 'home' | 'ws' | 'proc' | 'report' | 'lib'
 export type LibTab = 'law' | 'case' | 'proj' | 'acct'
@@ -90,7 +91,10 @@ function useAppState() {
     })
     return () => { live = false }
   }, [account, docId, caseId, setError])
-  const [proc, setProc] = useState<{ step: number; message: string; error: string; done: boolean; title?: string }>({
+  const [proc, setProc] = useState<{
+    step: number; message: string; error: string; done: boolean; title?: string; draft?: boolean
+    skippedMaterials?: SkippedVerificationMaterial[]
+  }>({
     step: 0,
     message: '',
     error: '',
@@ -100,8 +104,17 @@ function useAppState() {
   const pendingVerification = useRef<string[]>([])
   const pendingPreparation = useRef<VerificationPreparation | undefined>(undefined)
   const pendingScope = useRef<'dirty' | undefined>(undefined)
+  const pendingCaseSetup = useRef<CaseSetupProgress | undefined>(undefined)
+  const processingMounted = useRef(false)
+  const processingReady = useRef<(() => void) | null>(null)
+  const onProcessingMounted = useCallback(() => {
+    processingMounted.current = true
+    processingReady.current?.()
+    return () => { processingMounted.current = false }
+  }, [])
   const onLeaving = useCallback(() => abort.current?.abort(), [])
-  useSession(onLeaving)
+  const [cloudProfile, setCloudProfile] = useState<Awaited<ReturnType<typeof api.getCloudProfile>>>()
+  useSession(onLeaving, setCloudProfile)
   const projects = useMemo(
     () => (workspace ? buildProjects(workspace) : []),
     [workspace],
@@ -397,7 +410,7 @@ function useAppState() {
       await addAudit(target, '重新关联出处')
   }
   const verify = useCallback(
-    async (documents: string | string[] = docId, preparation?: VerificationPreparation, scope?: 'dirty') => {
+    async (documents: string | string[] = docId, preparation?: VerificationPreparation, scope?: 'dirty', caseSetup?: CaseSetupProgress) => {
       if (abort.current) return
       let ids = [...new Set((Array.isArray(documents) ? documents : [documents]).filter(Boolean))]
       if (!ids.length && !preparation) {
@@ -406,49 +419,78 @@ function useAppState() {
       }
       const titles = new Map(workspace?.certificates.map(item => [item.id, item.title]))
       setPage('proc')
-      setProc({ step: 0, message: '准备读取文书与案件原材料', error: '', done: false })
+      setProc({ step: 0, title: caseSetup?.title, draft: Boolean(caseSetup?.openDraft),
+        message: preparation ? (caseSetup ? '正在准备案件' : '准备导入核验文件') : '准备读取材料解析状态', error: '', done: false })
       const controller = new AbortController()
       abort.current = controller
       pendingVerification.current = [...ids]
       pendingPreparation.current = preparation
       pendingScope.current = scope
+      pendingCaseSetup.current = caseSetup
+      const skippedMaterials = new Map<string, SkippedVerificationMaterial>()
       const result = await run(async () => {
         await import('./Report')
         controller.signal.throwIfAborted()
+        if (caseSetup && !processingMounted.current) {
+          await new Promise<void>(resolve => {
+            const ready = () => {
+              controller.signal.removeEventListener('abort', ready)
+              processingReady.current = null
+              resolve()
+            }
+            processingReady.current = ready
+            controller.signal.addEventListener('abort', ready, { once: true })
+          })
+          controller.signal.throwIfAborted()
+        }
         if (preparation) {
-          const imported = await preparation(controller.signal, (message, title) => {
-            setProc(current => ({ ...current, step: 0, message, title }))
+          const imported = await preparation(controller.signal, (message, title, step = 0) => {
+            setProc(current => ({ ...current, step, message, title }))
           })
           ids = [...new Set(imported.map(item => item.id))]
+          controller.signal.throwIfAborted()
+          if (caseSetup?.openDraft) return
           imported.forEach(item => titles.set(item.id, item.title))
           pendingVerification.current = [...ids]
           pendingPreparation.current = undefined
-          controller.signal.throwIfAborted()
           if (!ids.length) throw new Error('没有可核验的文书，请重新导入。')
         }
         for (const [index, id] of ids.entries()) {
           controller.signal.throwIfAborted()
           setDocId(id)
           select('')
-          setProc({ step: 0, title: titles.get(id), message: `正在核验第 ${index + 1}/${ids.length} 份文书`, error: '', done: false })
-          await api.autoLinkCertificate(id, text => {
+          setProc(current => ({ ...current, step: 0, title: titles.get(id), message: `正在核验第 ${index + 1}/${ids.length} 份文书` }))
+          const outcome = await api.autoLinkCertificate(id, text => {
             const step = verificationStep(text)
             setProc(current => ({ ...current, step: Math.max(current.step, step), message: `第 ${index + 1}/${ids.length} 份 · ${text}` }))
           }, controller.signal, scope)
+          for (const item of outcome.linkage.certificate.verification?.skippedMaterials ?? []) {
+            skippedMaterials.set(item.evidenceId, item)
+          }
+          const recorded = [...skippedMaterials.values()]
+          setProc(current => ({ ...current, skippedMaterials: recorded }))
           pendingVerification.current = ids.slice(index + 1)
         }
       })
       if (abort.current !== controller) return
       if (result) {
-        setProc({ step: 6, title: titles.get(ids[ids.length - 1]), message: ids.length > 1 ? `全部 ${ids.length} 份文书核验完成` : '核验完成', error: '', done: true })
-        setDocId(ids[ids.length - 1])
-        select('')
+        pendingPreparation.current = undefined
+        pendingCaseSetup.current = undefined
+        if (caseSetup?.openDraft) caseSetup.openDraft()
+        else {
+          setProc(current => ({ ...current, step: VERIFICATION_STEPS.length, title: titles.get(ids[ids.length - 1]),
+            message: ids.length > 1 ? `全部 ${ids.length} 份文书核验完成` : '核验完成', error: '', done: true }))
+          setDocId(ids[ids.length - 1])
+          select('')
+        }
       } else {
         if (controller.signal.aborted) setError('')
         const importing = Boolean(pendingPreparation.current)
         setProc(current => ({
           ...current,
-          error: importing
+          error: importing && caseSetup
+            ? controller.signal.aborted ? '已停止等待案件文件处理，可重试。' : '案件文件处理未完成，请查看错误提示后重试。'
+            : importing
             ? controller.signal.aborted ? '文书导入已取消，重试将继续导入并核验。' : '文书导入未完成，重试将继续导入并核验。'
             : controller.signal.aborted
               ? `核验已取消，剩余 ${pendingVerification.current.length} 份文书待核验。重试将继续处理剩余文书。`
@@ -587,6 +629,7 @@ function useAppState() {
     assistantRequest, setAssistantRequest, auditAssistantAction,
     updateMaterial, deleteMaterial, markCaseReady, saveParagraph, saveDocument, saveReferences,
     invalidateCaseReview,
+    cloudProfile, setCloudProfile,
     logout: () => { onLeaving(); endSession() },
     projects,
     project,
@@ -628,18 +671,19 @@ function useAppState() {
     applyAssistantRewrite,
     relink,
     proc,
+    onProcessingMounted,
     verify,
     recheckDirty: () => verify(docId, undefined, 'dirty'),
-    retryVerification: () => verify(pendingVerification.current, pendingPreparation.current, pendingScope.current),
+    retryVerification: () => verify(pendingVerification.current, pendingPreparation.current, pendingScope.current, pendingCaseSetup.current),
     cancelVerification: () => abort.current?.abort(),
     exportWord,
-    setCaseIdForUpload: (id: string, documentId: string) => {
+    setCaseIdForUpload: (id: string, documentId: string, openWorkspace = true) => {
       if (id !== project?.id) setAssistantRequest(null)
       setCaseId(id)
       setDocId(documentId)
       select('')
       setFilter('all')
-      setPage('ws')
+      if (openWorkspace) setPage('ws')
     },
   }
 }

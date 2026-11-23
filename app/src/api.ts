@@ -22,6 +22,11 @@ import type {
   WorkspaceSearchResponse,
 } from './types'
 
+type CloudAccountProfile = {
+  user: { email: string; name: string }
+  organization: { id: string; name: string; membershipId: string; role: string }
+}
+
 // 流式响应的大小上限：
 // 完整事件块允许更大，避免大结果被误判为过大而中断；
 // 拼接不完整的残留缓冲仍受较小上限约束，防止异常响应无限占用内存。
@@ -829,18 +834,19 @@ export const api = {
     })
   },
   getCloudProfile() {
-    return requestCloudEnvelope<{
-      user: {
-        email: string
-        name: string
-      }
-      organization: {
-        id: string
-        name: string
-        membershipId: string
-        role: string
-      }
-    }>('/api/account/profile')
+    return requestCloudEnvelope<CloudAccountProfile>('/api/account/profile')
+  },
+  updateCloudProfile(payload: { displayName?: string; organizationName?: string }) {
+    return requestCloudEnvelope<CloudAccountProfile>('/api/account/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+  changeCloudPassword(payload: { currentPassword: string; newPassword: string }) {
+    return requestCloudEnvelope<{ token: string }>('/api/account/password', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
   },
   logoutCloudAccount() {
     return requestCloudEnvelope<{ ok: boolean }>('/api/account/logout', {

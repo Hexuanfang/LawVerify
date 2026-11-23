@@ -1,12 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ArrowRight, BookOpen, BriefcaseBusiness, FileText, House, Pencil, Plus, Scale, Trash2 } from 'lucide-react'
+import { ArrowRight, FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from './components/ui/button'
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from './components/ui/hover-card'
-import { useApp, type LibTab } from './AppContext'
+import { useApp } from './AppContext'
 import { CaseDeleteDialog, type CaseDeleteTarget } from './CaseDeleteDialog'
 import { groupReview } from './reviewOverview'
 
@@ -18,27 +13,23 @@ export function Brand({
   size?: number
 }) {
   return (
-    <div className="brand">
-      <div
+    <span className="brand">
+      <span
         className="seal"
         style={{ width: size, height: size, borderRadius: 6 }}
       >
         <img src="/lawverify-icon.svg" alt="" />
-      </div>
-      <div className="brand-name">{title}</div>
-    </div>
+      </span>
+      <span className="brand-name">{title}</span>
+    </span>
   )
 }
 
 export function BrandHome({ onHome }: { onHome: () => void }) {
   return (
-    <div className="brand-home">
+    <button type="button" className="brand-home" aria-label="LawVerify 首页" title="返回首页" onClick={onHome}>
       <Brand />
-      <span className="brand-home-separator" aria-hidden="true">|</span>
-      <Button variant="ghost" size="icon" className="home-icon-button" aria-label="首页" title="首页" onClick={onHome}>
-        <House size={18} aria-hidden="true" />
-      </Button>
-    </div>
+    </button>
   )
 }
 
@@ -143,48 +134,17 @@ export function Home() {
 
 export function Dock() {
   const app = useApp()
-  if (['proc', 'ws', 'report'].includes(app.page)) return null
-  const open = (tab: LibTab) => {
-    app.setLibTab(tab)
-    app.setPage('lib')
-  }
-  const name = app.workspace?.user.name || '律师'
+  if (app.page !== 'home') return null
+  const name = app.cloudProfile?.user.name || app.workspace?.user.name || '律师'
   return (
     <div className="dock">
-      <HoverCard openDelay={80} closeDelay={150}>
-        <HoverCardTrigger asChild>
-          <button className="dock-ava" onClick={() => open('acct')}>
-            <div className="av">{name[0]}</div>
-            <div>
-              <b>{name}</b>
-              <span>账号与团队</span>
-            </div>
-          </button>
-        </HoverCardTrigger>
-        <HoverCardContent side="top" align="start" className="new-dock-menu">
-          {(
-            [
-              ['law', '法条库', '效力版本 · 可维护', Scale],
-              ['case', '案例库', '四要素 · 可维护', BookOpen],
-              ['proj', '案件库', '在办案件 · 归档', BriefcaseBusiness],
-            ] as const
-          ).map(([key, title, detail, Icon]) => (
-            <button
-              key={key}
-              className={`dock-it source-${key}`}
-              onClick={() => open(key)}
-            >
-              <div className="ic">
-                <Icon size={19} />
-              </div>
-              <div>
-                <b>{title}</b>
-                <span>{detail}</span>
-              </div>
-            </button>
-          ))}
-        </HoverCardContent>
-      </HoverCard>
+      <button type="button" className="dock-ava" onClick={() => {
+        app.setLibTab('acct')
+        app.setPage('lib')
+      }}>
+        <span className="av" aria-hidden="true">{name[0]}</span>
+        <span><b>{name}</b><span>账号设置</span></span>
+      </button>
     </div>
   )
 }

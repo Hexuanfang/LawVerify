@@ -11,6 +11,33 @@ export function isSessionFailure(cause: unknown) {
 }
 
 let endingSession = false
+let rotatingToken: string | null = null
+let profileRevision = 0
+
+export async function saveSessionProfile(payload: Parameters<typeof api.updateCloudProfile>[0]) {
+  const profile = await api.updateCloudProfile(payload)
+  profileRevision += 1
+  return profile
+}
+
+export async function changeSessionPassword(payload: { currentPassword: string; newPassword: string }) {
+  const account = sessionStorage.getItem(ACCOUNT)
+  const auth = sessionStorage.getItem(AUTH)
+  const token = localStorage.getItem(CLOUD)
+  if (!auth || !token || rotatingToken) throw new Error('当前账号无法修改密码，请稍后重试。')
+  rotatingToken = token
+  try {
+    const result = await api.changeCloudPassword(payload)
+    if (account !== sessionStorage.getItem(ACCOUNT) || auth !== sessionStorage.getItem(AUTH)
+      || token !== localStorage.getItem(CLOUD)) return false
+    localStorage.setItem(CLOUD, result.token)
+    void api.getAnalyticsPreference().catch(() => {})
+    return true
+  } finally {
+    rotatingToken = null
+  }
+}
+
 export function endSession(message = '') {
   if (endingSession) return
   endingSession = true
@@ -31,28 +58,34 @@ function leaveLocalSession(message: string) {
   location.reload()
 }
 
-export function useSession(onLeaving: () => void) {
+export function useSession(onLeaving: () => void, onProfile: (profile: Awaited<ReturnType<typeof api.getCloudProfile>>) => void) {
   useEffect(() => {
     const account = sessionStorage.getItem(ACCOUNT)
-    const token = localStorage.getItem(CLOUD)
+    const auth = sessionStorage.getItem(AUTH)
+    let hadCloudToken = Boolean(localStorage.getItem(CLOUD))
     let live = true, checking = false
-    const sameAccount = () => account === sessionStorage.getItem(ACCOUNT) && token === localStorage.getItem(CLOUD)
+    const sameAccount = () => account === sessionStorage.getItem(ACCOUNT) && auth === sessionStorage.getItem(AUTH)
     const check = async () => {
-      if (!sameAccount() || !sessionStorage.getItem(AUTH)) {
+      const token = localStorage.getItem(CLOUD)
+      if (!sameAccount() || !auth || (hadCloudToken && !token)) {
         onLeaving()
         leaveLocalSession('登录账号已变化，请重新登录。')
         return
       }
-      if (!token || checking) return
+      hadCloudToken ||= Boolean(token)
+      if (!token || token === rotatingToken || checking) return
+      const isCurrent = () => live && sameAccount() && token === localStorage.getItem(CLOUD)
+      const revision = profileRevision
       checking = true
       try {
         const profile = await api.getCloudProfile()
-        if (live && sameAccount() && profile.user.email.trim().toLowerCase() !== account?.trim().toLowerCase()) {
+        if (!isCurrent()) return
+        if (profile.user.email.trim().toLowerCase() !== account?.trim().toLowerCase()) {
           onLeaving(); leaveLocalSession('云端账号与当前工作区不一致，请重新登录。')
-        }
+        } else if (revision === profileRevision) onProfile(profile)
       } catch (cause) {
         // 断网不退出；只处理服务端明确返回的认证失效。
-        if (live && sameAccount() && isSessionFailure(cause)) {
+        if (isCurrent() && token !== rotatingToken && isSessionFailure(cause)) {
           onLeaving()
           endSession(cause instanceof Error ? cause.message : '登录已失效，请重新登录。')
         }
@@ -64,5 +97,5 @@ export function useSession(onLeaving: () => void) {
     window.addEventListener('focus', focus)
     window.addEventListener('storage', focus)
     return () => { live = false; clearInterval(timer); window.removeEventListener('focus', focus); window.removeEventListener('storage', focus) }
-  }, [onLeaving])
+  }, [onLeaving, onProfile])
 }

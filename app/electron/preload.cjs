@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('lawVerifyDesktop', {
     return () => ipcRenderer.removeListener('lawverify:service-status', handler)
   },
   linkCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-link', payload),
+  pickCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-pick', payload),
+  attachCaseDirectory: (payload) => ipcRenderer.invoke('lawverify:case-directories-attach', payload),
   onCaseDirectoryBatch: (listener) => {
     if (typeof listener !== 'function') return () => {}
     const handler = (_event, payload) => listener(payload)

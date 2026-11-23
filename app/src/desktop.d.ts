@@ -32,6 +32,8 @@ declare global {
       getServiceStatus?: () => Promise<{ state: string }>
       onServiceStatus?: (listener: (payload: { state: string }) => void) => () => void
       linkCaseDirectory?: (payload: { account: string; caseId: string; requestId?: string }) => Promise<CaseDirectoryManifest | null>
+      pickCaseDirectory?: (payload: { account: string }) => Promise<{ id: string; name: string } | null>
+      attachCaseDirectory?: (payload: { account: string; caseId: string; selectionId: string }) => Promise<CaseDirectoryManifest>
       onCaseDirectoryBatch?: (listener: (batch: CaseDirectoryBatch) => void) => () => void
       scanCaseDirectories?: (payload: { account: string; caseId: string }) => Promise<CaseDirectoryManifest[]>
       clearCaseDirectories?: (payload: { account: string; caseId: string }) => Promise<{ ok: boolean }>

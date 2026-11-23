@@ -5,6 +5,37 @@ const os = require('node:os')
 const path = require('node:path')
 const { registerCaseDirectories } = require('./case-directories.cjs')
 
+test('new case folder selection is private until attached to a created case', async t => {
+  const root = await fs.mkdtemp(path.join(__dirname, '../tmp/directory-setup-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const material = path.join(root, 'materials')
+  await fs.mkdir(material)
+  await fs.writeFile(path.join(material, 'ignored.exe'), 'not evidence')
+  const handlers = new Map()
+  registerCaseDirectories({
+    app: { getPath: () => root },
+    ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+    dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [material] }) },
+    BrowserWindow: { fromWebContents: () => null },
+  })
+  const sender = {}
+  const invoke = (name, payload, owner = sender) => handlers.get(`lawverify:case-directories-${name}`)?.({ sender: owner }, payload)
+  const scope = { account: 'owner@test.invalid', caseId: 'new-case' }
+  await assert.rejects(invoke('pick', { account: scope.account }), /没有可导入的案件原材料/)
+  await fs.writeFile(path.join(material, 'evidence.txt'), 'original')
+  const selected = await invoke('pick', { account: scope.account })
+  assert.equal(selected?.name, 'materials', 'picker should return a pending folder')
+  assert.equal(selected.path, undefined)
+  assert.deepEqual(await invoke('scan', scope), [])
+  await assert.rejects(invoke('attach', { ...scope, selectionId: selected.id }, {}), /未授权/)
+  await assert.rejects(invoke('attach', { ...scope, account: 'other@test.invalid', selectionId: selected.id }), /未授权/)
+  const linked = await invoke('attach', { ...scope, selectionId: selected.id })
+  assert.equal(linked.files[0].fileName, 'evidence.txt')
+  assert.equal((await invoke('attach', { ...scope, selectionId: selected.id })).id, linked.id)
+  await assert.rejects(invoke('attach', { ...scope, caseId: 'other-case', selectionId: selected.id }), /未授权/)
+  assert.equal((await invoke('scan', scope))[0].id, linked.id)
+})
+
 test('folder picker opens without waiting for directory configuration or reading materials', async () => {
   const readFile = fs.readFile
   let finishConfig

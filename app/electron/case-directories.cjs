@@ -9,6 +9,7 @@ const MAX_FILE_BYTES = 512 * 1024 * 1024
 
 function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
   const configPath = path.join(app.getPath('userData'), 'case-directories.json')
+  const selections = new WeakMap()
   let config = {}
   let pendingSave = Promise.resolve()
   const ready = fs.readFile(configPath, 'utf8').then(raw => { config = JSON.parse(raw) }).catch(error => {
@@ -19,6 +20,13 @@ function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
       throw new Error('请先登录并选择案件。')
     }
     return JSON.stringify([account.trim().toLowerCase(), caseId])
+  }
+  const chooseDirectory = async event => {
+    const selected = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      properties: ['openDirectory'], title: '链接案件材料目录',
+    })
+    if (selected.canceled) return null
+    return fs.realpath(selected.filePaths[0])
   }
   const save = () => {
     const raw = JSON.stringify(config)
@@ -74,14 +82,45 @@ function registerCaseDirectories({ app, ipcMain, dialog, BrowserWindow }) {
     publish(true)
     return { id: directory.id, name: directory.name, files }
   }
+  ipcMain.handle('lawverify:case-directories-pick', async (event, { account }) => {
+    const owner = keyFor({ account, caseId: 'pending' })
+    const realPath = await chooseDirectory(event)
+    if (!realPath) return null
+    let pending = selections.get(event.sender)
+    if (!pending) selections.set(event.sender, pending = new Map())
+    const existing = [...pending.values()].find(item => item.owner === owner && item.path.toLowerCase() === realPath.toLowerCase())
+    const selected = existing ?? { id: randomUUID(), owner, name: path.basename(realPath), path: realPath }
+    if (!(await scan(selected)).files.length) throw new Error('文件夹内没有可导入的案件原材料。')
+    if (!existing) {
+      if (pending.size >= 128) pending.delete(pending.keys().next().value)
+      pending.set(selected.id, selected)
+    }
+    return { id: selected.id, name: selected.name }
+  })
+  ipcMain.handle('lawverify:case-directories-attach', async (event, payload) => {
+    await ready
+    const key = keyFor(payload)
+    const pending = selections.get(event.sender)
+    const selected = pending?.get(payload.selectionId)
+    const directories = config[key] ?? []
+    let directory = directories.find(item => item.id === payload.selectionId)
+    if (selected?.owner === keyFor({ account: payload.account, caseId: 'pending' }) && (!selected.caseKey || selected.caseKey === key)) {
+      selected.caseKey = key
+      if (!directory) {
+        directory = { id: selected.id, name: selected.name, path: selected.path }
+        config[key] = [...directories, directory]
+      }
+      await save()
+      pending.delete(selected.id)
+    }
+    if (!directory) throw new Error('材料目录未授权，请重新选择。')
+    return scan(directory)
+  })
   ipcMain.handle('lawverify:case-directories-link', async (event, payload) => {
     const key = keyFor(payload)
-    const selected = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-      properties: ['openDirectory'], title: '链接案件材料目录',
-    })
-    if (selected.canceled) return null
+    const realPath = await chooseDirectory(event)
+    if (!realPath) return null
     await ready
-    const realPath = await fs.realpath(selected.filePaths[0])
     const directories = config[key] ?? []
     let directory = directories.find(item => item.path.toLowerCase() === realPath.toLowerCase())
     if (!directory) {

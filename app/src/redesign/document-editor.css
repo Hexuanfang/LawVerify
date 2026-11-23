@@ -14,7 +14,6 @@
 .document-editor-notice pre { white-space: pre-wrap; max-height: 130px; overflow: auto; font: inherit; padding: 10px; background: var(--surface); }
 .document-editor-canvas { flex: 1; min-height: 0; overflow: auto; padding: 24px 12px 40px; background: #f0ece4; }
 .doc-paper.document-editor-paper { width: 100%; max-width: 780px; min-height: 100%; margin: 0 auto; padding: 0; background: #fffefb; border: 1px solid #ded8cc; box-shadow: 0 3px 16px #332d220c; }
-.is-editing-document .document-editor-paper { outline: 1px dashed var(--c-l1); outline-offset: 4px; }
 .whole-document-content { min-height: 800px; padding: 48px clamp(24px, 4vw, 52px); font-family: var(--font-doc); font-size: 16px; line-height: 1.9; outline: none; overflow-wrap: anywhere; }
 .whole-document-content p { margin: 0 0 12px; white-space: pre-wrap; }
 .whole-document-content h1 { font-size: 26px; font-weight: 600; line-height: 1.5; margin: 0 0 22px; }
@@ -29,9 +28,6 @@
 .whole-document-content th { background: #f3efe6; font-weight: 600; }
 .whole-document-content img { max-width: 100%; height: auto; }
 .whole-document-content .mk { cursor: text; }
-.whole-document-content .declaration-editor-replaced { display: none; }
-.whole-document-content .declaration-editor-mark { outline: 2px solid var(--brand-ink); outline-offset: 2px; white-space: pre-wrap; }
-.whole-document-content .declaration-editor-mark:empty::before { content: '\00a0'; }
 .document-selection-actions { position: fixed; z-index: 8; transform: translate(-50%, -100%); display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-sm); white-space: nowrap; }
 .document-selection-actions button { height: 28px; padding: 0 8px; font-size: 12px; }
 .document-editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 7px 14px; border-top: 1px solid var(--line); background: var(--surface); font-size: 11px; color: var(--ink-3); flex-shrink: 0; }

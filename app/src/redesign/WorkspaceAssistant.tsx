@@ -5,7 +5,6 @@ import type { EvidenceLink, ParagraphReference, RoleType } from '../types'
 import type { AnalysisOutput } from '../../../server/src/assistant/analysis'
 import type { RetrievalCard, RetrievalResult } from '../../../server/src/assistant/retrieval'
 import { useApp } from './AppContext'
-import { Brand } from './Home'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from './components/ui/dialog'
 import { Textarea } from './components/ui/textarea'
@@ -67,7 +66,7 @@ const draftStarters: Partial<Record<RoleType, string>> = {
   other: '起草一份代理词',
 }
 
-export function WorkspaceAssistant() {
+export function WorkspaceAssistant({ visible }: { visible: boolean }) {
   const app = useApp()
   const { setAssistantRequest } = app
   const request = app.assistantRequest!
@@ -127,11 +126,12 @@ export function WorkspaceAssistant() {
 
   useEffect(() => {
     active.current = true
-    input.current?.focus({ preventScroll: true })
+    if (!document.activeElement?.closest('.workspace-right-tablist')) input.current?.focus({ preventScroll: true })
     return () => { active.current = false; controller.current?.abort() }
   }, [])
 
   useEffect(() => {
+    if (!visible) return
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || menuOpen
         || document.querySelector('[data-state="open"][role="dialog"]')) return
@@ -140,7 +140,7 @@ export function WorkspaceAssistant() {
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [menuOpen, setAssistantRequest])
+  }, [visible, menuOpen, setAssistantRequest])
 
   useEffect(() => {
     if (!menuOpen || !selectedMoreMode) return
@@ -155,7 +155,7 @@ export function WorkspaceAssistant() {
   useEffect(() => {
     const body = scroll.current
     if (body) body.scrollTop = body.scrollHeight
-  }, [turn, notice, waiting, conversation.messageCount, documents.paragraphCount])
+  }, [visible, turn, notice, waiting, conversation.messageCount, documents.paragraphCount])
 
   const search = async (skill: Exclude<Skill, 'draft' | 'rewrite' | 'case-report'>, query: string) => {
     if (controller.current || app.busy) return
@@ -302,7 +302,6 @@ export function WorkspaceAssistant() {
 
   return <section className={'workspace-ai-panel' + (expanded ? ' is-expanded' : '')} aria-label="AI 助手" aria-busy={waiting}>
     <header className="workspace-ai-header">
-      <Brand title="AI 助手" size={34} />
       <div className="workspace-ai-header-actions">
         <Button variant="ghost" size="icon" aria-pressed={expanded}
           aria-label={expanded ? '还原 AI 助手' : '加宽 AI 助手'} title={expanded ? '还原 AI 助手' : '加宽 AI 助手'}

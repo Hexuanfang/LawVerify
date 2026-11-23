@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, RefreshCw, Sparkles } from 'lucide-react'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import type { Evidence } from '../types'
 import type { AnalysisOutput } from '../../../server/src/assistant/analysis'
@@ -97,7 +97,6 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
   const position = folder?.agent?.position
   const memory = workspace.caseContextMemories.find(item => item.caseId === project.id)
   const task = folder?.agent?.task
-  const running = task?.status === 'queued' || task?.status === 'processing'
   const noteKey = caseNoteKey(workspace.user.id, project.id)
   const [note, setNote] = useState(() => {
     try { return localStorage.getItem(noteKey) ?? '' } catch { return '' }
@@ -133,15 +132,8 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
       <header className="case-memory-heading">
         <div><p>案件记忆{memory && ` · 第 ${memory.version} 版 · ${new Date(memory.updatedAt).toLocaleString('zh-CN')}`}</p><h1>{project.name}</h1>
           <span>{[basics?.court || folder?.description, basics?.caseNumber, basics?.cause].filter(Boolean).join(' ｜ ')}</span></div>
-        <div className="case-memory-actions">
-          <Button variant="outline" disabled={!folder} onClick={() => app.setForm({ tab: 'proj', id: project.id })}>编辑案件信息</Button>
-          <Button variant="outline" disabled={app.busy || running || !project.mats.length}
-            onClick={() => void app.run(() => api.retryCaseAgent(project.id, folder?.agent?.autoAnalyze !== false), '已提交案件梳理')}>
-            <RefreshCw size={14} />{running ? '正在梳理' : '重新梳理案件'}
-          </Button>
-        </div>
       </header>
-      {task?.status === 'failed' && <p role="alert" className="text-fail">{task.error || '案件记忆梳理失败，请重试。'}</p>}
+      {task?.status === 'failed' && <p role="alert" className="text-fail">{task.error || '案件记忆梳理失败。'}</p>}
       <Tabs value={view} onValueChange={setView} className="case-memory-tabs">
         <TabsList aria-label="案件记忆分区">
           {views.map(([id, label]) => <TabsTrigger value={id} key={id} aria-label={id === 'risks' && todo.length ? `${label}，${todo.length} 项` : label}>

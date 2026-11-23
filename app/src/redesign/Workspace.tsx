@@ -1,13 +1,14 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { CheckCode } from '../../../server/src/intelligence/verification/protocol'
+import type { CheckCode, CheckOutcome } from '../../../server/src/intelligence/verification/protocol'
 import profile from '../../../server/src/intelligence/verification/doc-element-profile.json'
 import { declarationEditRange } from '../../../server/src/intelligence/verification/review-status.ts'
-import { Check, ChevronDown, PanelLeft, PanelRight, Pencil, Sparkles } from 'lucide-react'
+import { ChevronDown, PanelLeft, PanelRight, Sparkles } from 'lucide-react'
 import { api } from '../api'
+import walnut from '../features/auth/walnut.jpg'
 import { whenUiIdle } from '../redesign-loader'
 import { Button } from './components/ui/button'
 import { Textarea } from './components/ui/textarea'
-import { Tabs, TabsList, TabsTrigger } from './components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,12 +50,13 @@ function Topbar({ memory, onMemory }: { memory: boolean; onMemory: () => void })
     const label = side === 'plaintiff' ? '原告' : '被告'
     return [`${label}${ours ? '（我方）' : ''}${name ? `：${name}` : ''}`]
   })
-  const identity = [...(parties.length ? parties : (memoryRecord?.parties ?? []).slice(0, 2)), basics?.caseNumber, basics?.court || folder?.description]
-    .filter(Boolean).join(' ｜ ')
+  const identity = (memory ? [basics?.plaintiff?.trim(), basics?.defendant?.trim()] : [
+    ...(parties.length ? parties : (memoryRecord?.parties ?? []).slice(0, 2)), basics?.caseNumber, basics?.court || folder?.description,
+  ]).filter(Boolean).join(' ｜ ')
   return (
-    <div className="topbar workspace-topbar">
+    <div className={`topbar workspace-topbar${memory ? ' workspace-memory-topbar' : ''}`}>
       <BrandHome onHome={async () => { if (await app.flushDocument()) app.setPage('home') }} />
-      <DropdownMenu>
+      {!memory && <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="case-btn" aria-label={`切换案件 · ${project.name}`}>
             <b>{project.name}</b><ChevronDown size={14} />
@@ -70,18 +72,16 @@ function Topbar({ memory, onMemory }: { memory: boolean; onMemory: () => void })
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>}
       {identity && <span className="workspace-case-identity" title={identity}>{identity}</span>}
-      <Button className="btn btn-gh btn-sm workspace-report-button" disabled={!app.certificate || app.busy}
-        onClick={async () => { if (await app.prepareDocument()) { app.setAssistantRequest(null); app.setPage('report') } }}>导出文书</Button>
+      {!memory && <Button className="btn btn-gh btn-sm workspace-report-button" disabled={!app.certificate || app.busy}
+        onClick={async () => { if (await app.prepareDocument()) { app.setAssistantRequest(null); app.setPage('report') } }}>导出文书</Button>}
       <Button className="btn btn-pri btn-sm" disabled={app.busy} onClick={onMemory}>{memory ? '返回工作台' : '案件记忆'}</Button>
     </div>
   )
 }
 
-function DocumentHeader({ onAssistant, selectedQuote, paneControls, editing, onEdit, onLayout }: {
-  onAssistant: () => void; selectedQuote: string; paneControls: ReactNode; editing: boolean; onEdit: () => void; onLayout: () => void
-}) {
+function DocumentHeader({ paneControls }: { paneControls: ReactNode }) {
   const app = useApp()
   const project = app.project!
   const certificate = app.certificate
@@ -91,7 +91,7 @@ function DocumentHeader({ onAssistant, selectedQuote, paneControls, editing, onE
       <span className="workspace-doc-count">文书 {project.docs.length}</span>
       <Tabs value={app.docId} activationMode="manual" className="doc-switch"
         onValueChange={async id => { if (await app.flushDocument()) app.switchDocument(id) }}>
-        <TabsList className="new-doc-tabs" aria-label="案件文书">
+        <TabsList className="new-doc-tabs" variant="line" aria-label="案件文书">
           {project.docs.map(id => {
             const badge = documentBadge(project.els[id] ?? [])
             return <TabsTrigger key={id} className="doc-tab" value={id}>
@@ -105,9 +105,6 @@ function DocumentHeader({ onAssistant, selectedQuote, paneControls, editing, onE
           })}
         </TabsList>
       </Tabs>
-      <Button className="btn btn-gh btn-sm" disabled={app.busy} aria-expanded={Boolean(app.assistantRequest)} onClick={onAssistant}>
-        <Sparkles size={14} />{selectedQuote && !app.assistantRequest ? '问 AI' : 'AI 助手'}
-      </Button>
     </div>
     {certificate && <div className="ctool workspace-document-heading">
       <h1>{certificate.title}</h1>
@@ -124,20 +121,12 @@ function DocumentHeader({ onAssistant, selectedQuote, paneControls, editing, onE
             <DropdownMenuItem key={key} onSelect={() => { app.select(''); app.setFilter(key) }}>{app.filter === key ? '✓ ' : ''}{label}</DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button variant="outline" size="sm" className="workspace-edit-toggle" aria-pressed={editing} disabled={app.busy} onClick={onEdit}>
-        {editing ? <Check size={14} /> : <Pencil size={14} />}{editing ? '完成编辑' : '在线编辑'}
-      </Button>
-      {!editing && <Button variant="ghost" size="sm" disabled={app.busy} onClick={onLayout}>整篇排版</Button>}
       {app.certificate?.verification?.dirty && app.certificate.linkageInputKey && <Button className="btn btn-gh btn-sm" disabled={app.busy}
         onClick={async () => { if (await app.prepareDocument()) void app.recheckDirty() }}>局部重核</Button>}
       <Button className="btn btn-pri btn-sm" disabled={app.busy}
         onClick={async () => { if (await app.prepareDocument()) void app.verify() }}>{app.certificate?.verification?.revision ? '全文重核' : 'AI 核验'}</Button>
     </div>}
   </>
-}
-
-function focusDocument() {
-  document.querySelector<HTMLElement>('#pg-ws .whole-document-content')?.focus()
 }
 
 const selectionActions = [
@@ -161,7 +150,15 @@ function readDocumentSelection(container: HTMLElement | null, certificate?: Cert
 
 type AssistantSelection = Pick<NonNullable<ReturnType<typeof readDocumentSelection>>, 'text' | 'declarationIds' | 'anchor'>
 
-function LinkageCard({ element }: { element: ReviewElement }) {
+const highlightStatus = {
+  pass: '存在支持', warn: '预警', fail: '不通过', miss: '缺少出处', note: '已标注', pending: '待核验',
+}
+const highlightCheckCodes = ['A1', 'A2', 'A3', 'A4', 'A5'] as const
+const highlightCheckStatus: Record<CheckOutcome, string> = {
+  pass: '通过', warn: '预警', fail: '不通过', miss: '缺少出处', pending: '未核实', 'not-applicable': '不适用',
+}
+
+function LinkageCard({ element, compact }: { element: ReviewElement; compact: boolean }) {
   const app = useApp()
   const [editing, setEditing] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
@@ -191,7 +188,7 @@ function LinkageCard({ element }: { element: ReviewElement }) {
     element.sentenceIndex !== undefined ? `第 ${element.sentenceIndex + 1} 句` : undefined].filter(Boolean).join(' · ')
   const category = profile.elementTypes[element.type as keyof typeof profile.elementTypes] ?? element.type
   const differences = finding?.differences?.length ? finding.differences
-    : (finding || !element.declaration && !certificate?.linkageStale) && element.verdict === 'fail' && element.sources[0]?.quote
+    : !compact && (finding || !element.declaration && !certificate?.linkageStale) && element.verdict === 'fail' && element.sources[0]?.quote
       ? [{ field: '原文', document: element.quote, source: element.sources[0].quote }] : []
   const dependencies = certificate && element.declaration?.dependencies?.length
     ? verificationImpacts(certificate, app.elements).filter(item => item.target.id === element.id) : []
@@ -209,8 +206,64 @@ function LinkageCard({ element }: { element: ReviewElement }) {
     window.addEventListener('lv-operation', handler)
     return () => window.removeEventListener('lv-operation', handler)
   }, [app, element])
+  const editForm = <div className="rc-q">
+    <Textarea autoFocus={compact} value={text} onChange={event => setText(event.target.value)} aria-label="修改声明" />
+    <div className="inline-actions">
+      <Button className="op pri" disabled={app.busy} onClick={async () => {
+        if (await app.edit(element, text)) {
+          setEditing(false)
+          if (element.declaration) void app.recheckDirty()
+        }
+      }}>保存并局部重核</Button>
+      <Button className="op" disabled={app.busy} onClick={() => {
+        setEditing(false)
+        setText(element.quote)
+      }}>取消</Button>
+    </div>
+  </div>
+  const confirmation = pendingEdit && <div className="advise y" role="group" aria-label="确认修改声明">
+    <p>{pendingEdit === 'adopt'
+      ? compact ? '确认采用这条修改建议，保存后进入待重核。' : '确认替换上方原文，保存后进入待重核。'
+      : `确认从正文移除「${element.quote}」，原文和操作将保留在报告中。`}</p>
+    {compact && suggestion && <p>{suggestion.replacement}</p>}
+    <Button className="op pri" disabled={app.busy} onClick={async () => {
+      if (await app.applyDeclarationEdit(element, pendingEdit)) setPendingEdit(null)
+    }}>{pendingEdit === 'adopt' ? '确认替换' : '确认删除'}</Button>
+    <Button className="op" disabled={app.busy} onClick={() => setPendingEdit(null)}>取消</Button>
+  </div>
+  const sources = element.sources.length ? <ul className="review-detail-sources">{element.sources.map((source, index) => {
+    const url = source.url ?? finding?.sources.find(item => item.tier === source.st && item.id === source.targetId
+      && (item.locator ?? '') === source.loc && (item.quote ?? '') === source.quote)?.url
+    return <li key={`${source.targetId}-${index}`}>
+      <button type="button" className="rc-loc" onClick={() => app.setDrawer(source)}>
+        <span className={`src-dot ${source.st}`} />
+        <span><b className="nm">{source.name}</b>{source.loc && <small>{source.loc}</small>}</span>
+        <span className="source-preview-link">预览 →</span>
+      </button>
+      {source.quote && <blockquote>{source.quote}</blockquote>}
+      {url && /^https?:\/\//iu.test(url) && <a href={url} target="_blank" rel="noreferrer">打开来源 ↗</a>}
+    </li>
+  })}</ul> : <p className="review-view-empty">{element.verdict === 'pending' ? '此声明待核验，暂无可回查出处。' : '暂无可回查出处。'}</p>
   return (
-    <div className={`rc st-${sk}`}>
+    <div className={`rc st-${sk}${compact ? ' review-highlight-result' : ''}`}>
+      {compact ? <>
+        <section className="review-highlight-conclusion" aria-label="核验结论">
+          <span className={`review-highlight-status text-${element.verdict}`}>{highlightStatus[element.verdict]}</span>
+          <p>{element.reason}</p>
+          {suggestion && <p className="review-highlight-suggestion">修改建议 · {suggestion.replacement}</p>}
+        </section>
+        <section className="review-highlight-sources" aria-label="出处">
+          <h3>出处</h3>
+          {sources}
+        </section>
+        {!editing && !pendingEdit && <div className="ops">
+          <Button className={`op${suggestion ? '' : ' pri'}`} disabled={app.busy} onClick={() => setEditing(true)}>修改声明</Button>
+          {suggestion && <Button className="op pri" disabled={app.busy} onClick={() => setPendingEdit('adopt')}>采纳修改建议</Button>}
+          <Button className="op" disabled={app.busy} onClick={() => app.setReferenceTarget(element)}>关联出处</Button>
+        </div>}
+        {editing && editForm}
+        {confirmation}
+      </> : <>
       <div className="rc-h">
         <span className={`src-dot ${element.src}`} />
         <span className="rc-type">
@@ -225,43 +278,7 @@ function LinkageCard({ element }: { element: ReviewElement }) {
           {STATUS_NAMES[element.verdict]}
         </span>
       </div>
-      <div className="rc-q">
-        {editing ? (
-          <>
-            <Textarea
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              aria-label="修改声明"
-            />
-            <div className="inline-actions">
-              <Button
-                className="op pri"
-                disabled={app.busy}
-                onClick={async () => {
-                  if (await app.edit(element, text)) {
-                    setEditing(false)
-                    if (element.declaration) void app.recheckDirty()
-                  }
-                }}
-              >
-                保存并局部重核
-              </Button>
-              <Button
-                className="op"
-                disabled={app.busy}
-                onClick={() => {
-                  setEditing(false)
-                  setText(element.quote)
-                }}
-              >
-                取消
-              </Button>
-            </div>
-          </>
-        ) : (
-          element.quote
-        )}
-      </div>
+      {editing ? editForm : <div className="rc-q">{element.quote}</div>}
       <div className="rc-reason">
         <b>核验结论 · </b>
         {element.reason}
@@ -273,8 +290,13 @@ function LinkageCard({ element }: { element: ReviewElement }) {
         })}><Sparkles size={14} />问 AI</Button>
         {!!caseRows.length && <CaseReportButton rows={caseRows}>导出本句案例</CaseReportButton>}
       </div>
+      </>}
       <details className="review-declaration-details" open>
-        <summary>核验详情 <small>{location}</small></summary>
+        <summary>核验详情{!compact && <small>{location}</small>}</summary>
+        {compact && <>
+          <p className="review-highlight-location">{category} · {location}</p>
+          <blockquote className="rc-q">{element.quote}</blockquote>
+        </>}
         {element.conf !== null && calibration && <>
             <div className="conf">
               <span className="mat-description">结论置信度</span>
@@ -290,20 +312,7 @@ function LinkageCard({ element }: { element: ReviewElement }) {
               <p>校准版本 {calibration.version}</p>
             </details>
           </>}
-        <h3>可回查出处</h3>
-        {element.sources.length ? <ul className="review-detail-sources">{element.sources.map((source, index) => {
-          const url = source.url ?? finding?.sources.find(item => item.tier === source.st && item.id === source.targetId
-            && (item.locator ?? '') === source.loc && (item.quote ?? '') === source.quote)?.url
-          return <li key={`${source.targetId}-${index}`}>
-            <button type="button" className="rc-loc" onClick={() => app.setDrawer(source)}>
-              <span className={`src-dot ${source.st}`} />
-              <span><b className="nm">{source.name}</b>{source.loc && <small>{source.loc}</small>}</span>
-              <span className="source-preview-link">预览 →</span>
-            </button>
-            {source.quote && <blockquote>{source.quote}</blockquote>}
-            {url && /^https?:\/\//iu.test(url) && <a href={url} target="_blank" rel="noreferrer">打开来源 ↗</a>}
-          </li>
-        })}</ul> : <p className="review-view-empty">{element.verdict === 'pending' ? '此声明待核验，暂无可回查出处。' : '暂无可回查出处。'}</p>}
+        {!compact && <><h3>可回查出处</h3>{sources}</>}
         {differences.length > 0 && <table className="review-detail-differences">
           <caption>{finding?.differences?.length ? '核验差异' : '原文对照'}</caption>
           <thead><tr><th scope="col">核对项</th><th scope="col">文书声明</th><th scope="col">出处原文</th></tr></thead>
@@ -315,10 +324,19 @@ function LinkageCard({ element }: { element: ReviewElement }) {
           <h3>关联声明</h3>
           {dependencies.map(({ check, sourceId, source, reason }) => <div key={`${sourceId}:${check}`}>
             <p>{profile.dimensionChecks[check]} · {reason}</p>
-            {source && <Button variant="ghost" size="sm" onClick={() => { app.setFilter('all'); app.select(source.id) }}>查看关联声明</Button>}
+            {!compact && source && <Button variant="ghost" size="sm" onClick={() => { app.setFilter('all'); app.select(source.id) }}>查看关联声明</Button>}
           </div>)}
         </div>}
-        {checks.length > 0 && <fieldset className="declaration-checks">
+        {compact ? <ul className="review-highlight-checks" aria-label="核验维度">
+          {highlightCheckCodes.map(code => {
+            const check = finding?.checks?.[code]
+            const outcome = check?.outcome ?? 'pending'
+            return <li key={code} data-outcome={outcome} title={check?.reason}>
+              {profile.dimensionChecks[code]} · {highlightCheckStatus[outcome]}
+              {check?.reason && <span className="sr-only">，{check.reason}</span>}
+            </li>
+          })}
+        </ul> : checks.length > 0 && <fieldset className="declaration-checks">
           <legend>逐项复核</legend>
           {checks.map(({ code, check, outcome }) => <label key={code}>
             <input type="checkbox" checked={checked.includes(code)} disabled={app.busy || confirmed || !element.domainReviewable}
@@ -328,6 +346,7 @@ function LinkageCard({ element }: { element: ReviewElement }) {
         </fieldset>}
         {!finding && <p className="review-view-empty">暂无当前版本的逐项核验结果。</p>}
       </details>
+      {!compact && <>
       <div className={`advise ${sk}`}>
         {element.verdict === 'miss'
           ? '请补充案件原材料，或手动重新关联出处。'
@@ -348,13 +367,7 @@ function LinkageCard({ element }: { element: ReviewElement }) {
           <Button className="op" disabled={app.busy} onClick={async () => { if (await app.declineSuggestion(element)) setDeclined(true) }}>拒绝建议</Button>
         </div>}
       </div>}
-      {pendingEdit && <div className="advise y" role="group" aria-label="确认修改声明">
-        <p>{pendingEdit === 'adopt' ? '确认替换上方原文，保存后进入待重核。' : `确认从正文移除「${element.quote}」，原文和操作将保留在报告中。`}</p>
-        <Button className="op pri" disabled={app.busy} onClick={async () => {
-          if (await app.applyDeclarationEdit(element, pendingEdit)) setPendingEdit(null)
-        }}>{pendingEdit === 'adopt' ? '确认替换' : '确认删除'}</Button>
-        <Button className="op" disabled={app.busy} onClick={() => setPendingEdit(null)}>取消</Button>
-      </div>}
+      {confirmation}
       {element.declaration && element.original.note && element.original.note !== declarationNote && <div className="advise g">
         <b>历史整段批注：</b>{element.original.note}
       </div>}
@@ -436,6 +449,7 @@ function LinkageCard({ element }: { element: ReviewElement }) {
           <span>{item.account} · {item.msg}</span>
         </div>)}
       </details>}
+      </>}
     </div>
   )
 }
@@ -445,8 +459,8 @@ export function Workspace() {
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 880px)').matches)
   const [materialsOpen, setMaterialsOpen] = useState<boolean>()
   const [reviewPane, setReviewPane] = useState<{ selected: string; open?: boolean }>({ selected: '' })
+  const [highlightSelection, setHighlightSelection] = useState<{ documentId: string; id: string }>()
   const [memoryCase, setMemoryCase] = useState<string | null>(null)
-  const [editingDocument, setEditingDocument] = useState<{ id: string; mode: 'declarations' | 'document' }>()
   const [documentSelection, setDocumentSelection] = useState<AssistantSelection & { documentId: string; left?: number; top?: number }>()
   const [contextSelection, setContextSelection] = useState<AssistantSelection>()
   const main = useRef<HTMLElement>(null)
@@ -455,15 +469,17 @@ export function Workspace() {
   const todoTrigger = useRef<HTMLButtonElement>(null)
   const assistantWasOpen = useRef(false)
   const { busy, certificate, element, setAssistantRequest, assistantRequest } = app
+  const [backgroundAssistantRequest, setBackgroundAssistantRequest] = useState<typeof assistantRequest>(null)
   const caseId = app.project?.id
   const documentId = app.docId
-  const editing = certificate && editingDocument?.id === documentId ? editingDocument.mode : ''
   const selection = documentSelection?.documentId === documentId ? documentSelection : undefined
-  const selectedQuote = selection?.text ?? ''
   const memory = Boolean(caseId && memoryCase === caseId)
   const selected = element?.id ?? ''
-  const rightOpen = !narrow || Boolean(selected && selected !== reviewPane.selected) || reviewPane.open === true
+  const compactReview = Boolean(selected && highlightSelection?.documentId === documentId && highlightSelection.id === selected)
+  const assistantTab = Boolean(assistantRequest && assistantRequest !== backgroundAssistantRequest)
+  const rightOpen = !narrow || assistantTab || Boolean(selected && selected !== reviewPane.selected) || reviewPane.open === true
   const leftOpen = !narrow || (materialsOpen && !rightOpen)
+  const showHighlightDetail = compactReview && rightOpen && !assistantTab
 
   useEffect(() => whenUiIdle(() => { void Promise.all([loadCaseMemory(), loadWorkspaceAssistant()]).catch(() => {}) }), [])
   useEffect(() => {
@@ -518,31 +534,28 @@ export function Workspace() {
       if (key === 'j' && !event.shiftKey) {
         event.preventDefault()
         setMemoryCase(null)
-        setAssistantRequest(assistantRequest && !memory ? null : { mode: 'case', quote: selection?.text,
-          anchor: selection?.anchor, declarationIds: selection?.declarationIds })
-      }
-      if (key === 'e' && event.shiftKey && certificate && !memory) {
-        event.preventDefault()
-        if (editing) return
-        setEditingDocument({ id: certificate.id, mode: 'declarations' })
-        focusDocument()
+        if (assistantTab && !memory) setAssistantRequest(null)
+        else if (assistantRequest && !selection) setBackgroundAssistantRequest(null)
+        else setAssistantRequest({ mode: 'case', quote: selection?.text, anchor: selection?.anchor, declarationIds: selection?.declarationIds })
       }
     }
     window.addEventListener('keydown', shortcuts)
     return () => window.removeEventListener('keydown', shortcuts)
-  }, [busy, certificate, selection, assistantRequest, setAssistantRequest, memory, editing])
+  }, [busy, selection, assistantRequest, assistantTab, setAssistantRequest, memory])
   if (!app.project) return null
   const ask = (prompt?: string, selected?: AssistantSelection, mode: (typeof selectionActions)[number][0] = 'case') => {
     setMemoryCase(null)
     setAssistantRequest({ mode, prompt: prompt ?? selected?.text, quote: selected?.text, anchor: selected?.anchor, declarationIds: selected?.declarationIds })
     if (selected) window.getSelection()?.removeAllRanges()
   }
-  const enterEdit = (mode: 'declarations' | 'document' = 'declarations') => {
-    setEditingDocument({ id: documentId, mode })
-    focusDocument()
+  const openAssistant = () => {
+    if (assistantRequest) setBackgroundAssistantRequest(null)
+    else ask()
   }
+  const assistantIcon = <img className="workspace-assistant-icon" src={walnut} alt="" />
   const openReview = (id: string, trigger: HTMLButtonElement) => {
     todoTrigger.current = trigger
+    setHighlightSelection(undefined)
     app.setFilter('all')
     app.select(id)
     requestAnimationFrame(() => detailHeading.current?.focus({ preventScroll: true }))
@@ -550,6 +563,7 @@ export function Workspace() {
   const returnToTodos = () => {
     const trigger = todoTrigger.current
     todoTrigger.current = null
+    setHighlightSelection(undefined)
     setReviewPane({ selected: '', open: true })
     app.select('')
     requestAnimationFrame(() => {
@@ -572,41 +586,41 @@ export function Workspace() {
         }} />
       </Suspense>}
       <div className={`workspace-content ${memory ? 'workspace-content-hidden' : ''}`}>
-        <div className={`ws ${leftOpen ? '' : 'no-l'} ${rightOpen ? '' : 'no-r'}`}>
+        <div className={`ws ${leftOpen ? '' : 'no-l'} ${rightOpen ? '' : 'no-r'}${showHighlightDetail ? ' has-highlight-detail' : ''}`}>
           <WorkspaceMaterials key={caseId} />
-          <main className={`pane-c${editing ? ' is-editing-document' : ''}`} ref={main}>
-            <DocumentHeader selectedQuote={selectedQuote} editing={Boolean(editing)} onLayout={() => enterEdit('document')} onEdit={async () => {
-              if (editing) {
-                if (await app.prepareDocument()) setEditingDocument(undefined)
-              } else {
-                enterEdit()
-              }
-            }} paneControls={narrow && (
+          <main className="pane-c" ref={main}>
+            <DocumentHeader paneControls={narrow && (
               <div className="workspace-pane-controls">
                 <Button variant="ghost" size="icon" aria-label="案件材料" title="案件材料" aria-controls="workspace-materials"
                   aria-expanded={Boolean(leftOpen)} onClick={() => {
+                    setBackgroundAssistantRequest(assistantRequest)
                     setMaterialsOpen(!leftOpen)
                     setReviewPane({ selected, open: false })
                   }}><PanelLeft size={16} /></Button>
                 <Button variant="ghost" size="icon" aria-label="核验结果" title="核验结果" aria-controls="workspace-review"
                   aria-expanded={rightOpen} onClick={() => {
+                    setBackgroundAssistantRequest(assistantRequest)
                     setReviewPane({ selected, open: !rightOpen })
                     setMaterialsOpen(false)
                   }}><PanelRight size={16} /></Button>
+                {!rightOpen && <Button variant="ghost" size="icon" aria-label="AI 助手" title="AI 助手"
+                  aria-controls="workspace-review" onClick={openAssistant}>{assistantIcon}</Button>}
               </div>
-            )} onAssistant={() => {
-              if (selection) ask('请核对所选文字的事实与引用依据。', selection)
-              else if (assistantRequest) setAssistantRequest(null)
-              else ask()
-            }} />
-            {editing && <div className="workspace-editing-notice" role="status">
-              {editing === 'document' ? '正在编辑整篇文书。保存改动后，可重新核验受影响的声明。'
-                : app.elements.some(element => element.declaration) ? '点击正文中的声明进行编辑。修改自动保存，受影响的声明会标记待重核。'
-                  : '请先核验文书，抽取声明后即可在正文中编辑。'}
-            </div>}
+            )} />
             <ContextMenu.Root key={documentId} onOpenChange={open => { if (open) setContextSelection(readDocumentSelection(main.current, certificate)) }}>
-              <ContextMenu.Trigger asChild><div className="workspace-document-body">
-                <DocumentPaper editing={editing} />
+              <ContextMenu.Trigger asChild><div className="workspace-document-body" onClick={event => {
+                const target = event.target
+                if (!(target instanceof Element) || !target.closest('.whole-document-content')) return
+                const id = target.closest<HTMLElement>('[data-el]')?.dataset.el ?? ''
+                todoTrigger.current = null
+                setHighlightSelection(id ? { documentId, id } : undefined)
+                if (id) {
+                  setBackgroundAssistantRequest(assistantRequest)
+                  if (narrow) setReviewPane({ selected: id, open: true })
+                }
+                app.select(id)
+              }}>
+                <DocumentPaper />
               </div></ContextMenu.Trigger>
               <ContextMenu.Portal><ContextMenu.Content className="new-case-menu workspace-document-menu">
                 <ContextMenu.Item className="context-action" disabled={busy}
@@ -619,31 +633,51 @@ export function Workspace() {
                 </ContextMenu.Item>)}
                 <ContextMenu.Item className="context-action" disabled={busy || !certificate?.verification?.dirty || !certificate.linkageInputKey}
                   onSelect={async () => { if (await app.prepareDocument()) void app.recheckDirty() }}>局部重核</ContextMenu.Item>
-                <ContextMenu.Item className="context-action" disabled={busy || !certificate || Boolean(editing)} onSelect={() => enterEdit()}>进入编辑</ContextMenu.Item>
               </ContextMenu.Content></ContextMenu.Portal>
             </ContextMenu.Root>
-            {!busy && !memory && editing !== 'declarations' && selection?.top !== undefined && <div className="document-selection-actions" role="group" aria-label="选中文字的操作"
+            {!busy && !memory && selection?.top !== undefined && <div className="document-selection-actions" role="group" aria-label="选中文字的操作"
               style={{ top: selection.top, left: selection.left }} onMouseDown={event => event.preventDefault()}>
               {selectionActions.map(([mode, label, prompt]) => <Button key={mode} variant="ghost" size="sm"
                 onClick={() => ask(prompt, selection, mode)}>{label}</Button>)}
             </div>}
-            {assistantRequest && <Suspense fallback={<div className="assistant-panel-loading" role="status">正在加载助手…</div>}>
-              <WorkspaceAssistant key={caseId} />
-            </Suspense>}
           </main>
-          <aside className="pane-r" id="workspace-review" aria-label="核验结果" ref={review}>
-            <ReviewTodos key={app.docId} hidden={Boolean(element)} onOpen={openReview} />
-            {element && <>
-              <div className="review-pane-head review-detail-bar"><h2 ref={detailHeading} tabIndex={-1}>本句核验</h2>
-                <Button variant="ghost" size="sm" onClick={returnToTodos}>返回待办</Button></div>
-              <div className="rp" key={element.id}><LinkageCard key={element.verificationRevision ?? ''} element={element} /></div>
-            </>}
-            <div className="case-review-bar">
-              <span>人工审阅 {app.caseReview.total - app.caseReview.unreviewed}/{app.caseReview.total} 段 · 红灯 {app.caseReview.red} 项</span>
-              <Button className="btn btn-gh btn-sm" onClick={async () => { if (await app.prepareDocument()) app.setReviewListOpen(true) }} disabled={!certificate}>审阅清单</Button>
-              <Button className="btn btn-gh btn-sm" disabled={busy || !app.caseReview.ready} onClick={async () => { if (await app.prepareDocument()) void app.markCaseReady() }}>标记案件完成</Button>
-              {app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready' && app.caseReview.ready && <span>待归档</span>}
-            </div>
+          <aside className="pane-r" id="workspace-review" aria-label="核验结果与 AI 助手" ref={review}>
+            <Tabs className="workspace-right-tabs" value={assistantTab ? 'assistant' : 'review'} activationMode="manual"
+              onValueChange={value => {
+                if (value === 'assistant') openAssistant()
+                else {
+                  setBackgroundAssistantRequest(assistantRequest)
+                  setReviewPane({ selected, open: true })
+                }
+              }}>
+              <TabsList className="workspace-right-tablist" variant="line" aria-label="右侧栏">
+                <TabsTrigger value="review">核验结果</TabsTrigger>
+                <TabsTrigger value="assistant" aria-label="AI 助手" title="AI 助手">
+                  {assistantIcon}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent className="workspace-right-panel" value="review" forceMount hidden={assistantTab}>
+                <ReviewTodos key={app.docId} hidden={Boolean(element)} onOpen={openReview} />
+                {element && <>
+                  <div className="review-pane-head review-detail-bar"><h2 ref={detailHeading} tabIndex={-1}>本句核验</h2>
+                    <Button variant="ghost" size="sm" onClick={returnToTodos}>返回待办</Button></div>
+                  <div className="rp" key={element.id}>
+                    <LinkageCard key={`${element.verificationRevision ?? ''}:${compactReview}`} element={element} compact={compactReview} />
+                  </div>
+                </>}
+                {!compactReview && <div className="case-review-bar">
+                  <span>人工审阅 {app.caseReview.total - app.caseReview.unreviewed}/{app.caseReview.total} 段 · 红灯 {app.caseReview.red} 项</span>
+                  <Button className="btn btn-gh btn-sm" onClick={async () => { if (await app.prepareDocument()) app.setReviewListOpen(true) }} disabled={!certificate}>审阅清单</Button>
+                  <Button className="btn btn-gh btn-sm" disabled={busy || !app.caseReview.ready} onClick={async () => { if (await app.prepareDocument()) void app.markCaseReady() }}>标记案件完成</Button>
+                  {app.workspace?.cases.find(item => item.id === caseId)?.status === 'ready' && app.caseReview.ready && <span>待归档</span>}
+                </div>}
+              </TabsContent>
+              <TabsContent className="workspace-right-panel" value="assistant" forceMount hidden={!assistantTab}>
+                {assistantRequest && <Suspense fallback={<div className="assistant-panel-loading" role="status">正在加载助手…</div>}>
+                  <WorkspaceAssistant key={caseId} visible={assistantTab && !memory} />
+                </Suspense>}
+              </TabsContent>
+            </Tabs>
           </aside>
         </div>
       </div>

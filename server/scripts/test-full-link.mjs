@@ -316,11 +316,22 @@ test('T2 核验入口：多类型候选、旧人工链接、正文修改及重�
   const text = `被告已经支付借款金额十万元。${issue}。`
   const legacyLink = { evidenceId: 't2-payment', locator: '原件全文', quote: '借款金额十万元', sentenceIndex: 0,
     sentenceText: '被告已经支付借款金额十万元。', relation: 'support', note: '人工核对旧链接' }
+  const skippedMaterials = [
+    { evidenceId: 't2-failed', fileName: '失败凭证.pdf', status: 'failed', reason: '原件无法打开。' },
+    { evidenceId: 't2-review', fileName: '待审凭证.pdf', status: 'review_required', reason: '仅识别到图形。' },
+  ]
   await runWithWorkspaceAccount(account, async () => {
     const workspace = await readWorkspace()
     workspace.cases.push({ id: 't2-case', name: 'T2 受控案件', description: '借款纠纷', status: 'draft', createdAt: new Date().toISOString() })
     workspace.evidences.push({ id: legacyLink.evidenceId, caseId: 't2-case', number: 'E01', name: '付款凭证', fileName: '付款凭证.txt',
       type: 'text', ocrText: '借款金额十万元。', anchorHint: '原件全文', uploadedAt: new Date().toISOString() })
+    for (const [index, item] of skippedMaterials.entries()) {
+      const updatedAt = new Date().toISOString()
+      workspace.evidences.push({ id: item.evidenceId, caseId: 't2-case', number: `E0${index + 2}`, name: item.fileName,
+        fileName: item.fileName, type: 'pdf', ocrText: text, uploadedAt: updatedAt,
+        parsing: { status: item.status, revision: 'test', sourceKey: 'test', mode: 'auto', updatedAt,
+          ...(item.status === 'failed' ? { error: item.reason } : { warnings: [item.reason] }) } })
+    }
     workspace.certificates.push({ id: 't2-doc', caseId: 't2-case', title: '民事起诉状', docKey: 'qs', role: 'plaintiff', focus: '',
       paragraphIds: ['t2-p'], paragraphs: [{ id: 't2-p', text, verified: false, link: legacyLink }], createdAt: new Date().toISOString() })
     await writeWorkspace(workspace)
@@ -335,8 +346,13 @@ test('T2 核验入口：多类型候选、旧人工链接、正文修改及重�
     const response = await fetch(`${base}/api/certificates/t2-doc/auto-link/stream`, { method: 'POST', headers })
     const eventStream = await response.text()
     assert.match(eventStream, /event: done/, eventStream.slice(-1200))
+    assert.match(eventStream, /原材料与证据解析.*跳过 2 份/)
+    const done = JSON.parse(eventStream.match(/^event: done\r?\ndata: (.+)$/m)[1])
+    assert.deepEqual(done.linkage.certificate.verification.skippedMaterials, skippedMaterials)
     const document = await readDocument()
     const { declarations } = document.verification
+    assert.deepEqual(document.verification.skippedMaterials, skippedMaterials)
+    assert.ok(declarations.flatMap(item => item.sources).every(source => !skippedMaterials.some(item => item.evidenceId === source.id)))
     for (const item of declarations) assert.equal(sourceText.slice(item.location.start, item.location.end), item.quote)
     assert.ok(declarations.every(item => !item.quote.includes('模型添加')))
     assert.equal(document.paragraphs[0].links[0].note, legacyLink.note)

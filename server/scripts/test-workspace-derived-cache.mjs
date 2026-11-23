@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { env } from '../src/config/env.ts'
 
 const directory = mkdtempSync(path.join(os.tmpdir(), 'lawverify-derived-cache-'))
@@ -10,8 +10,10 @@ env.WORKSPACE_DATA_DIR = directory
 env.KNOWLEDGE_RAG_MODE = 'local'
 
 const { readWorkspace, writeWorkspace, runWithWorkspaceAccount } = await import('../src/store.ts')
+const { WorkspaceSqliteStore } = await import('../src/infrastructure/workspace-sqlite.ts')
 
 const ACCOUNT = 'derived-cache@test.invalid'
+after(() => rmSync(directory, { recursive: true, force: true }))
 
 function seed(text) {
   return {
@@ -38,8 +40,7 @@ function seed(text) {
   }
 }
 
-test('派生结果按内容复用，材料原文变化后必须重算', async (t) => {
-  t.after(() => rmSync(directory, { recursive: true, force: true }))
+test('派生结果按内容复用，材料原文变化后必须重算', async () => {
   await runWithWorkspaceAccount(ACCOUNT, async () => {
     const initial = await readWorkspace()
     const template = seed('借款人张三分期还款共5万元，出具借条一份。')
@@ -82,6 +83,44 @@ test('派生结果按内容复用，材料原文变化后必须重算', async (t
     assert.match(fifth.evidenceFragments[0].text, /30万元/, '材料原文变化后片段必须重算')
     assert.notEqual(fifth.evidenceFragments[0].text, first.evidenceFragments[0].text)
     assert.equal(firstFragmentId, fifth.evidenceFragments[0].id, '片段标识不应随内容变化')
+  })
+})
+
+test('读写旧工作区时自动挂接只保留当前结果，独立模型复核仍保留', async () => {
+  const account = 'matching-regression@test.invalid'
+  const storage = new WorkspaceSqliteStore(path.join(directory, 'workspaces', 'matching-regression-test-invalid'))
+  await runWithWorkspaceAccount(account, async () => {
+    const workspace = await readWorkspace()
+    const template = seed('被告欠付货款10万元。')
+    const paragraph = template.certificates[0].paragraphs[0]
+    paragraph.links = [{ evidenceId: 'e1', note: 'system:auto-evidence-linked', locator: '原件全文', reason: '当前挂接', quote: '被告欠付货款10万元。' }]
+    Object.assign(workspace, { cases: template.cases, evidences: template.evidences, certificates: template.certificates })
+    await writeWorkspace(workspace)
+
+    const readStored = () => storage.read(() => assert.fail('应打开已存在的 SQLite 工作区'))
+    const stored = readStored()
+    const [auto] = stored.claimEvidenceMatches
+    assert.equal(auto.reason, '当前挂接')
+    const independent = { ...auto, id: `${auto.claimUnitId}-model-${auto.evidenceFragmentId}`, reason: '独立复核' }
+    stored.claimEvidenceMatches.push(
+      { ...auto, reason: '旧挂接' }, { ...auto, reason: '旧挂接' },
+      { ...auto, id: `${auto.claimUnitId}-match-2`, reason: '已移除的旧挂接' },
+      independent,
+    )
+    storage.save(stored)
+
+    for (let i = 0; i < 3; i++) {
+      const current = await readWorkspace()
+      assert.deepEqual(current.claimEvidenceMatches, [auto, independent])
+      await writeWorkspace(current)
+      assert.deepEqual(readStored().claimEvidenceMatches, [auto, independent])
+    }
+
+    const current = await readWorkspace()
+    current.certificates[0].paragraphs[0].links = []
+    current.certificates[0].paragraphs[0].link = undefined
+    await writeWorkspace(current)
+    assert.deepEqual((await readWorkspace()).claimEvidenceMatches.filter(match => match.source === 'model'), [independent])
   })
 })
 

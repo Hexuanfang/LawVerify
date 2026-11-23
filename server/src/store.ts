@@ -420,8 +420,10 @@ function normalizeWorkspace(state: WorkspaceState): WorkspaceState {
   const derivedMatches = derived.matches
   const validClaimIds = new Set(claimUnits.map((item) => item.id))
   const validFragmentIds = new Set(evidenceFragments.map((item) => item.id))
+  // 段落挂接派生的模型匹配由当前段落重算，旧结果不能作为独立复核保留。
   const persistedModelMatches = (normalizedState.claimEvidenceMatches ?? []).filter((match) =>
     match.source === 'model'
+    && !match.id.startsWith(`${match.claimUnitId}-match-`)
     && validClaimIds.has(match.claimUnitId)
     && validFragmentIds.has(match.evidenceFragmentId),
   )

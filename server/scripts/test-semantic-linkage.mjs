@@ -62,39 +62,41 @@ function loadFunctions(file, names, mocks = {}) {
 
 const serviceFile = '../src/service.ts'
 
-test('核验被解析失败阻塞时带出材料编号和真实原因，继续阻止未就绪材料进入核验', async () => {
-  for (const status of ['failed', 'queued', 'processing', 'review_required']) {
-    const workspace = {
-      certificates: [{ id: 'document', caseId: 'case', paragraphs: [] }],
-      evidences: [{ id: 'material', caseId: 'case', number: 'E001',
-        parsing: { status, error: status === 'failed' ? '暂时无法获取解析凭据。' : undefined } }],
-    }
-    const { autoLinkCertificate } = loadFunctions(serviceFile, ['autoLinkCertificate'], {
-      isLlmConfigured: () => true,
-      withRequestAbortSignal: (_signal, run) => run(),
-      withModelRedaction: run => run(),
-      resetLlmCallCacheHitCount: () => {},
-      getLlmCallCacheHitCount: () => 0,
-      readWorkspace: async () => workspace,
-      throwIfLinkageAborted: () => {},
-      verificationMaterialVersion: () => 'current-material-version',
-      learnCaseRedaction: () => {},
-      AppError,
-      rebuildCaseContextMemory: () => assert.fail('未就绪材料不能进入模型核验'),
-    })
-    await assert.rejects(autoLinkCertificate('document'), error => {
-      assert.equal(error.code, 'CASE_PARSE_REVIEW_REQUIRED')
-      if (status === 'failed') {
-        assert.match(error.message, /1 份.*解析失败/)
-        assert.match(error.message, /E001/)
-        assert.match(error.message, /暂时无法获取解析凭据/)
-        assert.match(error.message, /重新解析/)
-      } else {
-        assert.match(error.message, /解析或等待人工审核/)
-      }
-      return true
-    })
-  }
+test('材料解析阶段等待队列处理完成，返回被跳过文件及其原因', async () => {
+  const document = { id: 'document', caseId: 'case', paragraphs: [] }
+  const material = (id, parsing, ocrText = '') => ({
+    id, caseId: 'case', name: id, fileName: id + '.pdf', type: 'text', parsing, ocrText,
+  })
+  const ready = material('ready', { status: 'ready' }, '已解析正文')
+  const legacy = material('legacy', undefined, '已有正文')
+  const queued = material('queued', { status: 'queued' })
+  const processing = material('processing', { status: 'processing' })
+  const review = material('review', { status: 'review_required', warnings: ['仅识别到图形'] }, '待核对的旧正文')
+  const workspace = { certificates: [document], evidences: [ready, legacy, queued, processing, review] }
+  const updates = []
+  let polls = 0
+  let started
+  const { waitForVerificationMaterials } = loadFunctions(serviceFile, ['waitForVerificationMaterials'], {
+    readWorkspace: async () => workspace,
+    supportsMineru: () => true,
+    startEvidenceParsing: async items => { started = Array.from(items, item => item.id) },
+    delay: async () => {
+      polls++
+      queued.parsing = { status: 'failed', error: '暂时无法获取解析凭据。' }
+      processing.parsing = { status: 'ready' }
+    },
+    throwIfLinkageAborted: signal => signal?.throwIfAborted(),
+    AppError,
+  })
+  const { skippedMaterials } = await waitForVerificationMaterials('document', text => updates.push(text))
+  assert.deepEqual(started, ['queued', 'processing'])
+  assert.equal(polls, 1)
+  assert.match(updates[0], /共 5 份.*已就绪 2 份.*解析中 1 份.*待解析 1 份.*跳过 1 份/)
+  assert.match(updates[1], /已就绪 3 份.*跳过 2 份/)
+  assert.deepEqual(Array.from(skippedMaterials, item => ({ ...item })), [
+    { evidenceId: 'queued', fileName: 'queued.pdf', status: 'failed', reason: '暂时无法获取解析凭据。' },
+    { evidenceId: 'review', fileName: 'review.pdf', status: 'review_required', reason: '仅识别到图形' },
+  ])
 })
 
 test('只修改备注或格式不重新识别法条，也不删除已有自动法条', async () => {

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { isDeepStrictEqual } from 'node:util'
 import { rememberAssistantCandidate } from './assistant/candidates.js'
 import { buildAssistantDocumentContext, type AssistantDocumentContext } from './assistant/context.js'
@@ -17,6 +18,7 @@ import { verifyEvidence } from './intelligence/verification/evidence.js'
 import { verifyLegalDeclarations } from './intelligence/verification/legal.js'
 import { createVerificationSources } from './integrations/verification-sources.js'
 import { normalizeDocKey, profile as documentProfile } from './intelligence/verification/profile.js'
+import type { SkippedVerificationMaterial } from './intelligence/verification/protocol.js'
 import { carryDeclarationReviews, confirmedDeclarationsForFullRecheck, declarationEditSchema, declarationReferenceSchema, invalidateVerification, mergeConfirmedDeclarations, preserveScopedReferences, verificationAuthorityKey } from './intelligence/verification/review-state.js'
 import { documentMaterialKey, recheckDirtyDeclarations, recordVerification, sameVerificationDocument, saveDeclarationReview, validateDeclarationEdit, validateDeclarationReferences, verificationMaterialVersion } from './intelligence/verification/workspace-review.js'
 import { approveEvidenceParsing, cancelCaseEvidenceParsing, ensureEvidenceParsed, sortEvidenceParsingBatch, supportsMineru } from './evidence-parsing.js'
@@ -7760,6 +7762,54 @@ async function enrichRetrievalLimitedInsightsByNewEvidence(
   await enrichRetrievalLimitedInsights(workspace, caseEvidences, queries, { excludeEvidenceIds: newEvidenceIds })
 }
 
+async function waitForVerificationMaterials(certificateId: string, reportProgress?: LinkageProgressReporter, signal?: AbortSignal) {
+  const started = new Set<string>()
+  const deadline = Date.now() + 20 * 60_000
+  let lastProgress = ''
+  for (;;) {
+    throwIfLinkageAborted(signal)
+    const workspace = await readWorkspace()
+    throwIfLinkageAborted(signal)
+    const certificate = workspace.certificates.find(item => item.id === certificateId)
+    if (!certificate) throw new Error('文书不存在。')
+    const caseEvidences = workspace.evidences.filter(item => item.caseId === certificate.caseId)
+    const materials = caseEvidences.filter(item => item.parsing || supportsMineru(item))
+    const waiting: Evidence[] = []
+    const skippedMaterials: SkippedVerificationMaterial[] = []
+    let processing = 0
+    for (const item of materials) {
+      const parsing = item.parsing
+      if (parsing?.status === 'failed' || parsing?.status === 'review_required') {
+        skippedMaterials.push({
+          evidenceId: item.id,
+          fileName: item.fileName || item.name || item.number,
+          status: parsing.status,
+          reason: parsing.error?.trim() || parsing.warnings?.map(warning => warning.trim()).filter(Boolean).join('、')
+            || (parsing.status === 'failed' ? '解析服务未返回具体原因。' : '解析正文需对照原件确认。'),
+        })
+      } else if (parsing?.status === 'queued' || parsing?.status === 'processing'
+        || (!parsing && !item.ocrText?.trim() && supportsMineru(item))) {
+        waiting.push(item)
+        if (parsing?.status === 'processing') processing++
+      }
+    }
+    const ready = materials.length - waiting.length - skippedMaterials.length
+    const progress = `原材料与证据解析 · 共 ${materials.length} 份 · 已就绪 ${ready} 份 · 解析中 ${processing} 份 · 待解析 ${waiting.length - processing} 份 · 跳过 ${skippedMaterials.length} 份`
+    if (progress !== lastProgress) {
+      reportProgress?.(progress)
+      lastProgress = progress
+    }
+    if (!waiting.length) return { workspace, certificate, caseEvidences, skippedMaterials }
+    if (Date.now() >= deadline) {
+      throw new AppError('等待案件原材料解析超时，可稍后重试。', 409, 'CASE_PARSE_REVIEW_REQUIRED')
+    }
+    const pending = waiting.filter(item => !started.has(item.id))
+    for (const item of pending) started.add(item.id)
+    if (pending.length) void startEvidenceParsing(pending)
+    await delay(1000, undefined, { signal })
+  }
+}
+
 export async function autoLinkCertificate(
   certificateId: string,
   onProgress?: LinkageProgressReporter,
@@ -7770,11 +7820,14 @@ export async function autoLinkCertificate(
     const { workspace, certificate } = await recheckDirtyDeclarations(certificateId, options.signal)
     return summarizeLinkage(workspace, certificate)
   }
+  const signal = options?.signal
+  const { workspace, certificate, caseEvidences, skippedMaterials } =
+    await waitForVerificationMaterials(certificateId, onProgress, signal)
+  throwIfLinkageAborted(signal)
   if (!isLlmConfigured()) {
     throw new Error('当前桌面端尚未配置 LLM API Key，证据联动依赖大模型理解，请先完成模型配置后再试。')
   }
 
-  const signal = options?.signal
   return withRequestAbortSignal(signal, () => withModelRedaction(async () => {
     resetLlmCallCacheHitCount()
     // 进度里回告已复用的模型结果数量：任务被中断后重跑时，可以直观看到哪些阶段被跳过。
@@ -7783,33 +7836,16 @@ export async function autoLinkCertificate(
       onProgress?.(reused > 0 ? `${text}（已复用 ${reused} 项模型结果）` : text)
     }
     reportProgress('正在读取文书与案件材料')
-    const workspace = await readWorkspace()
-    throwIfLinkageAborted(signal)
-    const certificate = workspace.certificates.find((item) => item.id === certificateId)
-    if (!certificate) {
-      throw new Error('文书不存在。')
-    }
-
-    const caseEvidences = workspace.evidences.filter((item) => item.caseId === certificate.caseId)
     const materialVersion = verificationMaterialVersion(workspace, certificate.caseId)
-    learnCaseRedaction(workspace, certificate.caseId, caseEvidences)
+    const usableEvidences = caseEvidences.filter(item => !item.parsing || item.parsing.status === 'ready')
+    learnCaseRedaction(workspace, certificate.caseId, usableEvidences)
     for (const paragraph of certificate.paragraphs) currentModelRedaction()?.learnText(paragraph.text)
-    const failedParsing = caseEvidences.filter(item => item.parsing?.status === 'failed')
-    if (failedParsing.length) {
-      const details = failedParsing.slice(0, 3).map(item =>
-        `${item.number || item.name || item.fileName}（${item.parsing?.error?.trim() || '解析未完成'}）`).join('、')
-      throw new AppError(`案件中有 ${failedParsing.length} 份材料解析失败。${details}。请在案件材料中打开对应材料，恢复解析服务后重新解析，或对照原件确认正文后继续核验。`,
-        409, 'CASE_PARSE_REVIEW_REQUIRED')
-    }
-    if (caseEvidences.some(item => item.parsing && item.parsing.status !== 'ready')) {
-      throw new AppError('案件材料仍在解析或等待人工审核，请完成后再核验文书。', 409, 'CASE_PARSE_REVIEW_REQUIRED')
-    }
     // 其它类型的材料（附件）没有可核验内容，不进入联动候选。
-    const linkableEvidences = caseEvidences.filter((item) => item.type !== 'other')
+    const linkableEvidences = usableEvidences.filter((item) => item.type !== 'other')
     const caseFolder = workspace.cases.find((item) => item.id === certificate.caseId) ?? null
     reportProgress('正在梳理案件背景、争议焦点与证据薄弱点')
     const caseContextMemory = caseFolder && caseEvidences.length
-      ? await rebuildCaseContextMemory(workspace, caseFolder, caseEvidences)
+      ? await rebuildCaseContextMemory(workspace, caseFolder, usableEvidences)
       : null
     throwIfLinkageAborted(signal)
 
@@ -7941,6 +7977,7 @@ export async function autoLinkCertificate(
           version: 1, profileVersion: documentProfile.version, inputKey: linkageInputKey, docKey, classificationRequired,
           declarations: sameRules ? carryDeclarationReviews(previous, basis) : basis,
           ...(documentDiagnostics.length ? { documentDiagnostics } : {}),
+          ...(skippedMaterials.length ? { skippedMaterials } : {}),
         }, undefined, certificate.caseId)
         // 已确认的结果保留核对时间、来源和置信度，避免新一轮计算改写律师确认时的依据。
         result.declarations = result.declarations.map(item => confirmed.get(item.id) ?? item)

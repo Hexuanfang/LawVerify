@@ -151,6 +151,13 @@ export interface VerificationAudit {
   sources?: DeclarationSource[]
 }
 
+export interface SkippedVerificationMaterial {
+  evidenceId: string
+  fileName: string
+  status: 'failed' | 'review_required'
+  reason: string
+}
+
 export interface VerificationResult {
   version: 1
   profileVersion: string
@@ -158,6 +165,7 @@ export interface VerificationResult {
   docKey?: DocKey
   classificationRequired: boolean
   declarations: Declaration[]
+  skippedMaterials?: SkippedVerificationMaterial[]
   documentDiagnostics?: DocumentDiagnostic[]
   revision?: string
   authorityKey?: string

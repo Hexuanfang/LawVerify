@@ -1523,7 +1523,14 @@ function AuthPage({
 
         <label>
           邮箱
-          <input name="email" type="text" inputMode="email" placeholder="请输入邮箱" required autoComplete="email" />
+          <input
+            name="email"
+            type="text"
+            inputMode={mode === 'register' ? 'email' : undefined}
+            placeholder="请输入邮箱"
+            required
+            autoComplete={mode === 'login' ? 'username' : 'email'}
+          />
         </label>
         <label>
           密码

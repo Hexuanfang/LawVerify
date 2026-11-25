@@ -13,7 +13,7 @@ Website: [lawverify.zhijing.fun](https://lawverify.zhijing.fun/)
 ## Features
 
 - **Cases and evidence:** link multiple local folders, import materials incrementally, and parse or preview Word, PDF, image, and text files. Large imports use batching and object storage for originals.
-- **Document workspace:** Tiptap editing, document import, AI-assisted drafting with streaming output, Word export, notes, and manual evidence linking or unlinking.
+- **Document workspace:** SuperDoc editing, document import, AI-assisted drafting with streaming output, Word export, notes, and manual evidence linking or unlinking.
 - **Sentence-level review:** highlight the active sentence, navigate between sentences, and inspect associated originals, statutory provisions, and cases in a side panel.
 - **Material understanding and case memory:** extract evidentiary purposes, key facts, disputed issues, limitations, and lawyer-focused observations. Reuse analysis through content fingerprints and aggregate case context.
 - **Legal knowledge and case retrieval:** bundled legal documents, article-level lookup, embedding-based retrieval, and MCP integrations for Yuandian, WK, and PKULaw. External services require configuration and appropriate access rights.
@@ -40,7 +40,7 @@ The desktop installer bundles the local service. End users do not need Node.js, 
 
 | Directory | Responsibility |
 | --- | --- |
-| `app/src/` | React, TypeScript, and Tiptap workbench |
+| `app/src/` | React, TypeScript, and SuperDoc workbench |
 | `app/electron/` | Desktop lifecycle, IPC, updates, asset preparation, signature checks |
 | `server/src/` | Express API, document linkage, material analysis, local workspaces |
 | `server/src/intelligence/` | Evidence matching, sentence gating, model response parsing |

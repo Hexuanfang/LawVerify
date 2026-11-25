@@ -91,7 +91,7 @@ Codex 受限进程中，Electron 44.4.2 主进程可启动，但 GPU 子进程�
 
 **完整套件使用登录态 Windows 桌面 PowerShell 执行。** Codex 中遇到上述组合错误，可在受限环境完成单测、类型检查和编译，再将仅本地的 Electron 测试命令交给桌面执行环境。套件已有 `app.disableHardwareAcceleration()`。若桌面环境下的最小窗口也失败，先用 Windows 应用程序事件日志或 Process Monitor 检查失败的 Electron 子进程及其 DLL 加载，再按查到的组件修复 Electron 安装或对应运行库。
 
-在项目根目录执行以下命令。服务端和前端构建使用独立目录。需要解析材料的套件使用回环测试服务，并通过环境变量提供 `PARSER_SERVICE_TOKEN`。生产环境见 [云端 Python 解析服务部署](deployment-parser.md)。
+在项目根目录执行以下命令。服务端和前端构建使用独立目录。需要解析材料的套件使用回环测试服务，并通过环境变量提供 `PARSER_SERVICE_TOKEN`。[旧版解析服务的接口与评估](deployment-parser.md)
 
 ```powershell
 node --version
@@ -134,7 +134,7 @@ npm.cmd --prefix app run test:redesign
 - [ ] Windows 主流笔记本、系统缩放和真实大案件测试。
 - [ ] 至少 8 小时耐久运行，检查内存趋势而非只看结束时单个数值。
 - [ ] 复杂长 Word 的版式预览专项测试；当前 docx-preview 仍需要在渲染进程完成 DOM 版式构建，已有大小限制但不等于完全消除长任务。
-- [ ] 超长文稿专项测试；content-visibility 减少布局绘制，但并未虚拟化所有 Tiptap 编辑器实例。
+- [ ] 超长文稿专项测试，覆盖 SuperDoc 首次加载、输入、滚动和保存。
 - [ ] 磁盘满、断网、睡眠唤醒、升级中断和备份恢复测试。
 - [ ] Apple 芯片/Intel macOS 真实安装及 Electron 子进程、公证兼容验证。
 - [ ] 最终签名安装包安装、启动、升级回归及 SHA256 校验。

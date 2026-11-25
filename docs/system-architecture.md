@@ -29,7 +29,7 @@ flowchart TB
     subgraph Electron["Electron 桌面端 app/"]
       Main["main.cjs<br/>窗口 / 端口探测 / 单实例锁<br/>更新 / 目录链接 / 账户代理"]
       Preload["preload.cjs<br/>contextBridge 暴露 lawVerifyDesktop"]
-      Renderer["Renderer<br/>React 19 + Tiptap 工作台<br/>App.tsx / api.ts / 导出 Word"]
+      Renderer["Renderer<br/>React 19 + SuperDoc 工作台<br/>App.tsx / api.ts / 导出 Word"]
     end
     subgraph WebUI["官网与账户中心 web/"]
       Site["site.ts / site-demos.tsx<br/>下载页 / 账户中心"]

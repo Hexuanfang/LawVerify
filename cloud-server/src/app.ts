@@ -20,6 +20,8 @@ import { aiRouter } from './routes/ai.js'
 
 export function createApp() {
   const app = express()
+  const smsTrustedProxies = config.SMS_TRUST_PROXY_CIDRS?.split(',').map(value => value.trim()).filter(Boolean)
+  if (smsTrustedProxies?.length) app.set('trust proxy', smsTrustedProxies)
   const captureRawBody = (request: Request, _response: Response, buffer: Buffer) => {
     ;(request as Request & { rawBody?: string }).rawBody = buffer.toString('utf8')
   }

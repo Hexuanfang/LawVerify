@@ -1,4 +1,4 @@
-import { Pool, type QueryResult, type QueryResultRow } from 'pg'
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg'
 
 import { config } from '../config.js'
 import { AppError } from '../core/app-error.js'
@@ -30,4 +30,17 @@ export async function query<T extends QueryResultRow>(
   params: unknown[] = [],
 ): Promise<QueryResult<T>> {
   return getPool().query<T>(sql, params)
+}
+
+export async function withTransaction<T>(operation: (client: PoolClient) => Promise<T>) {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await operation(client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
 }

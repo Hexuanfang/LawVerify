@@ -1,8 +1,9 @@
-import { Router } from 'express'
+import { Router, type Request, type Response } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
-import { changeAccountPassword, getCurrentActorProfile, loginAccount, logoutAccount, registerAccount, updateAccountProfile, verifyToken } from '../commercial/auth-service.js'
+import { changeAccountPassword, getCurrentActorProfile, loginAccount, loginPhoneAccount, logoutAccount, registerAccount, updateAccountProfile, verifyToken } from '../commercial/auth-service.js'
+import { sendPhoneCode, withVerifiedPhoneCode } from '../commercial/phone-code.js'
 import { createUserFeedback } from '../feedback-service.js'
 import { getBillingAccountSummary, getUsageSummary, listRechargePointLedger } from '../billing-service.js'
 import { sendSuccess } from '../http.js'
@@ -26,6 +27,15 @@ const loginSchema = z.object({
   email: z.string().min(1, '请输入注册邮箱。'),
   password: z.string().min(6, '密码至少 6 位。'),
 })
+
+const phoneSchema = z.string().trim().regex(/^1[3-9]\d{9}$/, '请输入正确的中国大陆手机号。')
+const smsSendSchema = z.object({ phone: phoneSchema, purpose: z.enum(['register', 'login']) })
+const phoneLoginSchema = z.object({
+  phone: phoneSchema,
+  challengeId: z.uuid('请先获取短信验证码。'),
+  code: z.string().trim().regex(/^\d{6}$/, '请输入 6 位短信验证码。'),
+})
+const phoneRegisterSchema = registerSchema.omit({ email: true, password: true }).extend(phoneLoginSchema.shape)
 
 const profileSchema = z.strictObject({
   displayName: z.string().trim().min(1, '请输入显示名称。').max(24, '显示名称最多 24 个字符。').optional(),
@@ -108,7 +118,31 @@ accountRouter.post('/register', async (request, response) => {
 accountRouter.post('/login', async (request, response) => {
   const started = Date.now()
   const payload = loginSchema.parse(request.body ?? {})
-  const result = await loginAccount(payload)
+  await sendLoginResult(request, response, await loginAccount(payload), started)
+})
+
+accountRouter.post('/sms/send', async (request, response) => {
+  response.setHeader('Cache-Control', 'no-store')
+  const { phone, purpose } = smsSendSchema.parse(request.body ?? {})
+  sendSuccess(response, await sendPhoneCode(phone, purpose, request.ip ?? request.socket.remoteAddress ?? 'unknown'))
+})
+
+accountRouter.post('/phone/register', async (request, response) => {
+  response.setHeader('Cache-Control', 'no-store')
+  const { phone, challengeId, code, ...details } = phoneRegisterSchema.parse(request.body ?? {})
+  sendSuccess(response, await withVerifiedPhoneCode({ phone, challengeId, code }, 'register',
+    client => registerAccount({ ...details, phone, client })))
+})
+
+accountRouter.post('/phone/login', async (request, response) => {
+  response.setHeader('Cache-Control', 'no-store')
+  const started = Date.now()
+  const payload = phoneLoginSchema.parse(request.body ?? {})
+  const result = await withVerifiedPhoneCode(payload, 'login', client => loginPhoneAccount(payload.phone, client))
+  await sendLoginResult(request, response, result, started)
+})
+
+async function sendLoginResult(request: Request, response: Response, result: Awaited<ReturnType<typeof loginAccount>>, started: number) {
   const claims = verifyToken(result.token)
   await ingestProductEvents({ userId: claims.sub, organizationId: claims.organizationId, membershipId: claims.membershipId,
     role: claims.role, email: claims.email, sessionId: claims.sessionId }, [{
@@ -116,7 +150,7 @@ accountRouter.post('/login', async (request, response) => {
     outcome: 'success', durationMs: Math.min(3600000, Date.now() - started),
   }]).catch(() => {})
   sendSuccess(response, { ...result, isPlatformAdmin: isPlatformAdminEmail(claims.email) })
-})
+}
 
 accountRouter.post('/logout', authenticate, async (request, response) => {
   const result = await logoutAccount(request.actor!)

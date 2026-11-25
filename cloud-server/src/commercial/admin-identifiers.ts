@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { config } from '../config.js'
+import { isPhoneAccountIdentifier } from './account-identity.js'
 
 /**
  * 平台管理员标识的统一口径：
@@ -10,7 +11,7 @@ export function getPlatformAdminEmails() {
   return config.ADMIN_EMAILS
     .split(',')
     .map((item) => item.trim().toLowerCase())
-    .filter(Boolean)
+    .filter(value => value && !isPhoneAccountIdentifier(value))
 }
 
 export function isPlatformAdminEmail(email: string | undefined | null) {
@@ -23,7 +24,7 @@ export function isPlatformAdminEmail(email: string | undefined | null) {
  */
 export function isAllowedRegistrationEmail(value: string) {
   const normalized = value.trim().toLowerCase()
-  if (!normalized) {
+  if (!normalized || isPhoneAccountIdentifier(normalized)) {
     return false
   }
   if (normalized === 'admin' || isPlatformAdminEmail(normalized)) {

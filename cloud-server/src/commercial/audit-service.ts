@@ -1,4 +1,5 @@
-import { query } from '../infrastructure/postgres.js'
+import type { PoolClient } from 'pg'
+import { getPool } from '../infrastructure/postgres.js'
 import type { AuthenticatedActor } from './types.js'
 
 export interface AuditEventInput {
@@ -10,8 +11,8 @@ export interface AuditEventInput {
   metadata?: Record<string, unknown>
 }
 
-export async function recordAuditEvent(input: AuditEventInput) {
-  await query(
+export async function recordAuditEvent(input: AuditEventInput, client?: PoolClient) {
+  await (client ?? getPool()).query(
     `
       INSERT INTO audit_logs (
         organization_id,

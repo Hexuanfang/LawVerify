@@ -7,10 +7,11 @@ import type { PoolClient } from 'pg'
 import { config } from '../config.js'
 import { AppError } from '../core/app-error.js'
 import { readDevStore, updateDevStore, type DevStoreShape } from '../infrastructure/dev-store.js'
-import { isDatabaseEnabled, query, getPool } from '../infrastructure/postgres.js'
+import { isDatabaseEnabled, query, getPool, withTransaction } from '../infrastructure/postgres.js'
 import { recordAuditEvent } from './audit-service.js'
 import type { AuthClaims, AuthenticatedActor, LoginAccountInput, RegisterAccountInput } from './types.js'
 import { bindDevReferral, bindStoredReferral } from '../referral-service.js'
+import { createPhoneAccountIdentifier, findStoredLoginAccount, isPhoneAccountIdentifier } from './account-identity.js'
 
 const SIGNUP_BONUS_POINTS = 300
 
@@ -54,7 +55,7 @@ function sessionExpiry(token: string) {
   return new Date(decoded.exp * 1000).toISOString()
 }
 
-async function persistSession(userId: string, sessionId: string, token: string, expectedHash: string) {
+async function persistSession(userId: string, sessionId: string, token: string, expectedHash: string | null, phone?: string, client?: PoolClient) {
   const expiresAt = sessionExpiry(token)
   if (!isDatabaseEnabled()) {
     await updateDevStore(store => {
@@ -70,19 +71,26 @@ async function persistSession(userId: string, sessionId: string, token: string, 
     return
   }
   // 校验密码后若遇到并发改密，旧密码不能签发新的登录会话。
-  const inserted = await query(`INSERT INTO account_sessions (id, user_id, expires_at)
-    SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND u.status = 'active' AND u.password_hash = $4
-    FOR UPDATE OF u`, [sessionId, userId, expiresAt, expectedHash])
-  if (!inserted.rowCount) throw new AppError('密码已变更，请重新登录。', 401, 'INVALID_CREDENTIALS')
+  const inserted = await (client ?? getPool()).query(`INSERT INTO account_sessions (id, user_id, expires_at)
+    SELECT $1, u.id, $3 FROM users u WHERE u.id = $2 AND u.status = 'active'
+      AND CASE WHEN $5::text IS NULL THEN u.password_hash = $4 ELSE u.verified_phone = $5 END
+    FOR UPDATE OF u`, [sessionId, userId, expiresAt, expectedHash, phone ?? null])
+  if (!inserted.rowCount) throw new AppError('登录凭据已变更，请重新登录。', 401, 'INVALID_CREDENTIALS')
 }
 
-export async function registerAccount(input: RegisterAccountInput) {
-  const email = normalizeEmail(input.email)
+type PhoneRegistration = Omit<RegisterAccountInput, 'email' | 'password'> & { phone: string; client: PoolClient }
+
+export async function registerAccount(input: RegisterAccountInput | PhoneRegistration) {
+  const phone = 'phone' in input ? input.phone : null
+  const phoneUserId = 'phone' in input ? randomUUID() : null
+  const email = 'email' in input ? normalizeEmail(input.email) : createPhoneAccountIdentifier(phoneUserId!)
+  if (!phone && isPhoneAccountIdentifier(email)) throw new AppError('请输入有效的注册邮箱。', 400, 'INVALID_EMAIL')
   const sessionId = randomUUID()
   // 负责人姓名已从注册表单移除，旧客户端仍可能带上；没带就存空串。
   const ownerName = input.ownerName?.trim() ?? ''
 
   if (!isDatabaseEnabled()) {
+    if ('phone' in input) throw new AppError('当前环境未启用手机号认证。', 503, 'SMS_AUTH_UNAVAILABLE')
     return updateDevStore(async (store) => {
       const existing = store.users.find((item) => item.email === email)
       if (existing) {
@@ -160,16 +168,14 @@ export async function registerAccount(input: RegisterAccountInput) {
     })
   }
 
-  const client = await getPool().connect()
-  try {
-  await client.query('BEGIN')
+  const storeRegistration = async (client: PoolClient) => {
   const existing = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1 LIMIT 1', [email])
 
   if (existing.rowCount) {
     throw new AppError('该邮箱已注册。', 409, 'EMAIL_ALREADY_EXISTS')
   }
 
-  const passwordHash = await bcrypt.hash(input.password, 10)
+  const passwordHash = 'password' in input ? await bcrypt.hash(input.password, 10) : null
 
   const organization = await client.query<{ id: string; name: string }>(
     'INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id, name',
@@ -178,11 +184,11 @@ export async function registerAccount(input: RegisterAccountInput) {
 
   const userResult = await client.query<{ id: string; email: string; name: string }>(
     `
-      INSERT INTO users (email, password_hash, name, status)
-      VALUES ($1, $2, $3, 'active')
+      INSERT INTO users (id, email, password_hash, name, status, verified_phone)
+      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, 'active', $5)
       RETURNING id, email, name
     `,
-    [email, passwordHash, ownerName],
+    [phoneUserId, email, passwordHash, ownerName, phone],
   )
   const user = userResult.rows[0]
 
@@ -251,8 +257,6 @@ export async function registerAccount(input: RegisterAccountInput) {
   await client.query(`INSERT INTO audit_logs (organization_id, action, entity_type, entity_id, metadata)
     VALUES ($1, 'auth.register', 'user', $2, $3::jsonb)`,
     [organization.rows[0].id, user.id, JSON.stringify({ email, organizationName: input.organizationName.trim() })])
-  await client.query('COMMIT')
-
   return {
     token,
     user: {
@@ -266,10 +270,15 @@ export async function registerAccount(input: RegisterAccountInput) {
       role: membership.rows[0].role,
     },
   }
+  }
+  try {
+    return await ('phone' in input ? storeRegistration(input.client) : withTransaction(storeRegistration))
   } catch (error) {
-    await client.query('ROLLBACK')
+    if (phone && typeof error === 'object' && error && 'constraint' in error && error.constraint === 'idx_users_verified_phone') {
+      throw new AppError('该手机号已注册，请直接登录。', 409, 'PHONE_ALREADY_EXISTS')
+    }
     throw error
-  } finally { client.release() }
+  }
 }
 
 const ADMIN_ORG_NAME = 'LawVerify 运营中心'
@@ -292,6 +301,7 @@ export type AdminAccountStatus = {
 // so a restart cannot silently reset a password that was changed on the server.
 export async function createAdminAccount(input: AdminAccountInput) {
   const email = normalizeEmail(input.email)
+  if (isPhoneAccountIdentifier(email)) throw new AppError('该标识保留给手机号账号。', 400, 'INVALID_EMAIL')
   const name = input.name?.trim() || ADMIN_DISPLAY_NAME
   const passwordHash = await bcrypt.hash(input.password, 10)
 
@@ -340,6 +350,7 @@ export async function createAdminAccount(input: AdminAccountInput) {
 // Changing a password signs the account out everywhere.
 export async function setAccountPassword(emailInput: string, password: string) {
   const email = normalizeEmail(emailInput)
+  if (isPhoneAccountIdentifier(email)) throw new AppError('手机号账号使用验证码登录。', 400, 'PHONE_ACCOUNT_ONLY')
   const passwordHash = await bcrypt.hash(password, 10)
 
   if (!isDatabaseEnabled()) {
@@ -363,6 +374,7 @@ export async function setAccountPassword(emailInput: string, password: string) {
 export async function setAccountEmail(currentEmailInput: string, nextEmailInput: string) {
   const currentEmail = normalizeEmail(currentEmailInput)
   const nextEmail = normalizeEmail(nextEmailInput)
+  if ([currentEmail, nextEmail].some(isPhoneAccountIdentifier)) throw new AppError('手机号账号使用验证码登录。', 400, 'PHONE_ACCOUNT_ONLY')
 
   if (!isDatabaseEnabled()) {
     return updateDevStore(async (store) => {
@@ -422,6 +434,7 @@ export async function seedAdminAccount() {
 
 export async function loginAccount(input: LoginAccountInput) {
   const email = normalizeEmail(input.email)
+  if (isPhoneAccountIdentifier(email)) throw new AppError('邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
   const sessionId = randomUUID()
 
   if (!isDatabaseEnabled()) {
@@ -473,44 +486,21 @@ export async function loginAccount(input: LoginAccountInput) {
     }
   }
 
-  const result = await query<{
-    user_id: string
-    email: string
-    name: string
-    password_hash: string | null
-    organization_id: string
-    organization_name: string
-    membership_id: string
-    role: AuthClaims['role']
-  }>(
-    `
-      SELECT
-        u.id AS user_id,
-        u.email,
-        u.name,
-        u.password_hash,
-        o.id AS organization_id,
-        o.name AS organization_name,
-        m.id AS membership_id,
-        m.role
-      FROM users u
-      JOIN organization_memberships m ON m.user_id = u.id AND m.status = 'active'
-      JOIN organizations o ON o.id = m.organization_id
-      WHERE u.email = $1 AND u.status = 'active'
-      ORDER BY m.created_at ASC
-      LIMIT 1
-    `,
-    [email],
-  )
+  return loginStoredAccount({ email, password: input.password }, sessionId)
+}
 
-  if (!result.rowCount) {
-    throw new AppError('邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
+export async function loginPhoneAccount(phone: string, client: PoolClient) {
+  return loginStoredAccount({ phone }, randomUUID(), client)
+}
+
+async function loginStoredAccount(input: LoginAccountInput | { phone: string }, sessionId: string, client?: PoolClient) {
+  const account = await findStoredLoginAccount(input, client)
+  const phone = 'phone' in input ? input.phone : undefined
+  if (!account) {
+    throw new AppError(phone ? '该手机号尚未注册，请先注册。' : '邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
   }
-
-  const account = result.rows[0]
-  const passwordHash = ensurePasswordHash(account.password_hash)
-  const passwordMatched = await bcrypt.compare(input.password, passwordHash)
-  if (!passwordMatched) {
+  const passwordHash = 'password' in input ? ensurePasswordHash(account.password_hash) : null
+  if ('password' in input && !await bcrypt.compare(input.password, passwordHash!)) {
     throw new AppError('邮箱或密码错误。', 401, 'INVALID_CREDENTIALS')
   }
 
@@ -523,7 +513,7 @@ export async function loginAccount(input: LoginAccountInput) {
     sessionId,
   })
 
-  await persistSession(account.user_id, sessionId, token, passwordHash)
+  await persistSession(account.user_id, sessionId, token, passwordHash, phone, client)
 
   await recordAuditEvent({
     organizationId: account.organization_id,
@@ -531,7 +521,7 @@ export async function loginAccount(input: LoginAccountInput) {
     entityType: 'user',
     entityId: account.user_id,
     metadata: { email: account.email },
-  })
+  }, client)
 
   return {
     token,
@@ -579,6 +569,7 @@ export async function getCurrentActorProfile(claims: AuthClaims | AuthenticatedA
     user_id: string
     user_name: string
     email: string
+    verified_phone: string | null
     organization_id: string
     organization_name: string
     membership_id: string
@@ -589,6 +580,7 @@ export async function getCurrentActorProfile(claims: AuthClaims | AuthenticatedA
         u.id AS user_id,
         u.name AS user_name,
         u.email,
+        u.verified_phone,
         o.id AS organization_id,
         o.name AS organization_name,
         m.id AS membership_id,
@@ -612,6 +604,7 @@ export async function getCurrentActorProfile(claims: AuthClaims | AuthenticatedA
       id: profile.user_id,
       name: profile.user_name,
       email: profile.email,
+      ...(profile.verified_phone ? { maskedPhone: `${profile.verified_phone.slice(0, 3)}****${profile.verified_phone.slice(-4)}` } : {}),
     },
     organization: {
       id: profile.organization_id,
@@ -620,19 +613,6 @@ export async function getCurrentActorProfile(claims: AuthClaims | AuthenticatedA
       role: profile.role,
     },
   }
-}
-
-async function withAccountTransaction<T>(operation: (client: PoolClient) => Promise<T>) {
-  const client = await getPool().connect()
-  try {
-    await client.query('BEGIN')
-    const result = await operation(client)
-    await client.query('COMMIT')
-    return result
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally { client.release() }
 }
 
 function activeDevAccount(store: DevStoreShape, actor: AuthenticatedActor) {
@@ -671,7 +651,7 @@ export async function updateAccountProfile(actor: AuthenticatedActor, input: { d
       if (input.organizationName !== undefined) organization.name = input.organizationName
     })
   } else {
-    await withAccountTransaction(async client => {
+    await withTransaction(async client => {
       const result = await client.query<{ role: AuthenticatedActor['role'] }>(accountSettingsQuery + ' FOR UPDATE OF u, s, m, o',
         [actor.userId, actor.organizationId, actor.membershipId, actor.sessionId])
       const membership = result.rows[0]
@@ -721,7 +701,7 @@ export async function changeAccountPassword(actor: AuthenticatedActor, input: { 
   const original = (await query<PasswordAccount>(accountSettingsQuery, accountIds)).rows[0]
   if (!original) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
   const passwordHash = await hashReplacement(original.password_hash)
-  return withAccountTransaction(async client => {
+  return withTransaction(async client => {
     const account = (await client.query<PasswordAccount>(accountSettingsQuery + ' FOR UPDATE OF u, s, m, o', accountIds)).rows[0]
     if (!account) throw new AppError('当前登录态无效。', 401, 'INVALID_SESSION')
     assertUnchanged(account.password_hash, original.password_hash)

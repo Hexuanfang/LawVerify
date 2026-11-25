@@ -1,43 +1,37 @@
 .document-editor-inline { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-.document-editor-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface); flex-shrink: 0; }
-.document-editor-toolbar { display: flex; align-items: center; flex: 1; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.document-editor-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--surface); flex-shrink: 0; }
+.document-editor-toolbar { display: flex; align-items: center; flex: 1 1 210px; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.document-editor-toolbar > * { flex-shrink: 0; }
 .document-editor-toolbar [data-slot='select-trigger'] { width: 100px; height: 30px; margin-right: 6px; font-size: 12px; background: var(--surface); border-color: var(--line); }
 .document-editor-toolbar button[aria-label]:not([data-slot='select-trigger']) { width: 29px; height: 30px; border-radius: 5px; color: var(--ink-2); }
 .document-editor-toolbar button[aria-pressed='true'] { background: var(--line); color: var(--ink); }
 .document-editor-toolbar button:disabled { opacity: .35; }
 .document-save-button { margin-left: auto; flex-shrink: 0; background: var(--ink); color: var(--surface); font-size: 11px; height: 30px; padding: 0 10px; border-radius: 6px; }
 .document-save-button:hover { background: var(--ink-2); }
+.document-export-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.document-export-actions button { height: 30px; padding-inline: 7px; font-size: 11px; }
 .document-editor-notices { flex-shrink: 0; max-height: 28vh; overflow-y: auto; }
 .document-editor-notice { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 14px; background: #f5eedb; border-bottom: 1px solid #e5d8b9; font-size: 12px; line-height: 1.7; }
 .document-editor-notice button { height: 28px; padding: 0 8px; font-size: 11px; }
 .document-editor-notice details { width: 100%; }
 .document-editor-notice pre { white-space: pre-wrap; max-height: 130px; overflow: auto; font: inherit; padding: 10px; background: var(--surface); }
-.document-editor-canvas { flex: 1; min-height: 0; overflow: auto; padding: 24px 12px 40px; background: #f0ece4; }
-.doc-paper.document-editor-paper { width: 100%; max-width: 780px; min-height: 100%; margin: 0 auto; padding: 0; background: #fffefb; border: 1px solid #ded8cc; box-shadow: 0 3px 16px #332d220c; }
-.whole-document-content { min-height: 800px; padding: 48px clamp(24px, 4vw, 52px); font-family: var(--font-doc); font-size: 16px; line-height: 1.9; outline: none; overflow-wrap: anywhere; }
-.whole-document-content p { margin: 0 0 12px; white-space: pre-wrap; }
-.whole-document-content h1 { font-size: 26px; font-weight: 600; line-height: 1.5; margin: 0 0 22px; }
-.whole-document-content h2 { font-size: 22px; font-weight: 600; line-height: 1.6; margin: 18px 0 14px; }
-.whole-document-content h3 { font-size: 18px; font-weight: 600; margin: 14px 0 10px; }
-.whole-document-content ul, .whole-document-content ol { padding-left: 28px; margin: 12px 0; }
-.whole-document-content ul { list-style: disc; }
-.whole-document-content ol { list-style: decimal; }
-.whole-document-content blockquote { border-left: 3px solid #d8d0c0; padding-left: 18px; margin: 16px 0; color: var(--ink-2); }
-.whole-document-content table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-.whole-document-content td, .whole-document-content th { min-width: 36px; border: 1px solid #ccc4b4; padding: 8px 10px; vertical-align: top; }
-.whole-document-content th { background: #f3efe6; font-weight: 600; }
-.whole-document-content img { max-width: 100%; height: auto; }
-.whole-document-content .mk { cursor: text; }
+.document-editor-canvas { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 10px 12px 24px; background: #f0ece4; }
+.doc-paper.document-editor-paper { position: relative; width: 100%; max-width: none; min-height: 100%; margin: 0 auto; padding: 0; background: transparent; border: 0; box-shadow: none; }
+.whole-document-content { min-height: 100%; }
+.document-editor-loading { position: absolute; inset: 0; z-index: 1; display: grid; justify-items: center; align-content: start; padding: 24px 12px; background: var(--surface); }
+.document-editor-loading [role=status] { width: min(100%, 420px); padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.document-editor-loading h2 { margin: 0; font-size: 18px; }
+.document-editor-loading p { margin: 6px 0 14px; color: var(--ink-2); font-size: 13px; }
+.document-editor-loading label { display: grid; gap: 6px; font-size: 12px; }
+.document-editor-loading progress { width: 100%; height: 8px; }
+.whole-document-content .lawverify-review.mk { margin: 0; padding: 0; cursor: text; }
 .document-selection-actions { position: fixed; z-index: 8; transform: translate(-50%, -100%); display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-sm); white-space: nowrap; }
 .document-selection-actions button { height: 28px; padding: 0 8px; font-size: 12px; }
 .document-editor-status { display: flex; justify-content: space-between; gap: 12px; padding: 7px 14px; border-top: 1px solid var(--line); background: var(--surface); font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
 .document-editor-status .draft-error { color: var(--st-bad); }
-@media (max-width: 1000px) { .whole-document-content { padding: 32px 20px; } }
 @media (max-width: 760px) {
   .document-editor-tools { padding: 7px 10px; }
-  .document-editor-toolbar { flex: 1 0 100%; flex-wrap: nowrap; gap: 2px; overflow-x: auto; }
-  .document-editor-toolbar > * { flex-shrink: 0; }
-  .document-editor-canvas { padding: 14px 8px; }
-  .whole-document-content { padding: 26px 16px; font-size: 15px; min-height: 680px; }
+  .document-editor-toolbar { flex-basis: 100%; }
+  .document-editor-canvas { padding: 10px 8px; }
   .document-editor-notice, .document-editor-status { padding: 8px 10px; }
 }

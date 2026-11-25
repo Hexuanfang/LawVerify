@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { readFileSync, cpSync } from 'node:fs'
+import { readFileSync, cpSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +20,18 @@ const { loadReleaseEndpoints } = createRequire(import.meta.url)('./electron/rele
 export default defineConfig(({ command }) => ({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   plugins: [tailwindcss(), react(), {
+    name: 'superdoc-license',
+    apply: 'build',
+    closeBundle() {
+      const root = fileURLToPath(new URL('.', import.meta.url))
+      const licenses = path.join(root, 'dist/licenses/superdoc')
+      mkdirSync(licenses, { recursive: true })
+      cpSync(path.join(root, 'node_modules/superdoc/LICENSE'), path.join(licenses, 'LICENSE'))
+      for (const file of ['DOCX-ENGINE-LICENSE.md', 'NOTICE.md', 'THIRD_PARTY_NOTICES']) {
+        cpSync(path.join(root, 'node_modules/@superdoc/docx-engine/dist', file), path.join(licenses, file))
+      }
+    },
+  }, {
     name: 'pdf-preview-assets',
     closeBundle() {
       const root = fileURLToPath(new URL('.', import.meta.url))

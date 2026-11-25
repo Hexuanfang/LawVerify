@@ -5,6 +5,7 @@ export interface ParagraphDraft {
   baseText: string
   baseRichText: string
   revision: string
+  office?: { bytes: Blob; expectedFileVersion: string }
 }
 
 let database: Promise<IDBDatabase> | undefined

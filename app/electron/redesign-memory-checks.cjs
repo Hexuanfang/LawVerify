@@ -51,8 +51,8 @@ module.exports = async function checkMemoryCalculation({ evaluate, wait, clickTe
   await wait(`document.querySelector('.new-drawer')?.textContent.includes(${JSON.stringify(evidenceText)})`)
   await clickText('.new-drawer button', 'Close')
   await clickText('.case-memory-grid[data-state=active] .case-memory-link', statement + '货款起诉状')
-  await wait(`document.querySelector('.rc-q')?.textContent === ${JSON.stringify(statement)}`)
-  await wait(`document.querySelector('.whole-document-content [data-el="${declarationId}"].sel')`)
+  await wait(`document.querySelector('.review-result-details blockquote')?.textContent === ${JSON.stringify(statement)}`)
+  await wait(`document.querySelector('.lawverify-review[data-superdoc-ext-el="${declarationId}"].sel')`)
 
   await saved(async state => {
     state.evidences.find(item => item.id === evidenceId).contentHash = 'qa-settlement-v2'

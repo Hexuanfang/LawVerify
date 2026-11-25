@@ -205,7 +205,7 @@ export function CaseMemory({ onBack, onDraft, onAssistant }: {
                 return <tr key={item.id}>
                   <td><button type="button" className="case-memory-link" onClick={() => focus(item.certificateId, item.id)}>{item.quote}</button><small>{item.certificateTitle}</small></td>
                   <td><div className="case-memory-links">{sourceButtons(item.sources)}</div></td>
-                  <td data-verdict={verdict}>{STATUS_NAMES[verdict]}</td>
+                  <td data-verdict={verdict}>{STATUS_NAMES[verdict].replace(/^[绿黄红]·/, '')}</td>
                 </tr>
               })}</tbody>
             </table> : <p className="review-view-empty">暂无带可回查原文的当前核验结果。</p>}

@@ -33,7 +33,7 @@
                     "test:word-export": "node electron/run-electron-test.cjs test-redesign.cjs --export-only",
                     "test:cases":  "node electron/run-electron-test.cjs test-case-mutations.cjs",
                     "test:account":  "node --test electron/test-account-network.cjs \u0026\u0026 node electron/run-electron-test.cjs test-account-proxy.cjs",
-                    "test:redesign": "node --experimental-strip-types --test src/redesign/model.test.ts src/redesign/caseFileKind.test.ts src/redesign/libraryRows.test.ts src/redesign/documentBilling.test.ts src/redesign/verificationProgress.test.ts src/redesign/reviewOverview.test.ts src/redesign/verificationMemory.test.ts src/redesign/caseResearchReport.test.ts src/redesign/assistantIntent.test.ts src/auth-transition.test.ts && node electron/run-electron-test.cjs test-redesign.cjs",
+                    "test:redesign": "node --experimental-strip-types --test src/redesign/model.test.ts src/redesign/caseFileKind.test.ts src/redesign/libraryRows.test.ts src/redesign/documentBilling.test.ts src/redesign/verificationProgress.test.ts src/redesign/reviewOverview.test.ts src/redesign/verificationMemory.test.ts src/redesign/caseResearchReport.test.ts src/redesign/assistantIntent.test.ts src/redesign/documentSelection.test.ts src/redesign/reviewHighlights.test.ts src/auth-transition.test.ts && node electron/run-electron-test.cjs test-redesign.cjs",
                     "lint":  "oxlint",
                     "preview":  "vite preview",
                     "desktop":  "electron electron/main.cjs"
@@ -63,12 +63,9 @@
                          "zod":  "^4.6.5"
                      },
     "devDependencies":  {
-                            "@tiptap/extension-text-align":  "^3.0.9",
-                            "@tiptap/extension-underline":  "^3.0.9",
-                            "@tiptap/react":  "^3.0.9",
-                            "@tiptap/starter-kit":  "^3.0.9",
                             "@types/node":  "^24.13.3",
                             "@types/qrcode":  "^1.5.6",
+                            "superdoc":  "2.34.0",
                             "@types/react":  "^19.2.18",
                             "@types/react-dom":  "^19.2.7",
                             "@vitejs/plugin-react":  "^6.1.1",

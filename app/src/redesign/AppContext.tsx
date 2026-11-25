@@ -42,7 +42,6 @@ const emptyReview = { total: 0, unreviewed: 0, red: 0, ready: false }
 function useAppState() {
   const data = useWorkspace()
   const { workspace, mutate, setError } = data
-  const [reviewListOpen, setReviewListOpen] = useState(false)
   const documentGuard = useRef<((mode: 'save' | 'draft') => Promise<boolean>) | null>(null)
   const registerDocumentGuard = useCallback((guard: (mode: 'save' | 'draft') => Promise<boolean>) => {
     documentGuard.current = guard
@@ -56,7 +55,6 @@ function useAppState() {
     if (data.busy) return false
     return documentGuard.current ? documentGuard.current('draft') : true
   }, [data.busy])
-  const [referenceTarget, setReferenceTarget] = useState<ReviewElement | null>(null)
   const [assistantRequest, setAssistantRequest] = useState<{
     mode: 'case' | 'document' | 'law' | 'similar' | 'report' | 'rewrite'
     prompt?: string
@@ -64,7 +62,7 @@ function useAppState() {
     anchor?: import('../../../server/src/intelligence/verification/rewrite-selection').RewriteSelection
     declarationIds?: string[]
   } | null>(null)
-  const [confirmation, setConfirmation] = useState<ReviewElement | null>(null)
+  const [confirmation, setConfirmation] = useState<{ target: ReviewElement; note?: string } | null>(null)
   const [page, setPage] = useState<Page>('home')
   const [caseId, setCaseId] = useState('')
   const [docId, setDocId] = useState('')
@@ -127,8 +125,6 @@ function useAppState() {
   const stats = counts(elements)
   const projectId = project?.id
   const certificateId = certificate?.id
-  const caseReview = useMemo(() => page === 'ws' && workspace && projectId ? reviewReadiness(workspace, projectId) : emptyReview,
-    [page, workspace, projectId])
   const documentReview = useMemo(() => page === 'report' && workspace && projectId && certificateId
     ? reviewReadiness(workspace, projectId, certificateId) : emptyReview, [page, workspace, projectId, certificateId])
 
@@ -231,11 +227,10 @@ function useAppState() {
     if (saved) await addAudit(target, '添加人工批注')
     return saved
   }
-  const confirm = async (target: ReviewElement, wholeParagraph = false, checks?: DeclarationReviewAction['checks']) => {
+  const confirm = async (target: ReviewElement, wholeParagraph = false, checks?: DeclarationReviewAction['checks'], note?: string) => {
     if (target.verified && (!target.declaration || target.declaration.review?.decision === 'confirmed')) return
     if (target.declaration && !wholeParagraph) {
-      await reviewDeclaration(target, { type: 'confirm', checks }, '声明已确认')
-      return
+      return reviewDeclaration(target, { type: 'confirm', checks, note }, '声明已确认')
     }
     if (!workspace || needsVerification(workspace, target.certificateId)) { toast('当前正文或材料已更新，请先重新核验。'); return }
     const paragraphElements = elements.filter(item => item.paragraphId === target.paragraphId)
@@ -243,31 +238,13 @@ function useAppState() {
       toast('本段仍有红灯或缺源声明，请处理后再确认整段。')
       return
     }
-    if (paragraphElements.length > 1 && !wholeParagraph) { setConfirmation(target); return }
+    if (paragraphElements.length > 1 && !wholeParagraph) { setConfirmation({ target, note }); return }
     if (await run(async () => { await assertReferenceSnapshot(target); return api.updateParagraph(target.certificateId, target.paragraphId, { verified: true },
       { text: target.original.text, richText: target.original.richText }) }, '本段全部声明已确认')) {
-      await addAudit(target, '律师确认整段全部声明')
+      await addAudit(target, note ? `律师确认整段全部声明 · ${note}` : '律师确认整段全部声明')
       setConfirmation(null)
+      return true
     }
-  }
-  const reject = async (target: ReviewElement) => {
-    if (target.declaration) {
-      await reviewDeclaration(target, { type: 'reject' }, '声明已驳回，待重新核验')
-      return
-    }
-    if (
-      await run(
-        async () => {
-          await invalidateCaseReview()
-          return api.updateParagraph(target.certificateId, target.paragraphId, {
-            verified: false,
-            note: `${target.note ? target.note + '\n' : ''}律师驳回 AI 判定，需按人工意见复核。`,
-          })
-        },
-        '已保存驳回意见',
-      )
-    )
-      await addAudit(target, '取消整段确认并记录驳回意见')
   }
   const edit = async (target: Pick<ReviewElement, 'id' | 'certificateId' | 'paragraphId' | 'start' | 'end' | 'quote' | 'original' | 'sentenceIndex'>,
     text: string, quiet = false) => {
@@ -531,36 +508,14 @@ function useAppState() {
     setDrawer(null)
     select('')
   }
-  const confirmParagraph = async (paragraph: CertificateParagraph) => {
-    if (!workspace || !certificate) return
-    if (!paragraph.verified && needsVerification(workspace, certificate.id)) { toast('当前正文或材料已更新，请先重新核验。'); return }
-    if (!paragraph.verified && buildParagraphElements(paragraph, workspace, certificate.id).some(item => item.verdict === 'fail' || item.verdict === 'miss')) {
-      toast('本段仍有红灯或缺源，请先处理后确认。'); return
-    }
-    const saved = await run(async () => {
-      const latest = (await api.getWorkspace()).workspace.certificates.find(item => item.id === certificate.id)?.paragraphs.find(item => item.id === paragraph.id)
-      if (!latest || JSON.stringify(latest) !== JSON.stringify(paragraph)) throw new Error('段落内容或引用已有更新，请核对最新内容后再次确认。')
-      if (paragraph.verified) await invalidateCaseReview()
-      await api.updateParagraph(certificate.id, paragraph.id, { verified: !paragraph.verified }, { text: paragraph.text, richText: paragraph.richText })
-    }, paragraph.verified ? '已取消本段确认' : '已确认本段全部内容')
-    if (saved) await addAudit({ id: `${certificate.id}:${paragraph.id}:paragraph`, paragraphId: paragraph.id, certificateId: certificate.id },
-      paragraph.verified ? '取消整段确认' : '律师确认整段全部声明')
-  }
-  const markCaseReady = async () => {
-    if (!project) return
-    await run(async () => {
-      const current = (await api.getWorkspace()).workspace
-      if (!reviewReadiness(current, project.id).ready) throw new Error('请先审阅全部文书段落并处理红灯，再标记案件完成。')
-      await api.updateCase(project.id, { status: 'ready' })
-    }, '案件已标记为待归档')
-  }
-  const saveDocument = async (paragraphs: DocumentBlock[], expected: DocumentBlock[]) => {
+  const saveDocument = async (paragraphs: DocumentBlock[], expected: DocumentBlock[], work?: import('./documentFile').DocxWork) => {
     if (!certificate) throw new Error('当前文书已不存在，本机草稿已保留。')
-    const result = await mutate(() => api.saveDocumentContent(certificate.id, paragraphs, expected))
+    const result = await mutate(() => work ? api.saveDocxContent(certificate.id, paragraphs, expected, work)
+      : api.saveDocumentContent(certificate.id, paragraphs, expected))
     const saved = result.workspace.certificates.find(item => item.id === certificate.id)
     if (!saved) throw new Error('未找到保存后的文书，请保留本机草稿。')
     toast('整篇文书已保存')
-    return saved.paragraphs
+    return saved
   }
   const saveParagraph = async (paragraph: CertificateParagraph, text: string, richText: string,
     expected: { text: string; richText?: string } = paragraph) => {
@@ -623,11 +578,10 @@ function useAppState() {
 
   return {
     ...data,
-    reviewListOpen, setReviewListOpen, confirmParagraph,
-    caseReview, documentReview, confirmation, setConfirmation,
-    registerDocumentGuard, prepareDocument, flushDocument, referenceTarget, setReferenceTarget,
+    documentReview, confirmation, setConfirmation,
+    registerDocumentGuard, prepareDocument, flushDocument,
     assistantRequest, setAssistantRequest, auditAssistantAction,
-    updateMaterial, deleteMaterial, markCaseReady, saveParagraph, saveDocument, saveReferences,
+    updateMaterial, deleteMaterial, saveParagraph, saveDocument, saveReferences,
     invalidateCaseReview,
     cloudProfile, setCloudProfile,
     logout: () => { onLeaving(); endSession() },
@@ -660,10 +614,8 @@ function useAppState() {
     audits: audits.filter(item => item.account === account.trim().toLowerCase()),
     saveNote,
     confirm,
-    reject,
     toggleWarning: (target: ReviewElement) => reviewDeclaration(target, { type: target.ignored ? 'restore-warning' : 'ignore' },
       target.ignored ? '预警已恢复到待办' : '预警已忽略，报告仍保留记录'),
-    declineSuggestion: (target: ReviewElement) => reviewDeclaration(target, { type: 'decline' }, '已记录拒绝建议'),
     applyDeclarationEdit,
     edit,
     applyAssistantRewrite,

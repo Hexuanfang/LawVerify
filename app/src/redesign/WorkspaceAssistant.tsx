@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowUp, ChevronDown, Ellipsis, LoaderCircle, Maximize2, Minimize2, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, Ellipsis, LoaderCircle, X } from 'lucide-react'
 import { api } from '../api'
 import type { EvidenceLink, ParagraphReference, RoleType } from '../types'
 import type { AnalysisOutput } from '../../../server/src/assistant/analysis'
@@ -82,7 +82,6 @@ export function WorkspaceAssistant({ visible }: { visible: boolean }) {
   const [analysis, setAnalysis] = useState<AnalysisOutput>()
   const [association, setAssociation] = useState<{ target: ReviewElement; suggested: EvidenceLink | ParagraphReference }>()
   const [externalAssociation, setExternalAssociation] = useState<{ target: ReviewElement; card: LookupCard }>()
-  const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const moreMenu = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -300,15 +299,10 @@ export function WorkspaceAssistant({ visible }: { visible: boolean }) {
   const placeholder = (tool === 'draft' && quote ? '描述要在选区后补写的内容…' : placeholders[tool])
     ?? (quote ? '描述你想怎么处理这段文字…' : '描述你想起草、查找或核验的内容…')
 
-  return <section className={'workspace-ai-panel' + (expanded ? ' is-expanded' : '')} aria-label="AI 助手" aria-busy={waiting}>
+  return <section className="workspace-ai-panel" aria-label="AI 助手" aria-busy={waiting}>
     <header className="workspace-ai-header">
-      <div className="workspace-ai-header-actions">
-        <Button variant="ghost" size="icon" aria-pressed={expanded}
-          aria-label={expanded ? '还原 AI 助手' : '加宽 AI 助手'} title={expanded ? '还原 AI 助手' : '加宽 AI 助手'}
-          onClick={() => setExpanded(value => !value)}>{expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</Button>
-        <Button variant="ghost" size="icon" aria-label="关闭 AI 助手" title="关闭 AI 助手（Esc）"
-          onClick={() => setAssistantRequest(null)}><X size={16} /></Button>
-      </div>
+      <Button variant="ghost" size="icon" aria-label="关闭 AI 助手" title="关闭 AI 助手（Esc）"
+        onClick={() => setAssistantRequest(null)}><X size={16} /></Button>
     </header>
     <div className="workspace-ai-modes" role="group" aria-label="助手能力">
       {modes.map(({ id, mode, icon, label, description, starter }) => <Button key={id} className="workspace-ai-card" variant="outline"

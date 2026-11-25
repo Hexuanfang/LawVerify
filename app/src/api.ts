@@ -1022,6 +1022,9 @@ export const api = {
   documentFileResponse(id: string) {
     return fetchWithWorkspaceAccount(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}/download`)
   },
+  documentEditSource(id: string, signal: AbortSignal) {
+    return fetchWithWorkspaceAccount(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}/edit-source`, { signal })
+  },
   transcribeAssistantAudio(audio: Blob, signal?: AbortSignal) {
     const form = new FormData()
     form.set('file', audio, audio.type === 'audio/mp4' ? 'speech.m4a' : 'speech.webm')
@@ -1333,6 +1336,15 @@ export const api = {
     return request<WorkspaceResponse>(`/api/certificates/${certificateId}/content`, {
       method: 'PUT', body: JSON.stringify({ paragraphs, expectedContent }),
     })
+  },
+  saveDocxContent(certificateId: string,
+    paragraphs: Array<Pick<CertificateParagraph, 'id' | 'text' | 'richText'>>,
+    expectedContent: Array<Pick<CertificateParagraph, 'id' | 'text' | 'richText'>>,
+    work: { bytes: Blob; expectedFileVersion: string }) {
+    const body = new FormData()
+    body.set('file', work.bytes, 'document.docx')
+    body.set('content', JSON.stringify({ paragraphs, expectedContent, expectedFileVersion: work.expectedFileVersion }))
+    return request<WorkspaceResponse>(`/api/documents/${encodeURIComponent(certificateId)}/edit-source`, { method: 'PUT', body })
   },
   updateParagraph(
     certificateId: string,

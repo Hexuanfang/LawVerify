@@ -1,4 +1,7 @@
 const assert = require('node:assert/strict')
+const { sendHighlightClick } = require('./redesign-highlight-checks.cjs')
+const paragraphNote = '旧版整段核对记录。'
+const declarationNote = '核对借款合同原件。'
 
 function seed(workspace) {
   const doc = workspace.certificates[0]
@@ -42,9 +45,10 @@ function seed(workspace) {
         },
       }),
       ...(id === 'p5' && { review: { revision: 'qa', ignored: true } }),
-      ...(id === 'p6' && { review: { revision: 'qa', note: '核对借款合同原件。' } }),
+      ...(id === 'p6' && { review: { revision: 'qa', note: declarationNote } }),
     })
   }
+  doc.paragraphs.find(paragraph => paragraph.id === 'p6').note = paragraphNote
   workspace.certificates.push({
     ...doc, id: 'qa-empty-document', title: '空白核验文书', verification: undefined, paragraphIds: [], paragraphs: [],
   }, {
@@ -55,64 +59,111 @@ function seed(workspace) {
   })
 }
 
-async function check({ evaluate, wait, clickText, screenshot, window, saved }) {
+async function check({ evaluate, wait, clickText, fill, screenshot, window, saved }) {
+  const clickHighlight = id => sendHighlightClick({ evaluate, wait, window },
+    'document.querySelector(' + JSON.stringify('.lawverify-review[data-superdoc-ext-el="' + id + '"]') + ')')
   const buttons = '.review-todo-tabs button'
-  const rightTabs = '.workspace-right-tablist [role=tab]'
-  const overviewVisible = "document.querySelector('.review-todos:not([hidden])')"
-  await wait(overviewVisible)
-  await wait("document.querySelector('.workspace-right-tablist [aria-label=\"AI 助手\"] img')?.naturalWidth > 0")
+  const overview = "document.querySelector('.review-todos')?.checkVisibility()"
+  const detail = "document.querySelector('.review-sentence')?.checkVisibility()"
+  const actions = '.review-result-actions button'
+  const modal = '.review-wide-editor'
+  const noteInput = modal + ' textarea'
+  const returnToList = () => clickText('.review-detail-bar button', '返回待办')
+  const more = async label => {
+    await clickText(actions, '更多操作')
+    await wait("document.querySelector('[role=menuitem]')")
+    await clickText('[role=menuitem]', label)
+  }
+  const openRow = async id => {
+    await evaluate('document.querySelector(' + JSON.stringify('.review-todo-card[data-element-id="' + id + '"]') + ').click()')
+    await wait(detail)
+  }
+  const switchTo = title => evaluate(`Array.from(document.querySelectorAll('.workspace-doc-name'))
+    .find(item => item.textContent === ${JSON.stringify(title)}).closest('[role=tab]')
+    .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))`)
+
+  await wait(overview)
+  await wait("document.querySelector('.workspace-right-tablist img')?.naturalWidth > 0")
+  assert.equal(await evaluate("document.querySelector('.workspace-doc-strip [aria-label=\"AI 助手\"]')"), null)
+  assert.equal(await evaluate(`(() => {
+    const report = document.querySelector('.workspace-review-footer .workspace-review-report')
+    const assistant = document.querySelector('.workspace-review-footer [aria-label="AI 助手"]')
+    return Boolean(report?.checkVisibility() && assistant?.checkVisibility()
+      && report.getBoundingClientRect().right <= assistant.getBoundingClientRect().left)
+  })()`), true, '核验报告入口应在 AI 助手左侧')
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-todo-tabs button'), item => item.textContent)"),
+    ['待办 3', '预警 2', '标注 1', '已通过 1'])
   assert.equal(await evaluate("document.querySelector('.review-todos-count strong').textContent"), '3')
-  assert.equal(await evaluate("document.querySelector('.review-todos-progress progress').value"), 3)
+  assert.equal(await evaluate("document.querySelector('.review-todos-progress progress').value"), 4)
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-todo-card'), item => item.dataset.verdict)"),
     ['fail', 'miss', 'pending', 'warn'])
   assert.match(await evaluate("document.querySelector('.review-todo-fix').textContent"), /35,000元/)
   assert.match(await evaluate("document.querySelector('.review-todo-card .review-todo-reason').textContent"), /金额与银行流水不一致/)
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('#workspace-review button')).some(button => button.textContent.trim() === '＋ AI 起草')"), false)
+  await wait("document.querySelector('.whole-document-content .lawverify-review')")
   await screenshot('review-todos')
+
   await clickText(buttons, '预警 2')
   assert.equal(await evaluate("document.querySelectorAll('.review-todo-card').length"), 2)
+  await openRow('todo-p4')
+  await more('忽略预警')
+  await wait("document.querySelector('.review-sentence')?.textContent.includes('已忽略，仍列入报告')")
+  await returnToList()
+  assert.equal(await evaluate("document.querySelector('.review-todo-tabs [aria-selected=true]').textContent"), '预警 2')
+  await wait("document.activeElement.dataset.elementId === 'todo-p4'")
+
   await clickText(buttons, '标注 1')
-  assert.match(await evaluate("document.querySelector('.review-todo-card').textContent"), /核对借款合同原件/)
+  await openRow('todo-p6')
+  assert.equal(await evaluate("document.querySelector('.review-result-advice').textContent"), '律师批注 · ' + paragraphNote + '\n' + declarationNote)
+  await more('批注')
+  await wait("document.querySelector('.review-wide-editor textarea') === document.activeElement")
+  assert.equal(await evaluate("document.querySelector('.review-wide-editor textarea').value"), declarationNote)
+  await fill(noteInput, '这条草稿随后取消')
+  await clickText(modal + ' button', '取消')
+  await more('批注')
+  assert.equal(await evaluate("document.querySelector('.review-wide-editor textarea').value"), declarationNote)
+  const updatedNote = declarationNote + '\n已补充证据页码。'
+  await fill(noteInput, updatedNote)
+  await clickText(modal + ' button', '保存批注')
+  await wait("!document.querySelector('.review-wide-editor')")
+  await saved(state => {
+    const doc = state.certificates.find(item => item.id === 'qa-document')
+    assert.equal(doc.paragraphs.find(paragraph => paragraph.id === 'p6').note, paragraphNote)
+    assert.equal(doc.verification.declarations.find(item => item.id === 'todo-p6').review.note, updatedNote)
+  })
+  await returnToList()
+
   await clickText(buttons, '已通过 1')
-  assert.equal(await evaluate("document.querySelector('.review-todo-card').dataset.verdict"), 'pass')
-  await evaluate("document.querySelector('.review-todo-card').click()")
-  await wait("document.querySelector('.review-detail-bar h2')?.textContent === '本句核验' && document.querySelector('[data-el=todo-p7].sel')")
+  await openRow('todo-p7')
+  assert.equal(await evaluate("document.querySelector('.review-todos')"), null)
+  await wait("document.querySelector('.lawverify-review[data-superdoc-ext-el=todo-p7].sel')")
+  await returnToList()
+  assert.equal(await evaluate("document.querySelector('.review-todo-tabs [aria-selected=true]').textContent"), '已通过 1')
+
+  await clickHighlight('todo-p2')
+  await wait(detail)
+  assert.equal(await evaluate("document.querySelector('.review-todos')"), null)
+  assert.equal(await evaluate("document.querySelector('.review-result-status').textContent"), '不通过·矛盾')
+  assert.equal(await evaluate("document.querySelectorAll('.review-result-diff tbody tr').length"), 2)
+  assert.equal(await evaluate("document.querySelector('.review-result-details').open"), false)
+  assert.equal(await evaluate("document.querySelector('.review-sentence input[type=checkbox]')"), null)
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-result-actions button'), button => button.textContent.trim())"),
+    ['采纳修改建议', '问 AI', '更多操作'])
+  await wait("!document.querySelector('.toast.show')")
   await screenshot('review-detail')
-  await clickText('.review-detail-bar button', '返回待办')
-  await wait(overviewVisible)
-  assert.equal(await evaluate(`document.querySelector('${buttons}[aria-selected=true]').textContent`), '已通过 1')
-  await evaluate("document.querySelector('.whole-document-content [data-el=todo-p2]').click()")
-  await wait("document.querySelector('.review-highlight-result .review-highlight-status')?.textContent === '不通过'")
-  assert.equal(await evaluate(`(() => {
-    const pane = document.querySelector('.pane-r').getBoundingClientRect();
-    return Math.round(pane.width) === 400
-      && Math.round(document.querySelector('.pane-l').getBoundingClientRect().width) === 232;
-  })()`), true, '桌面高亮详情应恢复截图的三栏宽度')
-  assert.equal(await evaluate("document.querySelector('.workspace-right-tablist [aria-label=\"AI 助手\"]').checkVisibility()"), true)
-  const conclusion = await evaluate("document.querySelector('.review-highlight-conclusion').textContent")
-  assert.match(conclusion, /金额与银行流水不一致/u)
-  assert.doesNotMatch(conclusion, /AI结论/u)
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-highlight-result .ops button'), button => button.textContent.trim())"),
-    ['修改声明', '采纳修改建议', '关联出处'])
-  const details = '.review-highlight-result .review-declaration-details'
-  const sections = '.review-highlight-result > :is(.review-highlight-conclusion, .review-highlight-sources, .review-declaration-details)'
-  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('${sections}'), section => section.firstElementChild.textContent.trim())`),
-    ['不通过', '出处', '核验详情'])
-  assert.equal(await evaluate(`document.querySelector('${details}').open`), true)
-  await clickText(`${details} > summary`, '核验详情')
-  assert.equal(await evaluate(`document.querySelector('${details}').open`), false)
-  assert.equal(await evaluate("document.querySelector('.review-highlight-sources .rc-loc').getBoundingClientRect().height > 0"), true)
-  await evaluate("document.querySelector('.review-highlight-sources .rc-loc').click()")
+  await evaluate("document.querySelector('.review-result-source').click()")
   await wait("document.querySelector('.new-drawer .dwt')?.textContent === '招商银行流水'")
   await clickText('.new-drawer button', 'Close')
   await wait("!document.querySelector('.new-drawer')")
-  assert.equal(await evaluate("document.querySelectorAll('.review-highlight-sources a').length"), 0, '核验出处只保留预览入口')
-  const openStatute = locator => evaluate(`Array.from(document.querySelectorAll('.review-highlight-sources .rc-loc'))
-    .find(button => button.textContent.includes(${JSON.stringify(locator)})).click()`)
+  await clickText('.review-result-details summary', '核验详情')
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-result-checks li'), tag => tag.textContent)"),
+    ['溯源性 · 通过', '一致性 · 不通过', '边界性 · 未核实', '自洽性 · 预警', '真实性 · 通过'])
+  await screenshot('review-detail-expanded')
+  const openStatute = locator => evaluate("Array.from(document.querySelectorAll('.review-result-details .review-result-source'))"
+    + '.find(button => button.textContent.includes(' + JSON.stringify(locator) + ')).click()')
   await openStatute('第六百七十五条')
   await wait("document.querySelector('.new-drawer .st-x')")
   assert.match(await evaluate("document.querySelector('.new-drawer .st-x').textContent"), /借款人应当按照约定的期限返还借款/)
-  assert.match(await evaluate("document.querySelector('.new-drawer .dwb').textContent"), /现行有效.*2021-01-01/)
-  assert.equal(await evaluate("document.querySelector('.new-drawer .ocr, .new-drawer a')"), null)
   await clickText('.new-drawer button', 'Close')
   await wait("!document.querySelector('.new-drawer')")
   await openStatute('第九百六十九条')
@@ -124,121 +175,93 @@ async function check({ evaluate, wait, clickText, screenshot, window, saved }) {
     const subtitle = header.querySelector('.dws').getBoundingClientRect();
     const close = document.querySelector('.new-drawer [data-slot=sheet-close], .new-drawer button').getBoundingClientRect();
     return subtitle.bottom < header.getBoundingClientRect().bottom && subtitle.right <= close.left;
-  })()`), true, '法条定位信息在窄窗完整显示，且与关闭按钮分开')
-  assert.match(await evaluate("document.querySelector('.new-drawer .dwb').textContent"), /核验引用摘录.*属于合伙财产/)
-  assert.equal(await evaluate("document.querySelector('.new-drawer .ocr, .new-drawer a')"), null)
+  })()`), true)
   await screenshot('statute-preview-390')
   await clickText('.new-drawer button', 'Close')
   await wait("!document.querySelector('.new-drawer')")
   window.setSize(1440, 960)
   await wait("innerWidth > 1000")
-  await clickText(`${details} > summary`, '核验详情')
-  assert.equal(await evaluate(`document.querySelectorAll('${details} tbody tr').length`), 2)
-  const tags = `${details} .review-highlight-checks li`
-  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('${tags}'), tag =>
-    Array.from(tag.childNodes, node => node.nodeType === Node.TEXT_NODE ? node.textContent : '').join('').trim())`),
-    ['溯源性 · 通过', '一致性 · 不通过', '完整性 · 未核实', '边界性 · 未核实', '自洽性 · 预警'])
-  const backgrounds = await evaluate(`Array.from(document.querySelectorAll('${tags}'), tag => getComputedStyle(tag).backgroundColor)`)
-  assert.notEqual(backgrounds[0], backgrounds[1])
-  assert.deepEqual(backgrounds.slice(1), Array(4).fill(backgrounds[1]))
-  assert.equal(await evaluate("Boolean(document.querySelector('.case-review-bar'))"), false)
-  await clickText('.review-highlight-result .ops button', '修改声明')
-  assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), '修改声明')
-  await clickText('.review-highlight-result .inline-actions button', '取消')
-  await clickText('.review-highlight-result .ops button', '采纳修改建议')
-  await wait("document.querySelector('[aria-label=确认修改声明]')?.textContent.includes('35,000元')")
-  await clickText('[aria-label=确认修改声明] button', '取消')
-  await clickText('.review-highlight-result .ops button', '关联出处')
-  await wait("document.querySelector('.essential-reference-dialog')")
-  await clickText('.essential-reference-dialog .fm-ft button', '取消')
-  await wait("!document.querySelector('.essential-reference-dialog')")
-  await screenshot('review-highlight-conflict')
-  await clickText(rightTabs, 'AI 助手')
+  await more('修改声明')
+  await wait("document.querySelector('.review-wide-editor textarea') === document.activeElement")
+  await clickText(modal + ' button', '取消')
+  await more('关联出处')
+  await wait("document.querySelector('.review-inline-operation select')")
+  await clickText('.review-inline-operation button', '取消')
+  await clickText(actions, '采纳修改建议')
+  await wait("document.querySelector('.review-wide-editor textarea')?.value.includes('35,000元')")
+  await clickText(modal + ' button', '取消')
+  await clickText(actions, '问 AI')
   await wait("document.querySelector('.workspace-ai-panel')?.checkVisibility()")
   await clickText('.workspace-ai-header button', '关闭 AI 助手')
-  await wait("document.querySelector('.review-highlight-result').checkVisibility()")
-  await clickText('.review-detail-bar button', '返回待办')
-  await wait(overviewVisible)
-  assert.equal(await evaluate("document.querySelector('.workspace-right-tablist').checkVisibility()"), true)
-  await clickText(buttons, '待办 4')
-  await evaluate("document.querySelector('.review-todo-warnings summary').click()")
-  await clickText('.review-todo-warnings button', '查看全部预警')
-  assert.equal(await evaluate(`document.querySelector('${buttons}[aria-selected=true]').textContent`), '预警 2')
-  await clickText('.review-todo-actions button', '＋ AI 起草')
-  await wait("document.querySelector('.workspace-ai-card[data-mode=document][aria-pressed=true]')")
-  await clickText('.workspace-ai-header button', '关闭 AI 助手')
-  await clickText('.review-todo-actions button', '查看核验报告')
+  await wait(detail)
+  await returnToList()
+
+  await clickText(buttons, '待办 3')
+  await clickHighlight('qa-fact')
+  await wait(detail)
+  await clickText(actions, '人工核验')
+  const submit = "document.querySelector('.review-inline-operation button[type=submit]')"
+  assert.equal(await evaluate(submit + '.disabled'), true)
+  await evaluate("document.querySelectorAll('.review-inline-operation input[type=checkbox]').forEach(item => item.click())")
+  assert.equal(await evaluate(submit + '.disabled'), true)
+  await fill('.review-inline-operation textarea', '已对照原始流水核对借款金额。')
+  await clickText(actions, '通过并保留人工标注')
+  await wait("document.querySelector('.review-result-status')?.textContent === '通过·标注'")
+  await saved(state => {
+    const doc = state.certificates.find(item => item.id === 'qa-document')
+    assert.ok(doc.verification.audit.some(item => item.declarationId === 'qa-fact' && item.action === 'confirm'
+      && item.note === '已对照原始流水核对借款金额。'))
+  })
+  await returnToList()
+  await clickText('.workspace-review-footer .workspace-review-report', '查看核验报告')
   await wait("document.querySelector('#pg-report')")
   assert.equal(await evaluate("document.querySelector('.report-actions button').disabled"), true)
   await clickText('#pg-report .topbar button', '← 返回工作台')
-  await wait(overviewVisible)
+  await wait(overview)
+
   window.setSize(390, 900)
   await wait("document.querySelector('.ws.no-r')")
-  const assistantShortcut = '.workspace-doc-strip button[aria-label="AI 助手"]'
-  assert.equal(await evaluate(`Boolean(document.querySelector(${JSON.stringify(assistantShortcut)})?.checkVisibility())`), true,
-    '窄窗收起右栏时也应显示 AI 助手入口')
-  await wait(`document.querySelector(${JSON.stringify(assistantShortcut + ' img')})?.naturalWidth > 0`)
-  await screenshot('assistant-shortcut-390')
-  await clickText('.workspace-doc-strip button', 'AI 助手')
-  await wait("document.querySelector('.workspace-ai-panel') && !document.querySelector('.ws.no-r')")
-  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(assistantShortcut)})`), null)
-  await clickText('.workspace-ai-header button', '关闭 AI 助手')
-  await wait("document.querySelector('.ws.no-r')")
   await clickText('.workspace-doc-strip button', '核验结果')
-  await wait("getComputedStyle(document.querySelector('.pane-r')).visibility === 'visible'")
+  await wait(overview)
   assert.equal(await evaluate("document.querySelector('.review-todos-content').scrollWidth <= document.querySelector('.review-todos-content').clientWidth"), true)
   await screenshot('review-todos-390')
-  await evaluate("document.querySelector('.whole-document-content [data-el=todo-p4]').click()")
-  await wait("document.querySelector('.review-highlight-result') && getComputedStyle(document.querySelector('.pane-r')).visibility === 'visible'")
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-highlight-result .ops button'), button => button.textContent.trim())"),
-    ['修改声明', '关联出处'])
-  assert.equal(await evaluate(`Array.from(document.querySelectorAll('${tags}')).filter(tag => tag.textContent.includes('未核实')).length`), 5)
-  assert.equal(await evaluate("document.querySelector('.rp').scrollWidth <= document.querySelector('.rp').clientWidth"), true)
-  await screenshot('review-highlight-warning-390')
+  await clickText(buttons, '预警 2')
+  await openRow('todo-p4')
+  assert.equal(await evaluate("document.querySelector('.review-sentence-body').scrollWidth <= document.querySelector('.review-sentence-body').clientWidth"), true)
+  await wait("!document.querySelector('.toast.show')")
+  await screenshot('review-detail-390')
+
   window.setSize(1440, 960)
-  await clickText('.workspace-doc-strip [role=tab]', '空白核验文书')
+  await switchTo('空白核验文书')
   await wait("document.querySelector('.review-todos-empty button')?.textContent === 'AI 核验当前文书'")
   await screenshot('review-todos-empty')
+  await switchTo('待核验答辩状')
+  await wait("Array.from(document.querySelectorAll('.lawverify-review'), mark => mark.textContent).join('') === '民事答辩状'")
+  await sendHighlightClick({ evaluate, wait, window }, "document.querySelector('.lawverify-review')")
+  await wait(detail)
+  assert.equal(await evaluate("document.querySelector('.review-result-status').textContent"), '待核验')
+  await more('关联出处')
   await evaluate(`(() => {
-    const tab = Array.from(document.querySelectorAll('.workspace-doc-name')).find(item => item.textContent === '待核验答辩状').closest('[role=tab]');
-    tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    const select = document.querySelector('.review-inline-operation select')
+    select.value = 'qa-evidence'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
-  await wait("document.querySelector('.whole-document-content mark')?.textContent === '民事答辩状'")
-  window.webContents.focus()
-  const pendingMark = await evaluate(`(() => {
-    const rect = document.querySelector('.whole-document-content mark').getBoundingClientRect();
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-  })()`)
-  window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...pendingMark })
-  window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...pendingMark })
-  await wait("document.querySelector('.review-highlight-status')?.textContent === '待核验'")
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-detail-bar button'), button => button.textContent.trim())"), ['返回待办'])
-  const pendingDetail = "document.querySelector('.review-detail-bar').outerHTML + document.querySelector('.review-highlight-result').outerHTML"
-  const detailFromDocument = await evaluate(pendingDetail)
-  await clickText('.review-detail-bar button', '返回待办')
-  await evaluate("document.querySelector('.review-todo-card[data-verdict=pending]').click()")
-  await wait("document.querySelector('.review-detail-bar')")
-  await screenshot('review-pending-todo')
-  assert.equal(await evaluate("document.querySelector('.review-highlight-status')?.textContent"), '待核验',
-    '从待办打开同一个待核验片段时应显示相同的核验详情')
-  assert.equal(await evaluate(pendingDetail), detailFromDocument, '正文和待办应显示同一套标题栏和详情内容')
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.review-highlight-result .ops button'), button => button.textContent.trim())"),
-    ['修改声明', '关联出处'])
-  await clickText('.review-detail-bar button', '返回待办')
-  await evaluate("document.querySelector('.review-todo-card[data-verdict=pending]').closest('.review-todo-entry').querySelector('.review-todo-manual').click()")
-  await wait("document.querySelector('.rc .user-tag')?.textContent === '整段待人工审阅'")
-  assert.match(await evaluate("document.querySelector('.rc').textContent"), /导入自答辩状\.docx/u)
-  await clickText('.review-detail-bar button', '返回核验详情')
-  await wait("document.querySelector('.review-highlight-status')?.textContent === '待核验'")
-  await clickText('.review-detail-bar button', '返回待办')
-  await evaluate(`(() => {
-    const tab = Array.from(document.querySelectorAll('.workspace-doc-name')).find(item => item.textContent === '民事起诉状').closest('[role=tab]');
-    tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
-  })()`)
-  await wait("document.querySelector('.whole-document-content [data-el=todo-p2]')")
-  await evaluate("document.querySelector('.whole-document-content [data-el=todo-p2]').click()")
-  await clickText('.review-highlight-result .ops button', '采纳修改建议')
-  await clickText('[aria-label=确认修改声明] button', '确认替换')
+  await fill('[aria-label="出处定位"]', '第1段')
+  await fill('[aria-label="出处原文"]', '2023年3月15日转账500,000元。')
+  await clickText('.review-inline-operation button', '保存挂靠')
+  await wait("!document.querySelector('.review-inline-operation')")
+  await saved(state => {
+    const doc = state.certificates.find(item => item.id === 'qa-pending-defense')
+    assert.equal(doc.paragraphs[0].links[0].evidenceId, 'qa-evidence')
+    assert.equal(doc.paragraphs[0].links[0].locator, '第1段')
+  })
+  await returnToList()
+  await wait("document.querySelector('.review-todos-empty button')?.textContent === 'AI 核验当前文书'")
+  await switchTo('民事起诉状')
+  await clickHighlight('todo-p2')
+  await wait(detail)
+  await clickText(actions, '采纳修改建议')
+  await clickText(modal + ' button', '保存并局部重核')
   await wait("document.querySelector('#pg-proc')")
   await saved(state => {
     const doc = state.certificates.find(item => item.id === 'qa-document')

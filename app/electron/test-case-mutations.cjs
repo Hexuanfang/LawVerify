@@ -1,11 +1,12 @@
 const { app, BrowserWindow } = require('electron')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lawverify-case-ui-'))
+const testRoot = path.resolve(__dirname, '../tmp')
+fs.mkdirSync(testRoot, { recursive: true })
+const directory = fs.mkdtempSync(path.join(testRoot, 'lawverify-case-ui-'))
 app.setPath('userData', directory)
 app.disableHardwareAcceleration()
 let server, window
@@ -44,7 +45,7 @@ app.whenReady().then(async () => {
     await window.loadURL('http://127.0.0.1:8787')
     await evaluate("sessionStorage.setItem('lawverify-auth-session','isolated-ui-session');sessionStorage.setItem('lawverify-login-account','case-ui@test.invalid');location.reload()")
     await wait("document.querySelector('button[aria-label=\"\\u65b0\\u5efa\\u6848\\u4ef6\"]')")
-    await wait("document.querySelector('.tiptap-editor-body u')?.textContent === 'Original document.'")
+    await wait("Array.from(document.querySelectorAll('.whole-document-content .superdoc-text-run')).some(run => run.textContent === 'Original document.' && getComputedStyle(run).textDecorationLine.includes('underline'))")
     await evaluate("window.alert = message => {window.lastAlert=message};document.querySelector('button[aria-label=\"\\u65b0\\u5efa\\u6848\\u4ef6\"]').click()")
     await wait("document.querySelector('.case-dialog input')")
     const fill = value => evaluate(`(() => {

@@ -7,6 +7,12 @@ export function currentReviewFinding(certificate: Certificate | undefined, eleme
   return element.declaration
 }
 
+export function reviewStatusLabel(element: ReviewElement) {
+  if (element.verdict === 'fail' && (element.declaration?.differences?.length
+    || element.declaration?.checks.A2?.outcome === 'fail')) return '不通过·矛盾'
+  return { fail: '不通过', miss: '不通过·缺源', pending: '待核验', warn: '预警', note: '通过·标注', pass: '通过' }[element.verdict]
+}
+
 export function groupReview(elements: ReviewElement[]) {
   const required: ReviewElement[] = []
   const pending: ReviewElement[] = []

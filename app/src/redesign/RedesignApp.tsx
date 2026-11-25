@@ -41,23 +41,6 @@ function Shell() {
         void app.prepareDocument().then(saved => { if (saved) { app.setAssistantRequest(null); app.setPage('report') } })
         return
       }
-      if (
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        !app.element ||
-        event.repeat
-      )
-        return
-      const operation = { '1': 'confirm', '2': 'reject', '3': 'edit' }[
-        event.key
-      ]
-      if (operation) {
-        event.preventDefault()
-        window.dispatchEvent(
-          new CustomEvent('lv-operation', { detail: operation }),
-        )
-      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)

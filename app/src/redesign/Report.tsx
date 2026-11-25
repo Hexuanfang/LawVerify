@@ -180,7 +180,7 @@ export function Processing() {
           <div className="proc-t">
             {draft ? stopped ? '材料处理未完成' : '正在准备起草材料' : app.proc.done ? '核验完成' : stopped ? '核验未完成' : '正在核验'}《{app.proc.title || app.certificate?.title || '文书'}》
           </div>
-          {!draft && <div className="proc-s">抽取声明 → 定位源头 → 逐项比对 → 绿黄红分档</div>}
+          {!draft && <div className="proc-s">抽取声明 → 定位源头 → 逐项比对 → 标记核验结果</div>}
           {steps.map((name, index) => {
             const state = verificationRowState(app.proc.step, index, app.proc.done, stopped)
             const label = { done: '已完成', active: '处理中', stopped: '已停止', pending: stopped ? '未执行' : '等待中' }[state]

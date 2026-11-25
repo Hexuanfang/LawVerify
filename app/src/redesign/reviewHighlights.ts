@@ -1,94 +1,104 @@
-import { Extension, type Editor } from '@tiptap/core'
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { matchesFilter, STATUS_NAMES, type ReviewElement } from './model'
+import type { SuperDoc, SuperDocVisualHandle, TextAddress } from 'superdoc'
+import { matchesFilter, STATUS_NAMES, type ReviewElement } from './model.ts'
 
 type ReviewState = { elements: ReviewElement[]; selected: string; filter: string }
-const reviewKey = new PluginKey<{ review: ReviewState; decorations: DecorationSet }>('lawverifyInlineReview')
-const blocks = new Set(['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'table', 'tableRow'])
-const cells = new Set(['tableCell', 'tableHeader'])
+export type ReviewTargetBlock = { blockId: string; text: string; offset?: number; separator?: string }
+type Highlight = {
+  layer: SuperDocVisualHandle
+  targets: TextAddress[]
+  title: string
+  className: string
+  hit: boolean
+}
 
-function textPositions(node: ProseMirrorNode, position: number, separators = true) {
-  let text = ''
-  const pieces: { start: number; end: number; position: number }[] = []
-  const walk = (current: ProseMirrorNode, start: number) => {
-    if (current.isText) {
-      pieces.push({ start: text.length, end: text.length + current.text!.length, position: start })
-      text += current.text
-      return
-    }
-    if (current.type.name === 'hardBreak') {
-      if (separators) text += '\n'
-      return
-    }
-    let previous: ProseMirrorNode | null = null
-    current.forEach((child, offset) => {
-      if (separators && previous) {
-        if (cells.has(previous.type.name) && cells.has(child.type.name)) text += '\t'
-        else if (blocks.has(previous.type.name) || blocks.has(child.type.name)) text += '\n'
-      }
-      walk(child, start + 1 + offset)
-      previous = child
+export function reviewTextTargets(original: string, quote: string, start: number, end: number,
+  blocks: readonly ReviewTargetBlock[]): TextAddress[] {
+  if (!quote || start < 0 || end > original.length || original.slice(start, end) !== quote) return []
+  for (const separator of ['\n', '']) {
+    let text = ''
+    const pieces = blocks.map((block, index) => {
+      if (index) text += block.separator ?? separator
+      const position = text.length
+      text += block.text
+      return { block, position }
+    })
+    // 修改后的正文不再展示旧核验结果，保存并重核后由最新数据重新装饰。
+    if (text !== original && text.trim() !== original) continue
+    const trimmed = text === original ? 0 : text.length - text.trimStart().length
+    return pieces.flatMap(({ block, position }) => {
+      const from = Math.max(0, trimmed + start - position)
+      const to = Math.min(block.text.length, trimmed + end - position)
+      const offset = block.offset ?? 0
+      return from < to ? [{ kind: 'text', blockId: block.blockId, range: { start: offset + from, end: offset + to } }] : []
     })
   }
-  walk(node, position)
-  return { text, pieces }
+  return []
 }
 
-function buildDecorations(doc: ProseMirrorNode, review: ReviewState) {
-  const byParagraph = new Map<string, ReviewElement[]>()
-  for (const element of review.elements) {
-    const entries = byParagraph.get(element.paragraphId) ?? []
-    entries.push(element)
-    byParagraph.set(element.paragraphId, entries)
-  }
-  const decorations: Decoration[] = []
-  doc.forEach((node, position) => {
-    const elements = byParagraph.get(node.attrs.documentId)
-    if (!elements?.length) return
-    let index = textPositions(node, position)
-    const original = elements[0].original.text
-    if (index.text !== original && index.text.trim() !== original) index = textPositions(node, position, false)
-    // 修改后的正文不再展示旧核验结果，保存并重核后由最新数据重新装饰。
-    if (index.text !== original && index.text.trim() !== original) return
-    const offset = index.text === original ? 0 : index.text.length - index.text.trimStart().length
-    for (const element of elements) {
-      const anchorStart = offset + element.start
-      const anchorEnd = offset + element.end
-      if (index.text.slice(anchorStart, anchorEnd) !== element.quote) continue
-      const classes = `mk mk-${element.src} st-${element.verdict} ${matchesFilter(element.verdict, review.filter) ? 'hit' : ''} ${review.selected === element.id ? 'sel' : ''}`
-      const title = `${element.type} · ${STATUS_NAMES[element.verdict]}\n${element.sources.map(source => `${source.name} ${source.loc}`).join('\n') || '未找到出处'}`
-      for (const piece of index.pieces) {
-        const start = Math.max(anchorStart, piece.start)
-        const end = Math.min(anchorEnd, piece.end)
-        if (start < end) decorations.push(Decoration.inline(piece.position + start - piece.start, piece.position + end - piece.start,
-          { nodeName: 'mark', class: classes, 'data-el': element.id, title }))
-      }
+export function createReviewHighlights(editor: SuperDoc, onClick: (id: string) => void) {
+  const { decorations, viewport } = editor.ui
+  const highlights = new Map<string, Highlight>()
+  let sequence = 0
+  let disposed = false
+
+  const unsubscribe = decorations.subscribe(event => {
+    const id = event.data?.el
+    if (typeof id !== 'string') return
+    const highlight = highlights.get(id)
+    if (!highlight?.hit || highlight.layer.id !== event.id) return
+    if (event.type === 'click') onClick(id)
+    if (event.type === 'hover-enter') {
+      const mark = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>(`.${event.id}`)
+      if (mark) mark.title = highlight.title
     }
   })
-  return DecorationSet.create(doc, decorations)
-}
 
-export const reviewHighlights = Extension.create({
-  name: 'lawverifyInlineReview',
-  addProseMirrorPlugins() {
-    return [new Plugin<{ review: ReviewState; decorations: DecorationSet }>({
-      key: reviewKey,
-      state: {
-        init: () => ({ review: { elements: [], selected: '', filter: 'all' }, decorations: DecorationSet.empty }),
-        apply(transaction, previous, _old, state) {
-          const review = transaction.getMeta(reviewKey) as ReviewState | undefined
-          if (!transaction.docChanged && !review) return previous
-          const current = review ?? previous.review
-          return { review: current, decorations: buildDecorations(state.doc, current) }
-        },
-      },
-      props: { decorations: state => reviewKey.getState(state)?.decorations },
-    })]
-  },
-})
-
-export function refreshReviewHighlights(editor: Editor, review: ReviewState) {
-  editor.view.dispatch(editor.state.tr.setMeta(reviewKey, review).setMeta('addToHistory', false))
+  return {
+    refresh(review: ReviewState, paragraphs: ReadonlyMap<string, readonly ReviewTargetBlock[]>) {
+      if (disposed) return
+      const visible = new Set<string>()
+      for (const element of review.elements) {
+        const blocks = paragraphs.get(element.paragraphId)
+        if (!blocks) continue
+        const targets = reviewTextTargets(element.original.text, element.quote, element.start, element.end, blocks)
+        if (!targets.length) continue
+        visible.add(element.id)
+        const hit = matchesFilter(element.verdict, review.filter)
+        const selected = review.selected === element.id
+        const className = `lawverify-review mk mk-${element.src} st-${element.verdict}${hit ? ' hit' : ''}${selected ? ' sel' : ''}`
+        const status = STATUS_NAMES[element.verdict].replace(/^[绿黄红]·/, '')
+        const title = `${element.type} · ${status}\n${element.sources.map(source => `${source.name} ${source.loc}`).join('\n') || '未找到出处'}`
+        const previous = highlights.get(element.id)
+        const layer = previous?.layer ?? decorations.highlight(`lawverify-review-${++sequence}`, { data: { el: element.id } })
+        const unchanged = previous?.className === className && previous.targets.length === targets.length &&
+          targets.every((target, index) => {
+            const old = previous.targets[index]
+            return old.blockId === target.blockId && old.range.start === target.range.start && old.range.end === target.range.end
+          })
+        highlights.set(element.id, { layer, targets, title, className, hit })
+        if (!unchanged) layer.replace(targets.map(target => ({ target, className: `${className} ${layer.id}` })))
+      }
+      for (const [id, highlight] of highlights) {
+        if (visible.has(id)) continue
+        // 先清空图层，通知 SuperDoc 重绘当前页，随后释放图层。
+        highlight.layer.clear()
+        highlight.layer.dispose()
+        highlights.delete(id)
+      }
+    },
+    async locate(id: string) {
+      const target = highlights.get(id)?.targets[0]
+      if (target) await viewport.scrollIntoView({ target, block: 'center', behavior: 'instant' })
+    },
+    dispose() {
+      if (disposed) return
+      disposed = true
+      unsubscribe()
+      for (const highlight of highlights.values()) {
+        highlight.layer.clear()
+        highlight.layer.dispose()
+      }
+      highlights.clear()
+    },
+  }
 }

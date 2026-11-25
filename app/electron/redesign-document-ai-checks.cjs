@@ -90,7 +90,7 @@ module.exports = async function checkDocumentAI({ evaluate, wait, clickText, sel
   await send()
   await wait("document.querySelector('.document-generated-preview')?.textContent.includes('采纳并保存草稿')")
   await clickText('.document-generated-preview button', '采纳并保存草稿')
-  await wait("document.querySelector('.ctool h1')?.textContent === '回归AI起草文书' && document.querySelector('.whole-document-content[contenteditable=true]')")
+  await wait("document.querySelector('.ctool h1')?.textContent === '回归AI起草文书' && document.querySelector('.whole-document-content[data-editable=true] .superdoc-page')")
   const generated = await saved(state => state.certificates.find(item => item.title === '回归AI起草文书'))
   assert.match(generated.paragraphs[0].text, /AI起草正文/)
   assert.deepEqual(documentMock.requests.at(-1).payload.evidenceIds, ['qa-evidence'])

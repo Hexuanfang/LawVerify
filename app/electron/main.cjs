@@ -160,6 +160,21 @@ function resolveAppIconPath() {
   return candidates.find((candidate) => fs.existsSync(candidate))
 }
 
+async function flushWindowDocumentDraft(window) {
+  if (window.isDestroyed() || window.webContents.isCrashed()) return true
+  let timer
+  try {
+    return await Promise.race([
+      window.webContents.executeJavaScript(`new Promise(resolve => {
+        const flush = new CustomEvent('lawverify:flush-document-draft', { cancelable: true, detail: resolve });
+        if (window.dispatchEvent(flush)) resolve(true);
+      })`),
+      new Promise(resolve => { timer = setTimeout(() => resolve(false), 15000) }),
+    ])
+  } catch { return false }
+  finally { clearTimeout(timer) }
+}
+
 function createWindow() {
   // 窗口必须贴合屏幕工作区：固定 1440×960 在小屏或高缩放下会超出屏幕，
   // 导致右侧与底部内容落在可视区之外被裁切。
@@ -197,6 +212,21 @@ function createWindow() {
 
   window.on('restore', () => {
     focusWindowContents(window)
+  })
+
+  let draftFlushedForClose = false
+  let waitingForDraft = false
+  window.on('close', event => {
+    if (quitting || draftFlushedForClose || window.webContents.isCrashed()) return
+    event.preventDefault()
+    if (waitingForDraft) return
+    waitingForDraft = true
+    void flushWindowDocumentDraft(window).then(saved => {
+      waitingForDraft = false
+      if (!saved || window.isDestroyed()) return
+      draftFlushedForClose = true
+      window.close()
+    })
   })
 
   // F11 在全屏与窗口模式之间切换。
@@ -694,7 +724,21 @@ if (!gotSingleInstanceLock) {
   })
 }
 
-app.on('before-quit', () => {
+let waitingForQuitDrafts = false
+app.on('before-quit', event => {
+  const windows = BrowserWindow.getAllWindows()
+  if (!quitting && windows.length) {
+    event.preventDefault()
+    if (waitingForQuitDrafts) return
+    waitingForQuitDrafts = true
+    void Promise.all(windows.map(flushWindowDocumentDraft)).then(results => {
+      waitingForQuitDrafts = false
+      if (!results.every(Boolean)) return
+      quitting = true
+      app.quit()
+    })
+    return
+  }
   quitting = true
   ipcMain.removeHandler(OPEN_EXTERNAL_CHANNEL)
   ipcMain.removeHandler(START_APP_UPDATE_CHANNEL)

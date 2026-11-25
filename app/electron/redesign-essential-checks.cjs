@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
+const { sendHighlightClick } = require('./redesign-highlight-checks.cjs')
 
-module.exports = async function checkEssential({ evaluate, wait, clickText, fill, screenshot, window, readWorkspace, writeWorkspace, runWithWorkspaceAccount, account, setAccountStatus, linkageMaterialFingerprint }) {
+module.exports = async function checkEssential({ evaluate, wait, clickText, fill, screenshot, window, readWorkspace, writeWorkspace, runWithWorkspaceAccount, account, setAccountStatus, linkageMaterialFingerprint, editorOnly }) {
   const saved = async fn => runWithWorkspaceAccount(account, async () => fn(await readWorkspace()))
   const reload = async () => { await evaluate('location.reload()'); await wait("document.querySelector('#pg-home .case-name')") }
   const enter = async name => {
@@ -10,22 +11,15 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
     await wait("document.querySelector('#pg-ws')")
   }
   const closeSheet = () => clickText('[data-slot=sheet-content] button', 'Close')
-  const closeDialog = () => evaluate("document.querySelector('[data-slot=dialog-close]').click()")
-  const choose = async (label, text) => {
-    await evaluate(`document.querySelector('[aria-label=${JSON.stringify(label)}]').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'mouse'}))`)
-    await wait("document.querySelector('[role=option]')")
-    await clickText('[role=option]', text)
-  }
   const uploadFile = async (label, name, content) => evaluate(`(() => {const input=document.querySelector('input[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');const dt=new DataTransfer();dt.items.add(new File([${JSON.stringify(content)}],${JSON.stringify(name)},{type:'text/plain'}));input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`)
   const linkMaterialFolder = async () => {
     await evaluate("document.querySelector('.new-case-form .case-files-material .case-file-drop button').click()")
     await wait("document.querySelector('.case-files-material .chip b')?.textContent === 'linked-files'")
   }
   const selectLoanStatement = async () => {
-    const highlight = "Array.from(document.querySelectorAll('.whole-document-content [data-el]')).find(item => item.textContent.startsWith('借款已交付。'))"
-    await wait(highlight)
-    await evaluate(`${highlight}.click()`)
-    await wait("document.querySelector('.rc-q')?.textContent.startsWith('借款已交付。')")
+    const highlight = "Array.from(document.querySelectorAll('.lawverify-review')).find(item => item.textContent.startsWith('借款已'))"
+    await sendHighlightClick({ evaluate, wait, window }, highlight)
+    await wait("document.querySelector('.review-result-details blockquote')?.textContent.startsWith('借款已交付。')")
   }
   await saved(async state => {
     state.cases.push({ id: 'essential-case', name: '必要工作流测试', description: '', createdAt: '2026-11-15', status: 'in_review' })
@@ -36,63 +30,56 @@ module.exports = async function checkEssential({ evaluate, wait, clickText, fill
       { id: 'essential-multi', text: '借款已交付。尚未还款。', richText: '<p>借款已交付。尚未还款。</p>', verified: false, links: [
         { evidenceId: 'essential-ev', locator: '第一句', quote: '借款已交付。', sentenceIndex: 0, sentenceText: '借款已交付。', relation: 'support' },
         { evidenceId: 'essential-ev', locator: '第二句', quote: '尚未还款。', sentenceIndex: 1, sentenceText: '尚未还款。', relation: 'support' },
-      ] },
+      ], references: editorOnly ? [
+        { id: 'fixture-law', type: 'statute', targetId: 'essential-article', sourceTitle: '回归法条', locator: '第一条', quote: '真实条文测试正文。' },
+        { id: 'fixture-case', type: 'case', targetId: 'essential-excerpt', sourceTitle: '回归案例', locator: '裁判理由', quote: '回归案例片段正文。' },
+      ] : [] },
     ] })
     state.knowledgeStatutes.push({ id: 'essential-law', title: '回归法条', docType: '法律', issuer: '测试', effectiveStatus: 'effective', effectiveDate: '', publishDate: '', version: '1', keywords: [], articles: [{ id: 'essential-article', documentId: 'essential-law', articleNumber: '第一条', content: '真实条文测试正文。', plainText: '真实条文测试正文。', aliases: [], topicTags: [] }] })
     state.knowledgeCases.push({ id: 'essential-case-law', title: '回归案例', caseNumber: '测试案号', courtName: '测试法院', courtLevel: '', region: '', trialLevel: '', caseType: '民事', cause: '', judgmentDate: '', effectiveDate: '', issueSummary: '', holdingSummary: '回归要旨', reasoningSummary: '', resultSummary: '', sourceType: 'manual', keywords: [], focusTags: [], referencedStatutes: [], excerpts: [{ id: 'essential-excerpt', caseId: 'essential-case-law', excerptType: 'reasoning', summary: '', locator: '裁判理由', content: '回归案例片段正文。', keywords: [] }] })
     await writeWorkspace(state)
   })
   await reload(); await enter('必要工作流测试')
-  assert.equal(await evaluate("Array.from(document.querySelectorAll('.case-review-bar button')).find(item=>item.textContent==='标记案件完成').disabled"), true)
+  const checkDocument = () => require('./redesign-document-checks.cjs')({ evaluate, wait, clickText, fill, screenshot, window, saved, writeWorkspace, reload, enter })
+  if (editorOnly) { await checkDocument(); return }
   await evaluate(`Array.from(document.querySelectorAll('.review-todo-card'))
     .find(item => item.querySelector('.review-todo-quote').textContent.startsWith('借款已交付。'))
-    .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
-  await clickText('.ops button', '确认整段')
+    .click()`)
+  await clickText('.review-result-actions button', '人工核验')
+  await fill('.review-inline-operation textarea', '已核对整段引用。')
+  await clickText('.review-inline-operation button', '通过并保留人工标注')
   await wait("document.querySelector('.essential-confirm-list')")
   assert.equal(await evaluate("document.querySelectorAll('.essential-confirm-list li').length"), 2)
   await clickText('.fm-ft button', '取消')
   await saved(state => assert.equal(state.certificates.find(item => item.id === 'essential-doc').paragraphs[1].verified, false))
-  await clickText('.ops button', '确认整段'); await clickText('.fm-ft button', '已核对，确认整段')
+  await clickText('.review-inline-operation button', '通过并保留人工标注'); await clickText('.fm-ft button', '已核对，确认整段')
   await wait("!document.querySelector('.essential-confirm-list')")
   await wait("document.querySelector('.audit')?.textContent.includes('律师确认整段全部声明')")
-  await clickText('.case-review-bar button', '审阅清单')
-  await wait("document.querySelector('.essential-review-dialog')")
-  await evaluate("Array.from(document.querySelectorAll('.essential-review-dialog .essential-reference-item button')).find(item=>item.textContent==='已核对，确认本段').click()")
-  await wait("Array.from(document.querySelectorAll('.essential-review-dialog .essential-reference-item button')).every(item=>item.textContent==='取消本段确认')")
-  await closeDialog(); await clickText('.case-review-bar button', '标记案件完成')
-  await wait("document.querySelector('.case-review-bar').textContent.includes('待归档')")
-  await saved(state => assert.equal(state.cases.find(item => item.id === 'essential-case').status, 'ready'))
 
   await evaluate("document.querySelector('.mat-it').click()")
   await wait("document.querySelector('.evidence-references')?.textContent.includes('审阅测试文书')")
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.evidence-references li strong'), label => label.textContent)"), ['第 2 段'])
   await screenshot('material-preview'); await closeSheet()
   await selectLoanStatement()
-  await clickText('.ops button', '关联出处'); await wait("document.querySelector('.essential-reference-dialog')")
-  await fill('[aria-label="引用定位 材料 1"]', '第3页')
-  await fill('[aria-label="引用原文 材料 1"]', '已校正引文')
-  await evaluate("document.querySelectorAll('.essential-reference-item .bye')[1].click()")
-  await clickText('.fm-ft button', '保存引用'); await wait("!document.querySelector('.essential-reference-dialog')")
-  await saved(state => { const p = state.certificates.find(item => item.id === 'essential-doc').paragraphs[1]; assert.equal(p.links.length, 1); assert.equal(p.links[0].locator, '第3页') })
-  await clickText('.ops button', '关联出处'); await wait("document.querySelector('.essential-reference-dialog')")
-  await clickText('.essential-reference-item button', '移除引用')
-  await clickText('.fm-ft button', '保存引用'); await wait("!document.querySelector('.essential-reference-dialog')")
-  await saved(state => { const p = state.certificates.find(item => item.id === 'essential-doc').paragraphs[1]; assert.equal(p.links.length, 0); assert.equal(p.link, undefined) })
-  await selectLoanStatement()
-  await clickText('.ops button', '关联出处'); await wait("document.querySelector('.essential-reference-dialog')")
-  await choose('引用类型', '法条条文'); await choose('选择引用出处', '回归法条 第一条')
-  await clickText('.essential-reference-dialog button', '添加到待保存引用')
-  await choose('引用类型', '案例片段'); await choose('选择引用出处', '测试案号 · 裁判理由')
-  await clickText('.essential-reference-dialog button', '添加到待保存引用')
-  await screenshot('reference-manage')
-  await clickText('.fm-ft button', '保存引用'); await wait("!document.querySelector('.essential-reference-dialog')")
-  await saved(state => { const p = state.certificates.find(item => item.id === 'essential-doc').paragraphs[1]; assert.equal(p.references.length, 2); assert.ok(p.references.some(item => item.targetId === 'essential-excerpt')) })
-  await evaluate("Array.from(document.querySelectorAll('.rc-loc')).find(item=>item.textContent.includes('测试案号')).click()")
-  await wait("document.querySelector('.casepv')")
-  assert.match(await evaluate("document.querySelector('.casepv').textContent"), /回归案例片段正文/)
-  await closeSheet()
+  await clickText('.review-result-actions button', '更多操作')
+  await clickText('[role=menuitem]', '关联出处')
+  await evaluate(`(() => {
+    const select = document.querySelector('.review-inline-operation select')
+    select.value = 'essential-ev'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await fill('[aria-label="出处定位"]', '第3页')
+  await fill('[aria-label="出处原文"]', '已核对的新增引文')
+  await clickText('.review-inline-operation button', '保存挂靠')
+  await wait("!document.querySelector('.review-inline-operation')")
+  await saved(state => {
+    const p = state.certificates.find(item => item.id === 'essential-doc').paragraphs[1]
+    assert.equal(p.links.length, 3)
+    assert.equal(p.links[2].locator, '第3页')
+    assert.equal(p.links[2].sentenceIndex, 0)
+  })
 
-  await require('./redesign-document-checks.cjs')({ evaluate, wait, clickText, fill, screenshot, window, saved, writeWorkspace, reload, enter })
+  await checkDocument()
 
   await clickText('.topbar button.brand-home', 'LawVerify 首页'); await clickText('.home-intro-actions button', '新建案件')
   await wait("document.querySelector('#field-name')")

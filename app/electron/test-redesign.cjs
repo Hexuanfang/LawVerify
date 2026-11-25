@@ -5,6 +5,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const http = require('node:http')
+const { bodyParagraphs, editorReady, selectDocxRange } = require('./redesign-docx-input-checks.cjs')
+const { sendHighlightClick } = require('./redesign-highlight-checks.cjs')
 
 const root = path.resolve(__dirname, '..')
 const c1 = require('../../server/eval/verification/fixtures/seed/documents.json').find(item => item.id === 'c1-qs')
@@ -27,9 +29,12 @@ const errors = []
 let failedDeleteCase = null
 let accountStatus = 0
 const qaProfile = { user: { email: 'redesign-qa@test.invalid', name: '测试律师' }, organization: { id: 'qa', name: '测试', membershipId: 'qa', role: 'owner' } }
+const qaPhoneEmail = '4836b46b-7797-48ec-a5fa-3f9e82a289fd@phone.lawverify.invalid'
+const qaPhoneProfile = { ...qaProfile, user: { email: qaPhoneEmail, name: '手机用户', maskedPhone: '138****8000' } }
 const revokedAccountTokens = new Set()
 let cloudLogins = 0, authSampling = false, navigations = 0, workspaceReads = 0, finishedReads = 0, sessionFinishedAt = 0
 let registeredName = ''
+const phoneAuthRequests = []
 let billingDelay = 0
 const verification = { calls: [], failNext: 0 }
 const documentTest = { failSave: false, saveCalls: 0 }
@@ -50,12 +55,23 @@ ipcMain.handle('redesign-qa-account', async (_event, request) => {
     registeredName = JSON.parse(request.body).ownerName
     return { status: 400, body: JSON.stringify({ error: { message: '测试注册反馈' } }) }
   }
+  if (request.path === '/api/account/sms/send' || request.path.startsWith('/api/account/phone/')) {
+    const body = JSON.parse(request.body)
+    phoneAuthRequests.push({ path: request.path, body })
+    if (request.path === '/api/account/sms/send') return { status: 200, body: JSON.stringify({ success: true,
+      data: { challengeId: randomUUID(), retryAfterSeconds: 60, expiresInSeconds: 300 } }) }
+    if (request.path === '/api/account/phone/login' && body.code === '654321') return { status: 200, body: JSON.stringify({
+      success: true, data: { ...qaPhoneProfile, token: 'qa-mocked-phone-token' },
+    }) }
+    return { status: 400, body: JSON.stringify({ error: { message: '测试手机号认证反馈' } }) }
+  }
   if (accountStatus === 0) {
     const success = data => ({ status: 200, body: JSON.stringify({ success: true, data }) })
     const authorization = request.headers?.authorization
     if (revokedAccountTokens.has(authorization)) return { status: 401,
       body: JSON.stringify({ success: false, error: { code: 'INVALID_SESSION', message: '登录状态已失效。' } }) }
     if (request.path === '/api/account/profile') {
+      if (authorization === 'Bearer qa-mocked-phone-token') return success(qaPhoneProfile)
       if (request.method === 'PUT') {
         const { displayName, organizationName } = JSON.parse(request.body)
         if (displayName !== undefined) qaProfile.user.name = displayName
@@ -200,7 +216,7 @@ app.whenReady().then(async () => {
         response.end(JSON.stringify({ workspace: sanitizeWorkspaceForClient(state) }))
         return
       }
-      if (documentTest.failSave && request.method === 'PUT' && /^\/api\/certificates\/[^/]+\/content$/.test(pathname)) {
+      if (documentTest.failSave && request.method === 'PUT' && /^\/api\/(?:certificates\/[^/]+\/content|documents\/[^/]+\/edit-source)$/.test(pathname)) {
         documentTest.saveCalls++
         response.writeHead(503, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ message: '测试文书保存失败' }))
@@ -267,7 +283,12 @@ app.whenReady().then(async () => {
     window = new BrowserWindow({ show: false, width: 1440, height: 960, webPreferences: { preload, backgroundThrottling: false, offscreen: true } })
     window.webContents.on('did-navigate', () => { navigations++ })
     window.webContents.on('paint', (_event, _dirty, image) => { latestImage = image })
-    window.webContents.on('console-message', event => { if (failedDeleteCase && /status of 503/.test(event.message)) return; if (event.level === 'error' || event.level === 3 || /Uncaught|Invalid hook|validateDOMNesting/.test(event.message)) errors.push(event.message) })
+    window.webContents.on('console-message', event => {
+      if (failedDeleteCase && /status of 503/.test(event.message)) return
+      // Chromium 会将可在下一帧继续交付的尺寸观察通知记为控制台错误。
+      if (event.message === 'ResizeObserver loop completed with undelivered notifications.') return
+      if (event.level === 'error' || event.level === 3 || /Uncaught|Invalid hook|validateDOMNesting/.test(event.message)) errors.push(event.message)
+    })
     const evaluate = async code => { try { return await window.webContents.executeJavaScript(code) } catch (error) { throw new Error(`Renderer failed: ${code}`, { cause: error }) } }
     const dropFiles = async (selector, files) => {
       const point = await evaluate(`(() => {const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
@@ -287,17 +308,13 @@ app.whenReady().then(async () => {
       }
       throw new Error(`Timeout: ${expression}`)
     }
-    const clickText = (selector, label) => evaluate(`(() => {const button=Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(item=>item.textContent.trim()===${JSON.stringify(label)}||item.getAttribute('aria-label')===${JSON.stringify(label)});if(!button)throw new Error('Missing button: '+${JSON.stringify(label)});button.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}));button.click();button.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0}))})()`)
-    const selectDocumentText = (text = '') => evaluate(`(() => {
-      const editor = document.querySelector('.whole-document-content');
-      const paragraph = Array.from(editor.children).find(item => item.textContent.includes(${JSON.stringify(text)}));
-      editor.focus();
-      const range = document.createRange();
-      range.selectNodeContents(paragraph);
-      const selection = getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-    })()`)
+    const clickText = (selector, label) => evaluate(`(() => {const button=Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(item=>item.textContent.trim()===${JSON.stringify(label)}||item.getAttribute('aria-label')===${JSON.stringify(label)});if(!button)throw new Error('Missing button: '+${JSON.stringify(label)});if(button.getAttribute('aria-haspopup')==='menu'){button.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'mouse'}));return}button.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}));button.click();button.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0}))})()`)
+    const selectDocumentText = async (text = '') => {
+      const paragraph = `${bodyParagraphs}.find(item => item.textContent.includes(${JSON.stringify(text)}))`
+      await wait(paragraph)
+      const start = await evaluate(`(${paragraph}).textContent.indexOf(${JSON.stringify(text)})`)
+      await selectDocxRange({ evaluate, wait, window }, paragraph, paragraph, start, text ? start + text.length : null)
+    }
     const fill = (selector, value) => evaluate(`(() => {const input=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
     const screenshot = async name => {
       window.webContents.invalidate()
@@ -329,23 +346,47 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('#lv-password').type"), 'text')
     await clickText('.lv-secret button', '隐藏密码')
     assert.equal(await evaluate("document.querySelector('#lv-password').type"), 'password')
-    const checkDisabledPhoneForm = async () => {
+    const checkPhoneForm = async purpose => {
       assert.equal(await evaluate("document.getElementById('lv-verification-code')?.labels[0].textContent"), '验证码')
       assert.equal(await evaluate("document.querySelector('#lv-password')"), null)
       assert.equal(await evaluate("document.querySelector('.lv-code button').disabled && document.querySelector('.lv-submit').disabled"), true)
-      await evaluate("document.querySelector('.lv-card form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))")
+      const phone = purpose === 'login' ? '13800138000' : '13900139000'
+      await fill('[name=phone]', phone)
+      await clickText('.lv-code button', '发送验证码')
+      await wait("document.querySelector('.lv-code button').disabled && !document.querySelector('.lv-submit').disabled")
+      assert.deepEqual(phoneAuthRequests.at(-1), { path: '/api/account/sms/send', body: { phone, purpose } })
+      if (purpose === 'register') {
+        await fill('[name=organizationName]', '测试律所')
+        await fill('[name=ownerName]', '测试用户')
+      }
+      await fill('[name=verificationCode]', '123456')
+      await evaluate("document.querySelector('.lv-card form').requestSubmit()")
+      await wait("document.querySelector('.lv-error')?.textContent.includes('测试手机号认证反馈')")
+      const submitted = phoneAuthRequests.at(-1)
+      assert.equal(submitted.path, `/api/account/phone/${purpose}`)
+      assert.equal(submitted.body.phone, phone)
+      assert.equal(submitted.body.code, '123456')
+      assert.match(submitted.body.challengeId, /^[\da-f-]{36}$/)
+      assert.equal('email' in submitted.body || 'password' in submitted.body, false)
       assert.equal(cloudLogins, 0)
       assert.equal(registeredName, '')
     }
     await clickText('.lv-methods button', '手机号登录')
-    await checkDisabledPhoneForm()
+    await checkPhoneForm('login')
+    await fill('[name=verificationCode]', '654321')
+    await evaluate("document.querySelector('.lv-card form').requestSubmit()")
+    await wait("document.querySelector('#pg-home')")
+    assert.equal(await evaluate("sessionStorage.getItem('lawverify-login-account')"), qaPhoneEmail)
+    assert.equal(await evaluate("localStorage.getItem('lawverify-cloud-token')"), 'qa-mocked-phone-token')
+    await evaluate("sessionStorage.clear(); localStorage.removeItem('lawverify-cloud-token'); location.reload()")
+    await wait("document.querySelector('.lv-card input[type=email]')")
     await clickText('.lv-methods button', '邮箱登录')
     await clickText('.lv-register button', '注册账号')
     assert.equal(await evaluate("document.querySelectorAll('.lv-card input').length"), 5)
     assert.equal(await evaluate("document.querySelector('[name=ownerName]').labels[0].textContent.trim()"), '姓名或昵称')
     assert.equal(await evaluate("document.querySelector('[name=ownerName]').required"), true)
     await clickText('.lv-methods button', '手机号注册')
-    await checkDisabledPhoneForm()
+    await checkPhoneForm('register')
     await clickText('.lv-methods button', '邮箱注册')
     await screenshot('register')
     const authWindowSize = window.getSize()
@@ -403,45 +444,38 @@ app.whenReady().then(async () => {
     }
     if (inlineOnly) {
       await enter('王某诉李某民间借贷纠纷')
-      await wait("document.querySelector('.whole-document-content mark[data-el]')")
+      const highlighted = "document.querySelector('.whole-document-content .lawverify-review[data-superdoc-ext-el]')"
+      await wait(highlighted)
       await wait("document.querySelector('.document-editor-status').textContent.includes('正文已同步')")
-      assert.equal(await evaluate("document.querySelector('.whole-document-content').isContentEditable"), true, '打开文书后正文应可直接编辑')
+      await wait(editorReady)
+      const readSpacing = `(() => {
+        const canvas = document.querySelector('.document-editor-canvas').getBoundingClientRect();
+        const line = (${highlighted})?.getClientRects()[0];
+        return line && { top: Math.round(line.top - canvas.top), left: Math.round(line.left - canvas.left) };
+      })()`
+      await wait(`((spacing) => spacing && spacing.top >= 0 && spacing.top <= 64 && spacing.left >= 0 && spacing.left <= 72)(${readSpacing})`)
+      console.log('PASS 正文首行屏幕留白', await evaluate(readSpacing))
+      await screenshot('inline-compact')
       assert.equal(await evaluate("Array.from(document.querySelectorAll('.workspace-document-heading button')).some(button => ['在线编辑', '整篇排版', '完成编辑'].includes(button.textContent.trim()))"), false)
-      const clickHighlight = async () => {
-        const point = await evaluate(`(() => {
-          const mark = document.querySelector('.whole-document-content mark[data-el]');
-          mark.scrollIntoView({ block: 'center' });
-          const rect = mark.getClientRects()[0];
-          return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
-        })()`)
-        window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
-        window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
-      }
+      const clickHighlight = () => sendHighlightClick({ evaluate, wait, window }, highlighted)
       const size = window.getSize()
       window.setSize(390, 900)
       await wait("document.querySelector('.workspace-pane-controls')")
       await clickHighlight()
-      await wait("document.activeElement.matches('.whole-document-content') && document.querySelector('.review-detail-bar')")
-      assert.equal(await evaluate("getComputedStyle(document.querySelector('#workspace-review')).visibility"), 'hidden', '窄窗口点击正文时核验面板不应遮挡编辑区')
+      await wait("document.activeElement.closest('.whole-document-content') && document.querySelector('.review-detail-bar')")
+      assert.equal(await evaluate("getComputedStyle(document.querySelector('#workspace-review')).visibility"), 'visible', '窄窗口点击高亮后应显示对应核验详情')
       window.setSize(...size)
       await wait("!document.querySelector('.workspace-pane-controls')")
       await clickHighlight()
-      await wait("document.activeElement.matches('.whole-document-content') && document.querySelector('.review-detail-bar')")
-      const offset = await evaluate(`(() => {
-        const paragraph = document.querySelector('.whole-document-content').firstElementChild;
-        const caret = getSelection().getRangeAt(0);
-        const range = document.createRange();
-        range.setStart(paragraph, 0);
-        range.setEnd(caret.startContainer, caret.startOffset);
-        return range.toString().length;
-      })()`)
+      await wait("document.activeElement.closest('.whole-document-content') && document.querySelector('.review-detail-bar')")
       const original = c1.paragraphs[1]
-      assert.ok(offset > 0 && offset < original.indexOf('500,000元'), '鼠标应在被高亮的文字中放置光标')
       await window.webContents.insertText('已补充')
       await wait("document.querySelector('.document-editor-status').textContent.includes('修改已保存在本机草稿')")
       await clickText('.document-editor-tools button', '保存文书')
       await wait("document.querySelector('.document-editor-status').textContent.includes('整篇文书已保存')")
       const editedParagraph = await saved(state => state.certificates.find(doc => doc.id === 'qa-document').paragraphs[0])
+      const offset = editedParagraph.text.indexOf('已补充')
+      assert.ok(offset > 0 && offset < original.indexOf('500,000元'), '鼠标应在被高亮的文字中放置光标')
       assert.equal(editedParagraph.text, original.slice(0, offset) + '已补充' + original.slice(offset))
       assert.match(editedParagraph.richText, /<strong><u>500,000元<\/u><\/strong>/u)
       assert.ok(await saved(state => state.certificates.find(doc => doc.id === 'qa-document').verification.dirty?.paragraphIds.includes('p1')))
@@ -451,7 +485,7 @@ app.whenReady().then(async () => {
     }
     if (reviewTodosOnly) {
       await enter('王某诉李某民间借贷纠纷')
-      await require('./redesign-todos-checks.cjs').check({ evaluate, wait, clickText, screenshot, window, saved })
+      await require('./redesign-todos-checks.cjs').check({ evaluate, wait, clickText, fill, screenshot, window, saved })
       assert.deepEqual(errors.filter(message => !/favicon|404/.test(message)), [])
       process.stdout.write(`PASS review todos and screenshots: ${directory}\n`)
       window.destroy(); await new Promise(resolve => server.close(resolve)); app.exit(0)
@@ -490,8 +524,39 @@ app.whenReady().then(async () => {
       const categories = '.material-categories .material-group-toggle'
       const fileRows = '.material-categories .mat-it'
       assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('${categories}'), item => item.textContent)`),
-        ['合同协议1', '资金往来3', '沟通记录1', '其他1'])
-      assert.equal(await evaluate("document.querySelector('.pane-l').getBoundingClientRect().width"), 232)
+        ['合同协议1', '资金往来3', '沟通记录1', '身份主体0', '前审文书0', '其他1'])
+      const debuggerClient = window.webContents.debugger
+      debuggerClient.attach()
+      const evidencePoint = id => evaluate(`(() => {
+        const rect = document.querySelector('[data-evidence-id="${id}"]').getBoundingClientRect()
+        return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }
+      })()`)
+      await debuggerClient.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', ...await evidencePoint('qa-tree-2') })
+      await wait("document.querySelector('[data-evidence-id=qa-tree-2]').matches(':hover')")
+      const evidenceTip = "document.querySelector('[data-slot=tooltip-content]')"
+      assert.match(await evaluate(`${evidenceTip}?.textContent ?? ''`), /转账回单\.txt/u)
+      assert.doesNotMatch(await evaluate(`${evidenceTip}.textContent`), /Alt/u)
+      assert.equal(await evaluate(`${evidenceTip}.querySelector('hr')?.nextElementSibling?.textContent`), '拖到标题分类可调整归类')
+      await wait(`${evidenceTip}.getBoundingClientRect().left >= document.querySelector('.material-categories').getBoundingClientRect().right`)
+      const shortTipWidth = await evaluate(`${evidenceTip}.offsetWidth`)
+      await evaluate("document.querySelector('[data-evidence-id=qa-tree-3]').focus()")
+      await wait(`${evidenceTip}?.firstElementChild?.textContent.includes('付款记录汇总')`)
+      const longTip = await evaluate(`(() => {
+        const tooltip = ${evidenceTip}
+        const title = document.createRange()
+        title.selectNodeContents(tooltip.firstElementChild)
+        return { width: tooltip.offsetWidth, lines: title.getClientRects().length }
+      })()`)
+      assert.equal(longTip.lines, 1, '文件名在空间充足时应完整显示在一行')
+      assert.ok(longTip.width > shortTipWidth, '提示框应随文件名变长而加宽')
+      assert.equal(await evaluate(`getComputedStyle(${evidenceTip}.querySelector('hr').nextElementSibling).textAlign`), 'center')
+      const adjacentEvidence = await evidencePoint('qa-evidence')
+      await debuggerClient.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', ...adjacentEvidence, button: 'left', clickCount: 1 })
+      await debuggerClient.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', ...adjacentEvidence, button: 'left', clickCount: 1 })
+      await wait("document.querySelector('.new-drawer')?.textContent.includes('招商银行流水')")
+      await clickText('.new-drawer button', 'Close')
+      await wait("!document.querySelector('.new-drawer')")
+      assert.ok(await evaluate("document.querySelector('.pane-l').getBoundingClientRect().width < document.querySelector('.pane-r').getBoundingClientRect().width"))
       assert.equal(await evaluate(`document.querySelectorAll('${fileRows}').length`), 6)
       assert.equal(await evaluate("document.querySelectorAll('.material-categories ul ul').length"), 0)
       assert.equal(await evaluate("document.querySelectorAll('.material-categories [data-status=review_required]').length"), 1)
@@ -499,8 +564,6 @@ app.whenReady().then(async () => {
       const animatedStatuses = `Array.from(document.querySelectorAll('.material-categories .material-parsing-status'))
         .filter(icon => getComputedStyle(icon).animationName !== 'none' && getComputedStyle(icon).animationIterationCount === 'infinite')
         .map(icon => icon.dataset.status)`
-      const debuggerClient = window.webContents.debugger
-      debuggerClient.attach()
       await debuggerClient.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
       assert.deepEqual(await evaluate(animatedStatuses), ['processing'])
       await debuggerClient.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
@@ -522,10 +585,6 @@ app.whenReady().then(async () => {
       assert.equal(await evaluate(`document.querySelectorAll('${fileRows}').length`), 0)
       await clickText('.material-fold-controls button', '展开全部')
       assert.equal(await evaluate(`document.querySelectorAll('${fileRows}').length`), 6)
-      await evaluate(`Array.from(document.querySelectorAll('${fileRows}')).find(item => item.textContent.includes('招商银行流水')).click()`)
-      await wait("document.querySelector('.new-drawer')?.textContent.includes('招商银行流水')")
-      await clickText('.new-drawer button', 'Close')
-      await wait("!document.querySelector('.new-drawer')")
       assert.equal(await evaluate("document.querySelectorAll('.material-actions button').length"), 1)
       await clickText('.material-actions button', '导入材料或文书')
       await wait("document.querySelector('.new-upload')")
@@ -557,19 +616,21 @@ app.whenReady().then(async () => {
       })
       const identityGroup = '.material-categories [data-category="身份主体"]'
       const transferEvidence = `Array.from(document.querySelectorAll('${fileRows}')).find(row => row.textContent.includes('转账明细.txt'))`
-      assert.equal(await evaluate(`document.querySelector('${identityGroup}')`), null)
+      assert.equal(await evaluate(`document.querySelector('${identityGroup} .material-group-toggle')?.textContent`), '身份主体0')
+      await evaluate("document.querySelector('.material-empty-toggle[aria-expanded=true]')?.click()")
+      assert.equal(await evaluate(`document.querySelector('${identityGroup}').hidden`), true, '空分类可折叠')
       assert.equal(await evaluate(`${transferEvidence}.draggable`), true)
       await evaluate(`(() => {
         const row = ${transferEvidence}
         window.__materialDrag = new DataTransfer()
         row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__materialDrag }))
       })()`)
-      await wait(`document.querySelector('${identityGroup}')`)
       await evaluate(`(() => {
         const group = document.querySelector('${identityGroup}')
         group.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: window.__materialDrag }))
       })()`)
       await wait(`document.querySelector('${identityGroup}[data-drop-target]')`)
+      assert.equal(await evaluate(`document.querySelector('${identityGroup}').hidden`), false, '拖拽材料时仍可使用空分类')
       await screenshot('evidence-drag-category')
       await evaluate(`document.querySelector('${identityGroup}').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__materialDrag }))`)
       await wait(`document.querySelector('${identityGroup} .material-file')?.textContent.includes('转账明细.txt')`)
@@ -581,7 +642,7 @@ app.whenReady().then(async () => {
       await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true }))")
       await wait("document.activeElement.closest('[data-category]')?.dataset.category === '身份主体'")
       window.setSize(1000, 900)
-      await wait("document.querySelector('.pane-l').getBoundingClientRect().width === 194")
+      await wait("innerWidth <= 1000 && document.querySelector('.pane-l').getBoundingClientRect().width < document.querySelector('.pane-r').getBoundingClientRect().width")
       window.setSize(390, 900)
       await wait("document.querySelector('.ws.no-l.no-r')")
       await clickText('.workspace-doc-strip button', '案件材料')
@@ -602,7 +663,7 @@ app.whenReady().then(async () => {
       screenshot, saved, writeWorkspace, reload, enter, documentMock, billingLog, window, setBillingDelay: value => { billingDelay = value } })
     const runExportChecks = assistantReportOnly => require('./redesign-review-flow-checks.cjs').checkWordExport({
       evaluate, wait, clickText, downloadWord, screenshot, directory, documentTest, editorOnly, assistantReportOnly,
-      session: window.webContents.session, account, linkageMaterialFingerprint, saved, writeWorkspace,
+      session: window.webContents.session, account, linkageMaterialFingerprint, saved, writeWorkspace, window,
     })
     if (assistantOnly) {
       await runDocumentChecks()
@@ -617,8 +678,12 @@ app.whenReady().then(async () => {
     }
     if (exportOnly) {
       await runExportChecks(false)
+      if (editorOnly) await require('./redesign-essential-checks.cjs')({
+        evaluate, wait, clickText, fill, screenshot, window, readWorkspace, writeWorkspace,
+        runWithWorkspaceAccount, account, linkageMaterialFingerprint, editorOnly,
+      })
       assert.deepEqual(errors.filter(message => !/favicon|404/.test(message)), [])
-      process.stdout.write(`PASS ${editorOnly ? 'Tiptap editing and local document export' : 'T1 R5/R9 desktop Word export'}, files: ${directory}\n`)
+      process.stdout.write(`PASS ${editorOnly ? 'SuperDoc editing and local document export' : 'T1 R5/R9 desktop Word export'}, files: ${directory}\n`)
       window.destroy(); await new Promise(resolve => server.close(resolve)); app.exit(0)
       return
     }
@@ -764,20 +829,22 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.case-card').click()")
     await wait("document.querySelector('.review-todos')")
     assert.equal(await evaluate("document.querySelector('.review-todos h2')?.textContent"), '核验待办')
-    assert.equal(await evaluate("Array.from(document.querySelectorAll('.case-review-bar button')).some(button=>['材料','核验'].includes(button.textContent.trim()))"), false)
+    assert.equal(await evaluate("document.querySelector('#workspace-review .case-review-bar')"), null)
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('#workspace-review button')).some(button=>['审阅清单','标记案件完成'].includes(button.textContent.trim()))"), false)
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.review-todos button')).some(button=>button.textContent.trim()==='人工审阅')"), false)
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pane-l')).visibility === 'visible' && getComputedStyle(document.querySelector('.pane-r')).visibility === 'visible'"), true)
     assert.equal(await evaluate(`(() => {
       const widths = Array.from(document.querySelector('.ws').children, pane => pane.getBoundingClientRect().width);
-      return Math.abs(widths[0] - widths[2]) < 1 && Math.abs(widths[1] - widths[0] * 3) < 1;
-    })()`), true, '桌面三栏应按 2：6：2 分配宽度')
+      return widths[0] < widths[2] && widths[2] < widths[1];
+    })()`), true, '桌面正文为主栏，准备核验时右栏宽于材料栏')
     const tabBarHeightDifference = () => evaluate(`document.querySelector('.workspace-doc-strip').getBoundingClientRect().height
-      - document.querySelector('.workspace-right-tablist').getBoundingClientRect().height`)
+      - document.querySelector('[data-workspace-review-tab]').getBoundingClientRect().height`)
     assert.equal(await tabBarHeightDifference(), 0, '桌面文书切换区与右栏页签区应等高')
     assert.match(await evaluate("document.querySelector('.review-todo-card').textContent"), /30,000元/)
     assert.equal(await evaluate("document.querySelector('.review-todos-count strong').textContent"), '3')
     assert.equal(await evaluate("document.querySelector('.review-todo-card').dataset.verdict"), 'fail')
     await screenshot('workspace-todos')
-    await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
+    await wait("document.querySelector('.whole-document-content[data-editable=true] .superdoc-page')")
     await screenshot('inline-editor')
     await clickText('.material-fold-controls button', '收起全部')
     assert.equal(await evaluate("document.querySelectorAll('.mat-it').length"), 0)
@@ -796,16 +863,20 @@ app.whenReady().then(async () => {
     await clickText('.workspace-doc-strip button', '核验结果')
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pane-l')).visibility"), 'hidden')
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pane-r')).visibility"), 'visible')
+    assert.equal(await evaluate("document.querySelector('#workspace-review .case-review-bar')"), null)
     assert.equal(await tabBarHeightDifference(), 0, '窄窗文书切换区与右栏页签区应等高')
     if (layoutOnly) console.log('PASS matching workspace tab bar heights at desktop and narrow widths')
     await clickText('.workspace-doc-strip button', '核验结果')
     window.setSize(...originalSize)
     await wait("!document.querySelector('.ws.no-l.no-r')")
     await wait("['CaseMemory-', 'WorkspaceAssistant-'].every(prefix => performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.split('/').pop().startsWith(prefix)))")
+    const workspaceIdentity = await evaluate("document.querySelector('.workspace-case-identity')?.textContent")
+    assert.equal(workspaceIdentity, '原告：王某 ｜ 被告（我方）：李某 ｜ 北京市朝阳区人民法院')
     await clickText('.topbar button', '案件记忆')
     await wait("document.querySelector('.case-memory-card')")
-    assert.equal(await evaluate("document.querySelector('.workspace-case-identity')?.textContent"), '原告：王某 ｜ 被告（我方）：李某')
-    assert.equal(await evaluate("document.querySelector('.workspace-topbar button[aria-label^=切换案件], .workspace-report-button')"), null)
+    assert.equal(await evaluate("document.querySelector('.workspace-case-identity')?.textContent"), workspaceIdentity)
+    assert.equal(await evaluate("document.querySelector('.workspace-topbar button[aria-label^=切换案件]')"), null)
+    assert.equal(await evaluate("document.querySelector('.workspace-report-button').checkVisibility()"), false)
     assert.doesNotMatch(await evaluate("document.querySelector('.case-memory-heading').textContent"), /编辑案件信息|梳理/)
     assert.match(await evaluate("document.querySelector('.case-basic-fields').textContent"), /原告王某被告李某我方被告/)
     assert.equal(await evaluate("document.querySelectorAll('.case-memory-tabs [role=tab]').length"), 6)
@@ -840,10 +911,12 @@ app.whenReady().then(async () => {
     await clickText('.topbar button', '返回工作台')
     if (layoutOnly) {
       const rightTabs = '.workspace-right-tablist [role=tab]'
+      const paneWidths = () => evaluate("Array.from(document.querySelector('.ws').children, pane => pane.getBoundingClientRect().width)")
+      const desktopWidths = await paneWidths()
       assert.equal(await evaluate("document.querySelector('.workspace-doc-strip [aria-label=\"AI 助手\"]')"), null, '文书工具栏不应重复显示助手入口')
       assert.equal(await evaluate("document.querySelector('.workspace-right-tablist [aria-selected=true]').textContent.trim()"), '核验结果')
       assert.equal(await evaluate("document.querySelector('.workspace-right-tablist [aria-label=\"AI 助手\"] img')?.naturalWidth > 0"), true)
-      assert.equal(await evaluate("Array.from(document.querySelectorAll('.workspace-right-tablist [role=tab]')).every(tab => getComputedStyle(tab).borderWidth === '0px')"), true, '页签按钮不应显示外框')
+      assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-workspace-review-tab]')).borderInlineWidth === '0px'"), true, '核验结果页签不应显示外框')
       await wait(`(() => {
         const active = document.querySelector('.workspace-right-tablist [aria-selected=true]');
         const inactive = document.querySelector('.workspace-right-tablist [aria-selected=false]');
@@ -854,6 +927,7 @@ app.whenReady().then(async () => {
       await clickText(rightTabs, 'AI 助手')
       await wait("document.querySelector('.workspace-ai-panel .assistant-composer')")
       assert.equal(await evaluate("document.querySelector('.workspace-ai-panel').closest('.pane-r')?.id"), 'workspace-review')
+      assert.deepEqual(await paneWidths(), desktopWidths, '切换到 AI 助手时三栏宽度应保持固定')
       await fill('.assistant-composer textarea', '待发送的草稿')
       await clickText(rightTabs, '核验结果')
       assert.equal(await evaluate("document.querySelector('.review-todos').checkVisibility() && !document.querySelector('.workspace-ai-panel').checkVisibility()"), true)
@@ -863,6 +937,16 @@ app.whenReady().then(async () => {
       await wait("document.querySelector('.workspace-ai-panel').checkVisibility()")
       assert.equal(await evaluate("document.querySelector('.assistant-composer textarea').value"), '待发送的草稿')
       await fill('.assistant-composer textarea', '')
+      await clickText(rightTabs, '核验结果')
+      await evaluate("document.querySelector('.review-todo-card').click()")
+      await wait("document.querySelector('.review-detail-bar')")
+      assert.deepEqual(await paneWidths(), desktopWidths, '查看单句核验时三栏宽度应保持固定')
+      await clickText(rightTabs, 'AI 助手')
+      await wait("document.querySelector('.workspace-ai-panel').checkVisibility()")
+      assert.deepEqual(await paneWidths(), desktopWidths, '从单句核验切换到 AI 助手时三栏宽度应保持固定')
+      await clickText(rightTabs, '核验结果')
+      await clickText('.review-detail-bar button', '返回待办')
+      await clickText(rightTabs, 'AI 助手')
       assert.equal(await evaluate("document.querySelectorAll('.workspace-ai-modes > button').length"), 4)
       assert.equal(await evaluate("document.querySelector('.workspace-ai-modes > button:nth-child(4)').textContent.trim()"), '更多技能')
       assert.equal(await evaluate("document.querySelector('.workspace-ai-composer-footer strong')"), null)
@@ -883,17 +967,16 @@ app.whenReady().then(async () => {
       await screenshot('assistant-more')
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
       await wait("!document.querySelector('.workspace-ai-menu[role=menu]')")
-      await clickText('.workspace-ai-header button', '加宽 AI 助手')
-      assert.equal(await evaluate("getComputedStyle(document.querySelector('.pane-l')).visibility"), 'hidden')
-      assert.equal(await evaluate("getComputedStyle(document.querySelector('.pane-r')).visibility"), 'visible')
-      await screenshot('assistant-expanded')
-      await clickText('.workspace-ai-header button', '还原 AI 助手')
       window.setSize(390, 900)
       await wait("innerWidth <= 390 && document.querySelector('.ws.no-l:not(.no-r)')")
       assert.equal(await evaluate(`(() => { const panel = document.querySelector('.workspace-ai-panel');
         const send = panel.querySelector('[aria-label=发送]').getBoundingClientRect();
         return panel.checkVisibility() && panel.scrollWidth <= panel.clientWidth && send.bottom <= innerHeight; })()`), true)
       await screenshot('assistant-390')
+      const narrowWidths = await paneWidths()
+      await clickText(rightTabs, '核验结果')
+      assert.deepEqual(await paneWidths(), narrowWidths, '窄屏切换到核验结果时栏宽应保持固定')
+      await clickText(rightTabs, 'AI 助手')
       await clickText('.workspace-doc-strip button', '核验结果')
       await wait("document.querySelector('.ws.no-l.no-r')")
       await clickText('.workspace-doc-strip button', '核验结果')
@@ -909,37 +992,35 @@ app.whenReady().then(async () => {
     const selectReviewedFixture = async () => {
       await wait("Array.from(document.querySelectorAll('.review-todo-card')).some(item=>item.textContent.includes('500,000元'))")
       await evaluate(`Array.from(document.querySelectorAll('.review-todo-card')).find(item=>item.textContent.includes('500,000元'))
-        .closest('.review-todo-entry').querySelector('.review-todo-manual').click()`)
-      await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
+        .click()`)
+      await wait("document.querySelector('.whole-document-content[data-editable=true] .superdoc-page')")
     }
     await selectReviewedFixture()
-    await wait("document.querySelector('.rc-q')")
-    assert.equal(await evaluate("document.querySelector('.rc .conf-num')?.textContent"), '74%')
-    assert.equal(await evaluate(`(() => {
-      const fill = document.querySelector('.rc .conf-track i');
-      return fill?.style.width === '74%' && getComputedStyle(fill).backgroundColor !== 'rgba(0, 0, 0, 0)';
-    })()`), true, '待律师核对的声明应同时显示置信度及可见填充条')
-    await evaluate("document.querySelector('.rc .confidence-details summary').click()")
-    assert.match(await evaluate("document.querySelector('.rc .confidence-details').textContent"), /验证集 100 案，验证一致率 75%/u)
+    await wait("document.querySelector('.review-result-details blockquote')")
+    assert.equal(await evaluate("document.querySelector('.review-result-details').open"), false)
+    await clickText('.review-result-details summary', '核验详情')
+    assert.match(await evaluate("document.querySelector('.review-result-details p').textContent"), /置信度 74%/u)
     assert.ok((await loadedChunks()).some(chunk => chunk.startsWith('Workspace-')), '工作台应能按需加载')
     await screenshot('workspace')
-    await wait("document.querySelector('.declaration-checks input')")
-    await evaluate("document.querySelector('.declaration-checks input').click()")
-    await clickText('.ops button', '确认声明')
-    await wait("document.querySelector('.rc .user-tag')?.textContent === '声明已人工确认'")
-    await clickText('.ops button', '批注')
-    await wait("document.querySelector('.note-box textarea')")
-    await fill('.note-box textarea', '已核对原件，数字 123 不触发快捷键。')
-    await evaluate("document.querySelector('.note-box textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'2',bubbles:true}))")
-    await clickText('.note-box button', '保存批注')
-    await wait("!document.querySelector('.note-box')")
+    await clickText('.review-result-actions button', '人工核验')
+    await evaluate("document.querySelectorAll('.review-inline-operation input:enabled').forEach(input=>input.click())")
+    await fill('.review-inline-operation textarea', '已对照流水核对借款本金。')
+    await clickText('.review-inline-operation button', '通过并保留人工标注')
+    await wait("document.querySelector('.review-result-status')?.textContent === '通过·标注'")
+    await clickText('.review-result-actions button', '更多操作')
+    await clickText('[role=menuitem]', '批注')
+    await wait("document.querySelector('.review-wide-editor textarea')")
+    await fill('.review-wide-editor textarea', '已核对原件，数字 123 不触发快捷键。')
+    await evaluate("document.querySelector('.review-wide-editor textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'2',bubbles:true}))")
+    await clickText('.review-wide-editor button', '保存批注')
+    await wait("!document.querySelector('.review-wide-editor')")
     await evaluate('location.reload()')
     await wait("document.querySelector('.case-card')")
     await evaluate("document.querySelector('.case-card').click()")
     await wait("document.querySelector('.review-todo-tabs')")
     await clickText('.review-todo-tabs button', '标注 1')
     await selectReviewedFixture()
-    await wait("document.querySelector('.rc .user-tag')?.textContent === '声明已人工确认' && document.querySelector('.rc')?.textContent.includes('已核对原件，数字 123 不触发快捷键。')")
+    await wait("document.querySelector('.review-result-status')?.textContent === '通过·标注' && document.querySelector('.review-sentence')?.textContent.includes('已核对原件，数字 123 不触发快捷键。')")
     await runWithWorkspaceAccount(account, async () => {
       const saved = await readWorkspace()
       const certificate = saved.certificates.find(item => item.id === 'qa-document')
@@ -949,7 +1030,7 @@ app.whenReady().then(async () => {
       assert.deepEqual(certificate.verification.audit.map(item => item.action), ['confirm', 'note'])
       assert.match(certificate.paragraphs[0].richText, /<u>/)
     })
-    await evaluate("document.querySelector('.rc-loc').click()")
+    await evaluate("document.querySelector('.review-result-source').click()")
     await wait("document.querySelector('[data-slot=sheet-content]')")
     await screenshot('preview')
     await clickText('[data-slot=sheet-content] button', 'Close')
@@ -1005,29 +1086,17 @@ app.whenReady().then(async () => {
     if (layoutOnly) {
       await clickText('.topbar button', '← 返回工作台')
       await wait("document.querySelector('.workspace-doc-strip')")
-      await wait("document.querySelector('.whole-document-content[contenteditable=true]')")
+      await wait("document.querySelector('.whole-document-content[data-editable=true] .superdoc-page')")
       const selectedPrefix = '2023年3月15日'
-      const selected = await evaluate(`(() => {
-        const editor = document.querySelector('.whole-document-content');
-        editor.focus();
-        const firstText = document.createTreeWalker(editor.querySelector('p'), NodeFilter.SHOW_TEXT).nextNode();
-        const range = document.createRange();
-        range.setStart(firstText, 0);
-        range.setEnd(firstText, ${selectedPrefix.length});
-        getSelection().removeAllRanges();
-        getSelection().addRange(range);
-        return getSelection().toString();
-      })()`)
-      assert.equal(selected, selectedPrefix)
+      await selectDocumentText(selectedPrefix)
       await wait("document.querySelector('.document-selection-actions')")
       assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.document-selection-actions button')).map(button => button.textContent.trim())"), ['问 AI', '改写', '查法条', '查类案'])
-      await evaluate("document.querySelector('.whole-document-content p').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:300,clientY:200}))")
+      await evaluate(`(${bodyParagraphs}[0]).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:300,clientY:200}))`)
       await wait("document.querySelector('.workspace-document-menu [role=menuitem]')")
       assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.workspace-document-menu [role=menuitem]')).map(item => item.textContent.trim())"), ['引用选中内容问 AI', '改写', '查法条', '查类案', '局部重核'])
       await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))")
       await wait("!document.querySelector('.workspace-document-menu')")
       await selectDocumentText(selectedPrefix)
-      await evaluate(`(() => { const selection = getSelection(); const firstText = document.createTreeWalker(document.querySelector('.whole-document-content p'), NodeFilter.SHOW_TEXT).nextNode(); selection.setBaseAndExtent(firstText, 0, firstText, ${selectedPrefix.length}) })()`)
       await evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{key:'j',ctrlKey:true,bubbles:true,cancelable:true}))")
       await wait(`document.querySelector('.workspace-ai-quote-text')?.textContent === ${JSON.stringify(selectedPrefix)}`)
       await evaluate("document.querySelector('.workspace-ai-more').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'mouse'}))")

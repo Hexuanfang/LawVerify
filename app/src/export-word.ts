@@ -69,7 +69,7 @@ function parseHtmlSegments(html: string): StyledSegment[] {
       if (el.tagName === 'U') newFormatting.underline = true
 
       // 处理 p 标签带来的换行，暂时不需要，因为我们会在外部作为独立的 Paragraph 处理
-      // 但 Tiptap 可能会把多段内容放在一个 richText 中（如果是合并的）
+      // 一个存储块可能包含多个富文本段落。
       // 在当前设计中，每个 CertificateParagraph 对应一个 p，所以只处理内联格式
       node.childNodes.forEach(child => traverse(child, newFormatting))
     }

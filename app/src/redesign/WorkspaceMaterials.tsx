@@ -39,11 +39,14 @@ export function WorkspaceMaterials() {
   const [query, setQuery] = useState('')
   const [collapsedCategories, setCollapsedCategories] = useState<string[]>([])
   const [collapsedMatches, setCollapsedMatches] = useState<string[]>([])
+  const [showEmptyGroups, setShowEmptyGroups] = useState(false)
   const [overrides, setOverrides] = useState(() => readEvidenceCategories(storageKey))
   const [drag, setDrag] = useState<{ id: string; from: EvidenceCategory; over?: EvidenceCategory }>()
   const keyword = query.trim().toLowerCase()
   const allMaterials = app.workspace?.evidences.filter(item => item.caseId === caseId) ?? []
-  const groups = [...groupEvidence(allMaterials, keyword, overrides)].filter(([, files]) => drag || files.length)
+  const groups = [...groupEvidence(allMaterials, keyword, overrides)].filter(([, files]) => !keyword || drag || files.length)
+  const emptyGroups = groups.filter(([, files]) => !files.length).length
+  const emptyGroupsOpen = showEmptyGroups || Boolean(drag)
   const [collapsed, setCollapsed] = keyword ? [collapsedMatches, setCollapsedMatches] : [collapsedCategories, setCollapsedCategories]
   const authorities = linkedAuthorities(app.elements, app.workspace ?? undefined)
     .filter(item => [item.name, item.version, ...item.locations.map(({ source }) => source.loc)].join(' ').toLowerCase().includes(keyword))
@@ -52,6 +55,7 @@ export function WorkspaceMaterials() {
   const allGroups = [...groups.map(([category]) => category), 'l2', 'l3']
   const folded = new Set(collapsed)
   const anyFolded = allGroups.some(id => folded.has(id))
+  const selectedSources = app.element?.sources ?? []
   const toggle = (id: string) => setCollapsed(current => current.includes(id) ? current.filter(group => group !== id) : [...current, id])
   const moveEvidence = (id: string, category: EvidenceCategory) => {
     const item = allMaterials.find(file => file.id === id)
@@ -89,6 +93,7 @@ export function WorkspaceMaterials() {
           <TooltipTrigger asChild>
             <button type="button" className="mat-it material-file" draggable data-evidence-id={item.id}
               data-dragging={drag?.id === item.id || undefined} aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+              data-linked={selectedSources.some(source => source.st === 'l1' && source.targetId === item.id) || undefined}
               onDragStart={event => {
                 event.dataTransfer.setData(evidenceDragType, item.id)
                 event.dataTransfer.effectAllowed = 'move'
@@ -106,19 +111,20 @@ export function WorkspaceMaterials() {
                 }
               }}
               onClick={() => app.setDrawer({ st: 'l1', targetId: item.id, name: title, loc: item.fileName, quote: '' })}>
-              <span className="fico l1" aria-hidden="true">材</span>
-              <span className="mat-nm">{title}</span>
+              <span className="mat-nm"><span className="material-file-number" aria-hidden={!number}>{number || '材'}</span><span>{item.name}</span></span>
               {StatusIcon && <>
                 <StatusIcon className="material-parsing-status" data-status={status} size={15} strokeWidth={2.25} aria-hidden="true" />
                 <span className="sr-only">{statusLabel}</span>
               </>}
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-64 wrap-anywhere" sideOffset={4}>
+          <TooltipContent className="max-w-(--radix-tooltip-content-available-width) text-wrap wrap-anywhere"
+            side="right" sideOffset={8} avoidCollisions={false} collisionPadding={4}>
             <div>{title}</div>
             {item.fileName !== item.name && <div>{item.fileName}</div>}
             {statusLabel && <div>{statusLabel}</div>}
-            <div>拖到分类标题可调整归类，也可按 Alt + ↑ / ↓</div>
+            <hr className="my-1.5 border-background/25" />
+            <div className="text-center text-yellow-300">拖到标题分类可调整归类</div>
           </TooltipContent>
         </Tooltip>
       </li>
@@ -129,7 +135,10 @@ export function WorkspaceMaterials() {
       <div className="pane-head">
         <div className="pane-t"><h2>案件材料 <span>{allMaterials.length} 份</span></h2>
           <div className="material-fold-controls">
-            <Button variant="ghost" size="xs" onClick={() => setCollapsed(anyFolded ? [] : allGroups)}>{anyFolded ? '展开全部' : '收起全部'}</Button>
+            <Button variant="ghost" size="xs" onClick={() => {
+              setCollapsed(anyFolded ? [] : allGroups)
+              if (!keyword) setShowEmptyGroups(anyFolded)
+            }}>{anyFolded ? '展开全部' : '收起全部'}</Button>
           </div>
         </div>
         <div className="search">
@@ -142,8 +151,8 @@ export function WorkspaceMaterials() {
       </div>
       <div className="mat-scroll">
         <div className="material-categories" role="region" aria-label="证据目录">
-          {groups.length ? groups.map(([category, files]) => (
-            <div className="mat-g" key={category} data-category={category}
+          {groups.map(([category, files]) => (
+            <div className="mat-g" key={category} data-category={category} hidden={!files.length && !emptyGroupsOpen}
               data-drop-target={drag?.over === category || undefined}
               onDragOver={event => {
                 if (!drag || drag.from === category) return
@@ -163,33 +172,46 @@ export function WorkspaceMaterials() {
                   moveEvidence(drag.id, category)
               }}>
               {heading(category, category, files.length)}
-              {!folded.has(category) && <ul className="material-category-files" role="list" aria-label={category}>
+              {files.length > 0 && !folded.has(category) && <ul className="material-category-files" role="list" aria-label={category}>
                 {files.map(item => fileRow(item, category))}
               </ul>}
             </div>
-          )) : <p className="lib-empty">{keyword ? '未找到材料' : '暂无案件原材料'}</p>}
+          ))}
+          {!keyword && emptyGroups > 0 && <button type="button" className="mat-gn material-empty-toggle" aria-expanded={emptyGroupsOpen}
+            onClick={() => setShowEmptyGroups(!showEmptyGroups)}><ChevronDown size={13} aria-hidden="true" />空分类<span className="n">{emptyGroups}</span></button>}
+          {(!groups.length || (!keyword && !allMaterials.length)) && <p className="lib-empty">{keyword ? '未找到材料' : '暂无案件原材料'}</p>}
         </div>
         <h2 className="material-authority-title">关联依据</h2>
         {([
-          ['l2', '法条 L2', law],
-          ['l3', '案例 L3', cases],
+          ['l2', '法条', law],
+          ['l3', '案例', cases],
         ] as const).map(([id, title, rows]) => (
           <div className="mat-g" key={id}>
             {heading(id, title, rows.length)}
             {!folded.has(id) && (rows.length ? rows.map(row => (
-              <div className="material-authority" key={row.id}>
-                <div className="material-authority-name">
-                  <span className={`fico ${id}`} aria-hidden="true">{id === 'l2' ? '法' : '例'}</span>
-                  <h3 className="mat-nm" title={row.name}>{row.name}{row.version && <span className="material-description">{row.version}</span>}</h3>
-                </div>
-                {row.locations.map(({ source, manual, mcp }) => (
-                  <button type="button" className="mat-it" key={JSON.stringify([source.loc, source.quote])}
-                    aria-label={`${row.name} · ${source.loc || '查看出处'}`} onClick={() => app.setDrawer(source)}>
-                    <span className="material-description material-text">{source.loc || '查看出处'}</span>
-                    {manual && <span className="material-origin">手动</span>}
-                    {mcp && <span className="material-origin">检索</span>}
-                  </button>
-                ))}
+              <div key={row.id}>
+                {row.locations.map(({ source, manual, mcp }) => {
+                  const location = source.loc?.trim() ?? ''
+                  const name = row.name?.trim() ?? ''
+                  const lawName = id === 'l2' && name && !/^《.*》$/u.test(name) ? `《${name}》` : name
+                  const headline = id === 'l2' ? location || lawName : name || location
+                  const detail = [id === 'l2' ? location && lawName : name && location, row.version].filter(Boolean).join(' · ')
+                  const linked = selectedSources.some(item => item.st === source.st && item.loc === source.loc
+                    && (item.targetId === source.targetId || (item.quote === source.quote && item.name === source.name)))
+                  return (
+                    <button type="button" className="mat-it material-authority-row" key={JSON.stringify([source.loc, source.quote])}
+                      data-linked={linked || undefined} onClick={() => app.setDrawer(source)}>
+                      <span className={`fico ${id}`} aria-hidden="true">{id.toUpperCase()}</span>
+                      <span className="material-authority-text">
+                        <strong>{headline || '查看出处'}</strong>
+                        {detail && <span className="material-authority-detail">{detail}</span>}
+                      </span>
+                      {manual && <span className="material-origin">手动</span>}
+                      {mcp && <span className="material-origin">检索</span>}
+                      {linked && <span className="sr-only">当前核验项关联出处</span>}
+                    </button>
+                  )
+                })}
               </div>
             )) : <p className="empty-inline">暂无关联</p>)}
           </div>

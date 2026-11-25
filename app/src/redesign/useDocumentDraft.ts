@@ -1,22 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Editor } from '@tiptap/react'
 import type { Certificate } from '../types'
 import { documentDraftKey, draftKey, readDraft, readDrafts, removeDraft, writeDraft, type ParagraphDraft } from '../draft-store'
-import { contentSnapshot, documentBlocks, documentHtml, type DocumentBlock } from './documentContent'
+import { contentSnapshot, documentHtml, type DocumentBlock } from './documentContent'
+import type { DocxWork } from './documentFile'
 
 type LegacyDraft = Pick<ParagraphDraft, 'key' | 'revision'>
 type Recovery = { draft: ParagraphDraft; legacy: LegacyDraft[] }
 
 export function useDocumentDraft(certificate: Certificate,
-  commit: (blocks: DocumentBlock[], expected: DocumentBlock[]) => Promise<DocumentBlock[]>) {
+  commit: (blocks: DocumentBlock[], expected: DocumentBlock[], office?: DocxWork) => Promise<Certificate>) {
   const account = useRef(sessionStorage.getItem('lawverify-login-account') || '')
   const key = documentDraftKey(account.current, certificate.id)
   const currentBlocks = useMemo(() => contentSnapshot(certificate.paragraphs), [certificate.paragraphs])
+  const officeVersion = certificate.officeFile?.sha256 ?? 'none'
   const base = useRef(currentBlocks)
-  const [initialHtml, setInitialHtml] = useState(() => documentHtml(certificate.paragraphs))
+  const baseVersion = useRef(officeVersion)
+  const [source, setSource] = useState(() => ({ blocks: currentBlocks, format: certificate.officeFile?.format, version: officeVersion }))
+  const edited = useRef(false)
   const pending = useRef<ParagraphDraft | null>(null)
   const legacy = useRef<LegacyDraft[]>([])
   const queue = useRef<Promise<void>>(Promise.resolve())
+  const hydration = useRef<Promise<void>>(Promise.resolve())
+  const recoveryRequired = useRef(false)
   const savingRef = useRef(false)
   const live = useRef(true)
   const [ready, setReady] = useState(false)
@@ -29,12 +34,13 @@ export function useDocumentDraft(certificate: Certificate,
 
   useEffect(() => {
     live.current = true
-    void (async () => {
+    hydration.current = (async () => {
       const whole = await readDraft(key)
       if (!live.current) return
       if (whole) {
         const expected = JSON.parse(whole.baseText) as DocumentBlock[]
         if (!Array.isArray(expected)) throw new Error('草稿快照格式不正确')
+        recoveryRequired.current = true
         setRecovery({ draft: whole, legacy: JSON.parse(whole.baseRichText || '[]') as LegacyDraft[] })
         return
       }
@@ -42,6 +48,7 @@ export function useDocumentDraft(certificate: Certificate,
       if (!live.current) return
       const old = drafts.filter((draft): draft is ParagraphDraft => Boolean(draft))
       if (!old.length) return
+      recoveryRequired.current = true
       const expected = contentSnapshot(certificate.paragraphs)
       const blocks = contentSnapshot(certificate.paragraphs)
       drafts.forEach((draft, index) => {
@@ -52,6 +59,7 @@ export function useDocumentDraft(certificate: Certificate,
       setRecovery({ draft: { key, revision: crypto.randomUUID(), text: JSON.stringify(blocks),
         richText: documentHtml(blocks), baseText: JSON.stringify(expected), baseRichText: JSON.stringify(old.map(({ key, revision }) => ({ key, revision }))) }, legacy: old })
     })().catch(() => {
+      recoveryRequired.current = true
       if (live.current) { setDraftError(true); setNotice('无法读取文书草稿，请检查本机存储后重试。') }
     }).finally(() => { if (live.current) setReady(true) })
     return () => { live.current = false }
@@ -62,14 +70,15 @@ export function useDocumentDraft(certificate: Certificate,
   useEffect(() => {
     if (savingRef.current) return
     const latest = currentBlocks
-    if (JSON.stringify(latest) === JSON.stringify(base.current)) return
-    if (pending.current || recovery) setConflict(true)
+    if (officeVersion === baseVersion.current && JSON.stringify(latest) === JSON.stringify(base.current)) return
+    if (edited.current || pending.current || recovery) setConflict(true)
     else {
       base.current = latest
-      setInitialHtml(documentHtml(latest))
+      baseVersion.current = officeVersion
+      setSource({ blocks: latest, format: certificate.officeFile?.format, version: officeVersion })
       setConflict(false)
     }
-  }, [currentBlocks, recovery])
+  }, [currentBlocks, recovery, officeVersion, certificate.officeFile?.format])
 
   const persist = (draft: ParagraphDraft) => {
     pending.current = draft
@@ -84,17 +93,30 @@ export function useDocumentDraft(certificate: Certificate,
       if (live.current) { setDraftError(true); setNotice('本机草稿保存失败，请保存文书或重试后再离开。') }
     })
   }
-  const capture = (html: string) => persist({ key, richText: html, text: JSON.stringify(documentBlocks(html)),
-    baseText: JSON.stringify(base.current), baseRichText: JSON.stringify(legacy.current), revision: crypto.randomUUID() })
+  const markDirty = () => {
+    edited.current = true
+    setDirty(true)
+    setNotice('正在保存本机草稿…')
+  }
+  const capture = (blocks: DocumentBlock[], office?: DocxWork) => persist({ key, richText: '', text: JSON.stringify(blocks),
+    baseText: JSON.stringify(base.current), baseRichText: JSON.stringify(legacy.current), revision: crypto.randomUUID(), office })
 
-  const restore = (editor: Editor) => {
+  const restore = async (load: (draft: ParagraphDraft) => Promise<void>) => {
     if (!recovery) return
-    base.current = JSON.parse(recovery.draft.baseText) as DocumentBlock[]
-    legacy.current = recovery.legacy
-    editor.commands.setContent(recovery.draft.richText, { emitUpdate: false, parseOptions: { preserveWhitespace: 'full' } })
-    setConflict(JSON.stringify(base.current) !== JSON.stringify(contentSnapshot(certificate.paragraphs)))
-    setRecovery(null)
-    persist(recovery.draft)
+    try {
+      await load(recovery.draft)
+      base.current = JSON.parse(recovery.draft.baseText) as DocumentBlock[]
+      baseVersion.current = recovery.draft.office?.expectedFileVersion ?? officeVersion
+      legacy.current = recovery.legacy
+      edited.current = true
+      setConflict(baseVersion.current !== officeVersion || JSON.stringify(base.current) !== JSON.stringify(currentBlocks))
+      setRecovery(null)
+      recoveryRequired.current = false
+      persist(recovery.draft)
+    } catch (cause) {
+      setDraftError(true)
+      setNotice(cause instanceof Error ? cause.message : '恢复草稿失败，本机草稿已保留。')
+    }
   }
   const discardRecovery = async () => {
     if (!recovery) return
@@ -102,29 +124,31 @@ export function useDocumentDraft(certificate: Certificate,
       await removeDraft(key, recovery.draft.revision)
       await Promise.all(recovery.legacy.map(draft => removeDraft(draft.key, draft.revision)))
       setRecovery(null)
+      recoveryRequired.current = false
       setNotice('已载入保存的文书')
     } catch { setNotice('草稿清理失败，请重试。') }
   }
-  const save = async (editor: Editor) => {
+  const save = async () => {
     if (savingRef.current || conflict || recovery) return false
     if (!pending.current) return true
     savingRef.current = true
-    editor.setEditable(false, false)
     setSaving(true)
     const draft = pending.current
     try {
       await queue.current
-      const saved = await commit(JSON.parse(draft.text) as DocumentBlock[], base.current)
-      base.current = contentSnapshot(saved)
+      const saved = await commit(JSON.parse(draft.text) as DocumentBlock[], base.current, draft.office)
+      base.current = contentSnapshot(saved.paragraphs)
+      baseVersion.current = saved.officeFile?.sha256 ?? 'none'
       await removeDraft(key, draft.revision)
       await Promise.all(legacy.current.map(item => removeDraft(item.key, item.revision)))
       pending.current = null
+      edited.current = false
       legacy.current = []
       setDirty(false)
       setDraftError(false)
       setConflict(false)
       setNotice('整篇文书已保存')
-      return true
+      return saved
     } catch (cause) {
       if (cause instanceof Error && 'status' in cause && cause.status === 409) setConflict(true)
       setNotice(cause instanceof Error ? cause.message : '保存失败，本机草稿已保留。')
@@ -134,10 +158,13 @@ export function useDocumentDraft(certificate: Certificate,
       setSaving(false)
     }
   }
-  const adoptLatestBase = (editor: Editor) => {
-    base.current = contentSnapshot(certificate.paragraphs)
+  const adoptLatestBase = () => {
+    base.current = currentBlocks
+    baseVersion.current = officeVersion
     setConflict(false)
-    capture(editor.getHTML())
+    if (pending.current) capture(JSON.parse(pending.current.text) as DocumentBlock[], pending.current.office && {
+      ...pending.current.office, expectedFileVersion: officeVersion,
+    })
   }
   const flush = async () => {
     if (pending.current) {
@@ -146,6 +173,10 @@ export function useDocumentDraft(certificate: Certificate,
     }
     return true
   }
-  return { initialHtml, ready, dirty, saving, conflict, recovery, notice, draftError,
-    capture, restore, discardRecovery, save, adoptLatestBase, flush }
+  const checkLoadedDraft = async () => {
+    await hydration.current
+    return !recoveryRequired.current && !edited.current
+  }
+  return { source, ready, dirty, saving, conflict, recovery, notice, draftError,
+    markDirty, capture, restore, discardRecovery, save, adoptLatestBase, flush, checkLoadedDraft }
 }

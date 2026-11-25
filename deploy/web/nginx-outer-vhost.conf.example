@@ -21,7 +21,7 @@ server {
   ssl_certificate_key /etc/letsencrypt/live/lv-zhijing/privkey.pem;
   ssl_protocols       TLSv1.2 TLSv1.3;
 
-  # 解析服务（parser）
+  # 仅在仍运行旧版云端解析服务时保留此段。
   location = /parse {
     proxy_pass http://127.0.0.1:8790;
     proxy_http_version 1.1;

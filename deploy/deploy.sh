@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 用法：deploy.sh [--local | --host user@host] [服务 ...]
-服务：web、cloud-server、python-workers、postgres、all
+服务：web、cloud-server、postgres、all
 cloud-server 会启动 PostgreSQL。无服务参数时部署 web 和 cloud-server。
 SSH 模式也可通过 DEPLOY_HOST 指定主机，DEPLOY_DIR 默认为 /opt/lawverify。
 EOF
@@ -38,8 +38,8 @@ fi
 selected=" "
 for service in "${requested[@]}"; do
   case "$service" in
-    all) selected+="web cloud-server python-workers " ;;
-    web|cloud-server|python-workers|postgres) selected+="$service " ;;
+    all) selected+="web cloud-server " ;;
+    web|cloud-server|postgres) selected+="$service " ;;
     *) printf '未知的部署服务：%s\n' "$service" >&2; exit 2 ;;
   esac
 done
@@ -51,7 +51,6 @@ elif [[ "$selected" == *" postgres "* ]]; then
   targets+=(postgres)
 fi
 if [[ "$selected" == *" web "* ]]; then targets+=(web); fi
-if [[ "$selected" == *" python-workers "* ]]; then targets+=(python-workers); fi
 if (( ${#targets[@]} == 0 )); then
   echo '请指定至少一个部署服务。' >&2
   exit 2
@@ -94,13 +93,8 @@ compose_on_target() {
       env_file=web/.env
       legacy_env_files=.env
       ;;
-    python-workers)
-      compose_file=python-workers/compose.yml
-      env_file=../python-workers/.env
-      legacy_env_files=python-workers/.env
-      ;;
   esac
-  # 路径基准保留在 deploy，已有 releases 和模型路径可直接使用。
+  # 路径基准保留在 deploy，已有 releases 路径可直接使用。
   run_on_target "
     set -e
     cd $target_deploy
@@ -112,13 +106,6 @@ compose_on_target() {
   "
 }
 
-runtime_service() {
-  case "$1" in
-    python-workers) printf '%s\n' parser ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-
 upload_runtime_files() {
   local target
   local files=()
@@ -126,7 +113,6 @@ upload_runtime_files() {
     case "$target" in
       web) files+=(deploy/web/compose.yml deploy/web/.env.example deploy/web/nginx-outer-vhost.conf.example deploy/issue-cert.sh) ;;
       cloud-server|postgres) files+=(deploy/cloud-server/compose.yml deploy/cloud-server/.env.example deploy/admin.sh) ;;
-      python-workers) files+=(deploy/python-workers/compose.yml python-workers/.env.example) ;;
     esac
   done
 
@@ -149,13 +135,7 @@ upload_runtime_files() {
 build_image() {
   local target="$1" image="$2" env_file
   env_file="deploy/$target/.env.build"
-  if [[ "$target" == python-workers ]]; then
-    if [[ -f python-workers/.env.build ]]; then
-      env_file=python-workers/.env.build
-    elif [[ ! -f "$env_file" ]]; then
-      env_file=python-workers/.env.build.example
-    fi
-  elif [[ -n "${DEPLOY_BUILD_ENV_FILE:-}" ]]; then
+  if [[ -n "${DEPLOY_BUILD_ENV_FILE:-}" ]]; then
     env_file="$DEPLOY_BUILD_ENV_FILE"
   elif [[ ! -f "$env_file" ]]; then
     if [[ -f deploy/.env.build ]]; then
@@ -168,7 +148,7 @@ build_image() {
   echo "== 本地构建 $DEPLOY_PLATFORM 镜像：$image =="
   DEPLOY_BUILD_IMAGE="$image" \
     docker compose --project-directory "$deploy_root" --env-file "$env_file" \
-      -f "deploy/$target/compose.build.yml" build "$(runtime_service "$target")"
+      -f "deploy/$target/compose.build.yml" build "$target"
 }
 
 cd "$repo_root"
@@ -177,10 +157,9 @@ if [[ "$mode" == ssh ]]; then upload_runtime_files; fi
 build_targets=()
 images=()
 for target in "${targets[@]}"; do
-  config_images="$(compose_on_target "$target" config --images "$(runtime_service "$target")")"
+  config_images="$(compose_on_target "$target" config --images "$target")"
   case "$target" in
     web|cloud-server) image_name="lawverify-$target" ;;
-    python-workers) image_name=lawverify-parser ;;
     *) continue ;;
   esac
   if ! image="$(printf '%s\n' "$config_images" | grep "^$image_name:")"; then
@@ -205,7 +184,6 @@ fi
 
 for target in "${targets[@]}"; do
   echo "== 启动 $target =="
-  service="$(runtime_service "$target")"
-  compose_on_target "$target" up -d --no-build "$service"
-  compose_on_target "$target" ps "$service"
+  compose_on_target "$target" up -d --no-build "$target"
+  compose_on_target "$target" ps "$target"
 done

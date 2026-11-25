@@ -1,6 +1,6 @@
 # 本机材料解析
 
-桌面应用启动后在本机后台启动 Python worker，通过标准输入输出传递任务和结果位置。Python worker 使用随包的 MinerU 模型解析 PDF、图片、Word 和纯文本，业务服务校验结果并写入工作区。解析失败或存在审核提示的证据可在原件预览中编辑正文并确认。[旧版客户端的云服务部署](../docs/deployment-parser.md)
+桌面应用启动后在本机后台启动 Python worker，通过标准输入输出传递任务和结果位置。Python worker 使用随包的 MinerU 模型解析 PDF、图片、Word 和纯文本，业务服务校验结果并写入工作区。解析失败或存在审核提示的证据可在原件预览中编辑正文并确认。[旧版客户端云端解析](../docs/deployment-parser.md)
 
 ## 目录结构
 
@@ -18,7 +18,7 @@ python-workers/
             └── Table/
 ```
 
-`mineru-home/` 由 Git 忽略。部署时单独上传 ONNX 权重目录，保留内部子目录和隐藏文件。MinerU 在 `models/.derived/` 和 `models/.locks/` 生成的本机缓存可在新环境重新生成。
+`mineru-home/` 由 Git 忽略。MinerU 在 `models/.derived/` 和 `models/.locks/` 生成的本机缓存可在新环境重新生成。
 
 ## 本机调试解析服务
 

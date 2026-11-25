@@ -1,30 +1,6 @@
-# 旧版客户端的云端 Python 解析服务部署
+# 旧版客户端的云端 Python 解析
 
-桌面新版随安装包提供 Python 和 MinerU 模型，并由应用在本机启动解析进程。以下部署说明用于仍依赖云解析的旧版客户端。[桌面解析资源准备](../python-workers/README.md#桌面打包)
-
-Python 解析服务使用 MinerU 4.2.2，支持 PDF、图片、聊天截图、Word 与文本。解析容器与 `cloud-server` 部署在同一台云服务器，共用 `lawverify_default` 网络。现有 HTTPS 站点通过外层 Nginx 提供 `/parse`。[云端平台部署说明](deployment-docker.md)
-
-## 部署 Python workers
-
-发布端和云服务器需要 Docker 与 Compose v2。在云服务器用示例创建 `python-workers/.env` 并配置签名公钥、模型目录。默认完整路径为 `/opt/lawverify/python-workers/.env`。在已有 `cloud-server` 的服务器上新增或更新解析服务时，从发布端运行以下命令。首次部署整套平台时，可在同一命令中指定 `web cloud-server python-workers`。
-
-```bash
-./deploy/deploy.sh --host user@host python-workers
-```
-
-将 `python-workers/mineru-home/models/MinerU-4_models_onnx/` 整目录上传到目标机器的对应位置。默认部署根目录为 `/opt/lawverify`，因此默认模型目录为 `/opt/lawverify/python-workers/mineru-home/models/MinerU-4_models_onnx/`。
-
-`PARSER_MODELS_DIR` 指向目标机器上包含 `models/` 的模型根目录。相对路径以目标的 `deploy/` 为基准，默认是 `../python-workers/mineru-home`。已有部署可以在 `.env` 中显式指定原模型根目录，或迁移模型后更新该配置。模型以只读方式挂载，由 worker 复制权重到解析数据卷。首次启动需要等待模型预热。
-
-镜像从 `python-workers/` 源码目录构建，使用同目录的 `Dockerfile` 和 `.dockerignore`，模型和环境文件均排除在构建上下文之外。发布端可在 `python-workers/.env.build` 设置 `DOCKER_REGISTRY_PREFIX`、`DEBIAN_MIRROR` 和 `PIP_INDEX_URL`。解析端口默认绑定回环地址，云端流量走 HTTPS。当前环境模板配置了 8 核 CPU 配额、一个 worker 和 5 GiB 内存上限。
-
-如果服务器已运行同名解析容器，先核对它的 Compose 项目：
-
-```bash
-docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' lawverify-parser
-```
-
-若项目名与 `lawverify` 不同，安排解析任务清空后再切换。部署前保存旧容器配置和卷，解除同名容器占用后发布新版。新版使用 `lawverify_parser-data`，会从只读模型目录重新准备缓存。旧卷可保留用于回退。
+新版桌面安装包自带 Python 和 MinerU 模型，材料解析在本机运行。本文的接口和评估说明适用于已独立运行的旧版云端解析服务。[桌面解析资源准备](../python-workers/README.md#桌面打包)
 
 ## 调用解析服务
 
@@ -44,7 +20,7 @@ docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}
 
 ## 多账号解析
 
-使用 Ed25519 密钥对。在 `deploy/cloud-server/.env` 配置 `PARSER_TICKET_PRIVATE_KEY`，格式为 PKCS#8 DER 的 Base64。在 `python-workers/.env` 配置 `PARSER_TICKET_PUBLIC_KEY`，格式为 SPKI DER 的 Base64。启用公钥后，解析服务仅接受签名票据。 [Nginx 配置方法](deployment-docker.md#同域-https-代理材料解析)
+使用 Ed25519 密钥对。在 `deploy/cloud-server/.env` 配置 `PARSER_TICKET_PRIVATE_KEY`，格式为 PKCS#8 DER 的 Base64。在旧版解析进程的环境中配置 `PARSER_TICKET_PUBLIC_KEY`，格式为 SPKI DER 的 Base64。启用公钥后，解析服务仅接受签名票据。[Nginx 配置方法](deployment-docker.md#同域-https-代理材料解析)
 
 工作台使用当前账号会话调用 `POST /api/account/parser-ticket`，取得有效期 120 秒的票据，再向配置的解析服务 `/parse` 上传原件。成功响应的 `X-Parser-Task-Id` 用于关联任务，结果在原请求中返回。
 
@@ -65,9 +41,3 @@ node server/scripts/benchmark-mineru-workers.mjs
 ```
 
 评估将云端结果与合成样本预期值核对，并记录 HTTP 耗时和异常恢复结果。并发基准测量客户端同时发出 1 或 2 个请求时的耗时。报告分别写入项目的 `tmp/remote-parser-evaluation-*` 和 `tmp/mineru-benchmark-*`。
-
-```bash
-cd deploy
-docker compose --project-directory . --env-file ../python-workers/.env -f python-workers/compose.yml logs --tail 80 parser
-docker stats --no-stream
-```

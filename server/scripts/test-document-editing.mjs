@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import { env } from '../src/config/env.ts'
 
-const directory = path.resolve('tmp', `document-editing-${Date.now()}`)
-mkdirSync(directory, { recursive: true })
+const tempRoot = path.resolve(import.meta.dirname, '../../tmp')
+mkdirSync(tempRoot, { recursive: true })
+const directory = mkdtempSync(path.join(tempRoot, 'document-editing-'))
 env.WORKSPACE_DATA_DIR = directory
 env.KNOWLEDGE_RAG_MODE = 'local'
 const { readWorkspace, writeWorkspace, runWithWorkspaceAccount } = await import('../src/store.ts')
 const { saveDocumentContent } = await import('../src/document-editing.ts')
+const { officeDocxBytes, readDocxEditSource } = await import('../src/office/files.ts')
 const account = 'whole-document@test.invalid'
 const content = paragraphs => paragraphs.map(({ id, text, richText }) => ({ id, text, richText }))
 
@@ -92,5 +94,16 @@ await runWithWorkspaceAccount(account, async () => {
     await assert.rejects(saveDocumentContent('doc', { expectedContent: base, paragraphs: [{ id: 'other-p', text: '冒用', richText: '<p>冒用</p>' }] }))
     await saveDocumentContent('doc', { expectedContent: base, paragraphs: [{ id: 'blank', text: '', richText: '<p></p>' }] })
     assert.equal((await readWorkspace()).cases[0].status, 'in_review')
+  })
+  await test('没有原件的文书首次提交后可继续以 DOCX 编辑', async () => {
+    const base = await fixture()
+    const bytes = await officeDocxBytes(base)
+    const { workspace } = await saveDocumentContent('doc', {
+      expectedFileVersion: 'none', expectedContent: base, paragraphs: base,
+    }, bytes)
+    const certificate = workspace.certificates[0]
+    assert.equal(certificate.officeFile.fileName, '起诉状.docx')
+    assert.equal(certificate.officeFile.version, 1)
+    assert.deepEqual((await readDocxEditSource(certificate)).bytes, bytes)
   })
 })

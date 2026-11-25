@@ -3,12 +3,12 @@ import { test } from 'node:test'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { Document, Packer, Paragraph } from 'docx'
+import { Document, Packer, Paragraph, TextRun } from 'docx'
 import { env } from '../src/config/env.ts'
 
 const dataDir = fileURLToPath(new URL(`../../tmp/local-document-${randomUUID()}`, import.meta.url))
 env.WORKSPACE_DATA_DIR = dataDir
-const { officeFormat, officeRoot, parseOfficeBytes } = await import('../src/office/files.ts')
+const { officeFormat, officePath, officeRoot, parseOfficeBytes } = await import('../src/office/files.ts')
 
 test('本地导入文书后可保存正文并下载更新后的原格式文件', async () => {
   await mkdir(dataDir, { recursive: true })
@@ -48,6 +48,131 @@ test('本地导入文书后可保存正文并下载更新后的原格式文件',
     const deletion = await fetch(`${base}/cases/local-document-case`, { method: 'DELETE' })
     assert.equal(deletion.status, 200)
     assert.deepEqual(await readdir(officeRoot()), [], '删除案件应回收历版文书副本和基线')
+  } finally {
+    await new Promise(resolve => http.close(resolve))
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('DOCX 编辑副本保留原件，提交只改格式的版本并拒绝过期或损坏的文件', async () => {
+  const { createApp } = await import('../src/app.ts')
+  const { readWorkspace, writeWorkspace } = await import('../src/store.ts')
+  const http = createApp().app.listen(0, '127.0.0.1')
+  const docx = (text, formatting) => Packer.toBuffer(new Document({ sections: [{ children: [
+    new Paragraph({ children: [new TextRun({ text, ...formatting })] }),
+  ] }] }))
+  try {
+    await new Promise((resolve, reject) => { http.once('listening', resolve); http.once('error', reject) })
+    const base = `http://127.0.0.1:${http.address().port}/api`
+    const workspace = await readWorkspace()
+    workspace.cases = [{ id: 'docx-edit-case', name: '文书测试', status: 'draft', createdAt: '2026-11-19' }]
+    await writeWorkspace(workspace)
+
+    const original = await docx('原始正文')
+    const upload = new FormData()
+    upload.set('caseId', 'docx-edit-case')
+    upload.set('file', new Blob([original]), '测试.docx')
+    const imported = await fetch(`${base}/documents/import`, { method: 'POST', body: upload })
+    assert.equal(imported.status, 200)
+    const { certificate } = await imported.json()
+    const originalFile = certificate.officeFile
+    const editSource = `${base}/documents/${certificate.id}/edit-source`
+    const initial = await fetch(editSource)
+    assert.equal(initial.status, 200)
+    assert.equal(initial.headers.get('Content-Type'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    assert.equal(initial.headers.get('X-LawVerify-Office-Version'), originalFile.sha256)
+    assert.deepEqual(Buffer.from(await initial.arrayBuffer()), original)
+
+    const expectedContent = certificate.paragraphs.map(({ id, text, richText }) => ({ id, text, richText }))
+    const changed = [{ ...expectedContent[0], text: '更新正文', richText: '<p>更新正文</p>' }]
+    assert.equal((await fetch(`${base}/certificates/${certificate.id}/content`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedContent, paragraphs: changed }),
+    })).status, 200)
+    const overlay = await fetch(editSource)
+    assert.equal(overlay.status, 200)
+    assert.equal(overlay.headers.get('X-LawVerify-Office-Version'), originalFile.sha256)
+    assert.equal((await parseOfficeBytes(Buffer.from(await overlay.arrayBuffer()), 'docx')).text, '更新正文')
+    const reviewed = await readWorkspace()
+    assert.deepEqual(reviewed.certificates[0].officeFile, originalFile)
+    reviewed.certificates[0].paragraphs[0].verified = true
+    reviewed.certificates[0].paragraphs[0].note = '复核记录'
+    reviewed.cases[0].status = 'ready'
+    await writeWorkspace(reviewed)
+
+    const submit = (bytes, expectedFileVersion = originalFile.sha256) => {
+      const form = new FormData()
+      form.set('file', new Blob([bytes]), '测试.docx')
+      form.set('content', JSON.stringify({ expectedFileVersion, expectedContent: changed, paragraphs: changed }))
+      return fetch(editSource, { method: 'PUT', body: form })
+    }
+    const invalid = await submit(Buffer.from('无效的 Word 文件'))
+    assert.equal(invalid.status, 422)
+    assert.equal((await invalid.json()).error.code, 'OFFICE_INVALID_DOCX')
+    const formatted = await docx('更新正文', { bold: true })
+    const saved = await submit(formatted)
+    assert.equal(saved.status, 200)
+    const { workspace: savedWorkspace } = await saved.json()
+    const edited = savedWorkspace.certificates[0]
+    const editedFile = edited.officeFile
+    assert.notEqual(editedFile.sha256, originalFile.sha256)
+    assert.equal(editedFile.version, originalFile.version + 1)
+    assert.equal(edited.paragraphs[0].verified, true)
+    assert.equal(edited.paragraphs[0].note, '复核记录')
+    assert.equal(savedWorkspace.cases[0].status, 'ready')
+    const retry = await submit(formatted)
+    assert.equal(retry.status, 200)
+    assert.deepEqual((await retry.json()).workspace.certificates[0].officeFile, editedFile)
+    const stale = await submit(await docx('更新正文', { italics: true }))
+    assert.equal(stale.status, 409)
+    assert.equal((await stale.json()).error.code, 'DOCUMENT_CONFLICT')
+
+    const current = await fetch(editSource)
+    assert.equal(current.headers.get('X-LawVerify-Office-Version'), editedFile.sha256)
+    assert.deepEqual(Buffer.from(await current.arrayBuffer()), formatted)
+    const downloaded = await fetch(`${base}/documents/${certificate.id}/download`)
+    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), formatted)
+    assert.deepEqual(await readFile(officePath(originalFile.id)), original)
+    assert.equal((await readdir(officeRoot())).length, 4)
+  } finally {
+    await new Promise(resolve => http.close(resolve))
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('下载无原件的文书后，已打开的编辑器仍可首次保存', async () => {
+  const { createApp } = await import('../src/app.ts')
+  const { readWorkspace, writeWorkspace } = await import('../src/store.ts')
+  const http = createApp().app.listen(0, '127.0.0.1')
+  try {
+    await new Promise((resolve, reject) => { http.once('listening', resolve); http.once('error', reject) })
+    const base = `http://127.0.0.1:${http.address().port}/api`
+    const workspace = await readWorkspace()
+    workspace.cases = [{ id: 'generated-doc-case', name: '草稿测试', status: 'draft', createdAt: '2026-11-19' }]
+    await writeWorkspace(workspace)
+    const imported = await fetch(`${base}/certificates/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId: 'generated-doc-case', title: '草稿', sourceFileName: '草稿.docx', content: '草稿正文' }),
+    })
+    assert.equal(imported.status, 200)
+    const { certificate } = await imported.json()
+    assert.equal(certificate.officeFile, undefined)
+
+    const documentUrl = `${base}/documents/${certificate.id}`
+    const download = await fetch(`${documentUrl}/download`)
+    assert.equal(download.status, 200)
+    assert.match(download.headers.get('Content-Disposition'), /\.docx/u)
+    const bytes = Buffer.from(await download.arrayBuffer())
+    assert.equal((await parseOfficeBytes(bytes, 'docx')).text, '草稿正文')
+    assert.equal((await readWorkspace()).certificates[0].officeFile, undefined)
+
+    const paragraphs = certificate.paragraphs.map(({ id, text, richText }) => ({ id, text, richText }))
+    const form = new FormData()
+    form.set('file', new Blob([bytes]), '草稿.docx')
+    form.set('content', JSON.stringify({ expectedFileVersion: 'none', expectedContent: paragraphs, paragraphs }))
+    const saved = await fetch(`${documentUrl}/edit-source`, { method: 'PUT', body: form })
+    assert.equal(saved.status, 200)
+    assert.equal((await saved.json()).workspace.certificates[0].officeFile.version, 1)
+    assert.equal((await readdir(officeRoot())).length, 2)
   } finally {
     await new Promise(resolve => http.close(resolve))
     await rm(dataDir, { recursive: true, force: true })

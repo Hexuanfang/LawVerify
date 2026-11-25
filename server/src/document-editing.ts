@@ -4,6 +4,7 @@ import type { CertificateParagraph, EvidenceLink, ParagraphReference } from './d
 import { runExclusiveWorkspaceMutation } from './infrastructure/workspace-lock.js'
 import { getLinkageSentences } from './intelligence/linkage-policy.js'
 import { invalidateVerification, preserveScopedReferences } from './intelligence/verification/review-state.js'
+import { NO_OFFICE_FILE_VERSION, officeContentHash, officeHash, officeVersionFileName, parseOfficeBytes, storeOfficeVersion } from './office/files.js'
 import { getCurrentWorkspaceAccount, readWorkspace, writeWorkspace } from './store.js'
 
 const blockSchema = z.object({
@@ -14,6 +15,9 @@ const blockSchema = z.object({
 const contentSchema = z.object({
   paragraphs: z.array(blockSchema).min(1).max(10_000),
   expectedContent: z.array(blockSchema).max(10_000),
+})
+const nativeContentSchema = contentSchema.extend({
+  expectedFileVersion: z.union([z.literal(NO_OFFICE_FILE_VERSION), z.string().regex(/^[0-9a-f]{64}$/u)]),
 })
 type ContentBlock = z.infer<typeof blockSchema>
 
@@ -74,38 +78,56 @@ export function rebuildParagraphs(current: CertificateParagraph[], blocks: Conte
   return next
 }
 
-export async function saveDocumentContent(certificateId: string, input: unknown) {
-  const { paragraphs, expectedContent } = contentSchema.parse(input)
+export async function saveDocumentContent(certificateId: string, input: unknown, editedDocx?: Buffer) {
+  const parsed = editedDocx ? nativeContentSchema.parse(input) : contentSchema.parse(input)
+  const { paragraphs, expectedContent } = parsed
+  const expectedFileVersion = 'expectedFileVersion' in parsed ? parsed.expectedFileVersion : undefined
   const ids = new Set(paragraphs.map(paragraph => paragraph.id))
   if (ids.size !== paragraphs.length) throw new AppError('文书包含重复段落标识，请重新打开编辑器。', 400, 'DUPLICATE_PARAGRAPH_ID')
+  const editedHash = editedDocx && officeHash(editedDocx)
+  if (editedDocx) await parseOfficeBytes(editedDocx, 'docx')
+
   return runExclusiveWorkspaceMutation(async () => {
     const workspace = await readWorkspace()
     const certificate = workspace.certificates.find(item => item.id === certificateId)
     if (!certificate) throw new AppError('文书已不存在，本机草稿已保留。', 404, 'DOCUMENT_NOT_FOUND')
     const current = certificate.paragraphs
+    const file = certificate.officeFile
+    if (editedDocx && file && file.format !== 'docx' && file.format !== 'doc') {
+      throw new AppError('此文书格式使用原有正文保存方式。', 415, 'OFFICE_EDIT_SOURCE_FORMAT')
+    }
+    const contentUnchanged = sameContent(current, paragraphs)
     // 网络重试已经成功的提交时，保留后来产生的引用与审阅记录。
-    if (sameContent(current, paragraphs)) return { workspace }
-    if (!sameContent(current, expectedContent)) {
+    if (contentUnchanged && (!editedDocx || (file?.format === 'docx' && file.sha256 === editedHash
+      && file.contentHash === officeContentHash(current)))) return { workspace }
+    if (!sameContent(current, expectedContent) || (editedDocx && (file?.sha256 ?? NO_OFFICE_FILE_VERSION) !== expectedFileVersion)) {
       throw new AppError('正文已有更新，本机草稿已保留。请对照最新版本后再保存。', 409, 'DOCUMENT_CONFLICT')
     }
-    const otherIds = new Set(workspace.certificates.filter(item => item.id !== certificateId)
-      .flatMap(item => item.paragraphs.map(paragraph => paragraph.id)))
-    if (paragraphs.some(paragraph => otherIds.has(paragraph.id))) {
-      throw new AppError('段落标识与其他文书重复，请重新打开编辑器。', 400, 'PARAGRAPH_ID_CONFLICT')
+    if (!contentUnchanged) {
+      const otherIds = new Set(workspace.certificates.filter(item => item.id !== certificateId)
+        .flatMap(item => item.paragraphs.map(paragraph => paragraph.id)))
+      if (paragraphs.some(paragraph => otherIds.has(paragraph.id))) {
+        throw new AppError('段落标识与其他文书重复，请重新打开编辑器。', 400, 'PARAGRAPH_ID_CONFLICT')
+      }
+      const textChanged = current.length !== paragraphs.length || current.some((paragraph, index) =>
+        paragraph.id !== paragraphs[index]?.id || paragraph.text !== paragraphs[index]?.text)
+      const blocks = editedDocx ? paragraphs.map(block => ({ ...block, richText: block.richText })) : paragraphs
+      const next = preserveScopedReferences(certificate, { ...certificate, paragraphs: rebuildParagraphs(current, blocks) })
+      const verification = invalidateVerification(certificate, next, getCurrentWorkspaceAccount() ?? workspace.user.email)
+      const verificationChanged = verification !== certificate.verification
+      certificate.verification = verification
+      certificate.paragraphs = next.paragraphs
+      certificate.paragraphIds = certificate.paragraphs.map(paragraph => paragraph.id)
+      if (textChanged || verificationChanged) {
+        if (!verification?.dirty) certificate.linkageInputKey = undefined
+        certificate.linkageStale = true
+        const caseFolder = workspace.cases.find(item => item.id === certificate.caseId)
+        if (caseFolder?.status === 'ready') caseFolder.status = 'in_review'
+      }
     }
-    const textChanged = current.length !== paragraphs.length || current.some((paragraph, index) =>
-      paragraph.id !== paragraphs[index]?.id || paragraph.text !== paragraphs[index]?.text)
-    const next = preserveScopedReferences(certificate, { ...certificate, paragraphs: rebuildParagraphs(current, paragraphs) })
-    const verification = invalidateVerification(certificate, next, getCurrentWorkspaceAccount() ?? workspace.user.email)
-    const verificationChanged = verification !== certificate.verification
-    certificate.verification = verification
-    certificate.paragraphs = next.paragraphs
-    certificate.paragraphIds = certificate.paragraphs.map(paragraph => paragraph.id)
-    if (textChanged || verificationChanged) {
-      if (!verification?.dirty) certificate.linkageInputKey = undefined
-      certificate.linkageStale = true
-      const caseFolder = workspace.cases.find(item => item.id === certificate.caseId)
-      if (caseFolder?.status === 'ready') caseFolder.status = 'in_review'
+    if (editedDocx) {
+      const fileName = file?.format === 'docx' ? file.fileName : officeVersionFileName(certificate, 'docx')
+      certificate.officeFile = await storeOfficeVersion(certificate, editedDocx, fileName)
     }
     await writeWorkspace(workspace)
     return { workspace: await readWorkspace() }

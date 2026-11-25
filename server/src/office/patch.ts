@@ -4,10 +4,12 @@ import type { CertificateParagraph } from '../domain.js'
 import { AppError } from '../core/app-error.js'
 import type { EvidenceCell } from '../intelligence/verification/protocol.js'
 
-type Block = Pick<CertificateParagraph, 'id' | 'text'>
+type Block = Pick<CertificateParagraph, 'id' | 'text' | 'richText'>
+type OfficeParagraph = { paragraph: XmlNode; text: string; index: number }
+type ParagraphSpan = OfficeParagraph & { start: number }
 const wordNamespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
-function fail() {
+function fail(): never {
   throw new AppError('外部改写与 Word 原件结构不一致，已保留原文件。请在编辑器中核对修改后保存。', 409, 'OFFICE_PATCH_CONFLICT')
 }
 
@@ -30,8 +32,12 @@ function nodeText(node: XmlNode) {
   return node.textContent
 }
 
+function normalizedParagraphText(text: string) {
+  return text.replace(/\r\n/g, '\n').trim()
+}
+
 function paragraphText(node: XmlNode) {
-  return textNodes(node).map(nodeText).join('').replace(/\r\n/g, '\n').trim()
+  return normalizedParagraphText(textNodes(node).map(nodeText).join(''))
 }
 
 export async function readOfficeDocxBlocks(bytes: Buffer, preserveTableCells = false) {
@@ -78,16 +84,20 @@ function appendText(run: XmlNode, text: string, reference: XmlNode | null) {
   }
 }
 
-function replaceParagraphText(paragraph: XmlNode, replacement: string) {
-  const nodes = textNodes(paragraph)
-  const original = nodes.map(nodeText).join('')
-  // 保留未修改的前后文字及其原有 run、字体和链接，只替换发生变化的区间。
+function textChangeRange(original: string, replacement: string) {
   let prefix = 0
   while (prefix < original.length && prefix < replacement.length && original[prefix] === replacement[prefix]) prefix++
   let suffix = 0
   while (suffix < original.length - prefix && suffix < replacement.length - prefix
     && original[original.length - 1 - suffix] === replacement[replacement.length - 1 - suffix]) suffix++
-  const end = original.length - suffix
+  return { prefix, end: original.length - suffix, replacementEnd: replacement.length - suffix }
+}
+
+function replaceParagraphText(paragraph: XmlNode, replacement: string) {
+  const nodes = textNodes(paragraph)
+  const original = nodes.map(nodeText).join('')
+  // 保留未修改的前后文字及其原有 run、字体和链接，只替换发生变化的区间。
+  const { prefix, end, replacementEnd } = textChangeRange(original, replacement)
   let position = 0
   let inserted = false
   for (const node of nodes) {
@@ -97,7 +107,7 @@ function replaceParagraphText(paragraph: XmlNode, replacement: string) {
     if (position < prefix || start > end) continue
     const left = text.slice(0, Math.max(0, prefix - start))
     const right = text.slice(Math.max(0, end - start))
-    const middle = inserted ? '' : replacement.slice(prefix, replacement.length - suffix)
+    const middle = inserted ? '' : replacement.slice(prefix, replacementEnd)
     appendText(node.parentNode, left + middle + right, node)
     node.parentNode.removeChild(node)
     inserted = true
@@ -112,29 +122,103 @@ function replaceParagraphText(paragraph: XmlNode, replacement: string) {
   }
 }
 
+function isGroupedBlock(block: Block) {
+  return /<(?:table|ol|ul)\b/i.test(block.richText ?? '') && /[\n\t]/u.test(block.text)
+}
+
+function paragraphSeparator(left: XmlNode, right: XmlNode) {
+  const first = left.parentNode
+  const second = right.parentNode
+  return first !== second && first.namespaceURI === wordNamespace && second.namespaceURI === wordNamespace
+    && first.localName === 'tc' && second.localName === 'tc' && first.parentNode === second.parentNode ? '\t' : '\n'
+}
+
+function alignParagraphs(source: OfficeParagraph[], base: Block[]) {
+  const result = new Map<string, ParagraphSpan[]>()
+  let cursor = 0
+  for (const block of base) {
+    const first = source[cursor]
+    if (!first || result.has(block.id)) return
+    const grouped = isGroupedBlock(block)
+    const sameText = grouped ? first.text === block.text : normalizedParagraphText(first.text) === normalizedParagraphText(block.text)
+    if (sameText) {
+      result.set(block.id, [{ ...first, start: 0 }])
+      cursor++
+      continue
+    }
+    if (!grouped) return
+    // 快照中的表格和列表必须精确覆盖连续的原文段落与结构分隔符。
+    const spans: ParagraphSpan[] = []
+    let start = 0
+    while (cursor < source.length) {
+      const current = source[cursor++]
+      if (!block.text.startsWith(current.text, start)) return
+      spans.push({ ...current, start })
+      start += current.text.length
+      if (start === block.text.length) break
+      const following = source[cursor]
+      if (!following || following.index !== current.index + 1
+        || block.text[start] !== paragraphSeparator(current.paragraph, following.paragraph)) return
+      start++
+    }
+    result.set(block.id, spans)
+  }
+  if (cursor === source.length) return result
+}
+
+function groupedMutation(block: Block, replacement: string, spans: ParagraphSpan[]) {
+  const { prefix, end, replacementEnd } = textChangeRange(block.text, replacement)
+  const span = spans.find(item => item.start <= prefix && end <= item.start + item.text.length)
+  const inserted = replacement.slice(prefix, replacementEnd)
+  if (!span || /[\t\r\n]/u.test(inserted)) fail()
+  return { paragraph: span.paragraph, text: span.text.slice(0, prefix - span.start) + inserted + span.text.slice(end - span.start) }
+}
+
+function bodyInsertionAnchor(body: XmlNode, paragraph: XmlNode) {
+  let anchor = paragraph
+  while (anchor.parentNode !== body) anchor = anchor.parentNode
+  if (anchor !== paragraph && (anchor.namespaceURI !== wordNamespace || anchor.localName !== 'tbl'
+    || anchor.getElementsByTagNameNS(wordNamespace, 'p')[0] !== paragraph)) fail()
+  return anchor
+}
+
 export async function patchOfficeDocx(bytes: Buffer, base: Block[], target: Block[]) {
   // 复用已随 mammoth 打包的 ZIP/XML 适配器，不增加运行依赖。升级 mammoth 时需执行保排版回归测试。
   const zip = await openArrayBuffer(bytes)
   const document = parseFromString(await zip.read('word/document.xml', 'utf8'))
   const body = Array.from(document.getElementsByTagNameNS(wordNamespace, 'body'))[0]
   if (!body) fail()
-  const paragraphs = Array.from(body.getElementsByTagNameNS(wordNamespace, 'p'))
+  const paragraphs = Array.from(body.getElementsByTagNameNS(wordNamespace, 'p'), (paragraph, index) => ({
+    paragraph, text: textNodes(paragraph).map(nodeText).join(''), index,
+  }))
+  const originals = new Map(base.map(block => [block.id, block]))
+  // 完整有序的基线可以按位置定位同文段落。旧版导入可能省略空段。
+  const aligned = alignParagraphs(paragraphs, base) ?? alignParagraphs(paragraphs.filter(item => item.text.trim()), base)
   const byText = new Map<string, XmlNode[]>()
-  for (const paragraph of paragraphs) {
-    const text = paragraphText(paragraph)
-    const matches = byText.get(text) ?? []
+  if (!aligned) for (const { paragraph, text } of paragraphs) {
+    const key = normalizedParagraphText(text)
+    const matches = byText.get(key) ?? []
     matches.push(paragraph)
-    byText.set(text, matches)
+    byText.set(key, matches)
+  }
+  const locate = (block: Block) => {
+    const alignedParagraph = aligned?.get(block.id)?.[0].paragraph
+    if (alignedParagraph) return alignedParagraph
+    if (isGroupedBlock(block)) fail()
+    const matches = byText.get(normalizedParagraphText(block.text))
+    if (matches?.length !== 1) fail()
+    return matches[0]
   }
   const nextById = new Map(target.map(block => [block.id, block]))
-  const originals = new Map(base.map(block => [block.id, block]))
   const mutations: Array<{ paragraph: XmlNode; text: string }> = []
   for (const block of base) {
     const next = nextById.get(block.id)
     if (next?.text === block.text) continue
-    const matches = byText.get(block.text.replace(/\r\n/g, '\n').trim()) ?? []
-    if (matches.length !== 1) fail()
-    mutations.push({ paragraph: matches[0], text: next?.text ?? '' })
+    const spans = aligned?.get(block.id)
+    if (spans && spans.length > 1) {
+      if (!next) fail()
+      mutations.push(groupedMutation(block, next.text, spans))
+    } else mutations.push({ paragraph: locate(block), text: next?.text ?? '' })
   }
   const existingOrder = target.filter(block => originals.has(block.id)).map(block => block.id)
   const expectedOrder = base.filter(block => nextById.has(block.id)).map(block => block.id)
@@ -147,10 +231,7 @@ export async function patchOfficeDocx(bytes: Buffer, base: Block[], target: Bloc
     const following = target.slice(index + 1).find(item => originals.has(item.id))
     let reference = Array.from(body.childNodes).find(node => node.localName === 'sectPr') ?? null
     if (following) {
-      const original = originals.get(following.id)!
-      const matches = byText.get(original.text.replace(/\r\n/g, '\n').trim()) ?? []
-      if (matches.length !== 1 || matches[0].parentNode !== body) fail()
-      reference = matches[0]
+      reference = bodyInsertionAnchor(body, locate(originals.get(following.id)!))
     }
     additions.push({ reference, text: block.text })
   }

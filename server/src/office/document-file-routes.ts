@@ -3,12 +3,16 @@ import multer from 'multer'
 import { readFile, unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { AppError } from '../core/app-error.js'
+import { saveDocumentContent } from '../document-editing.js'
 import { documentText, parseDocument } from '../infrastructure/document-jobs.js'
 import { runExclusiveWorkspaceMutation } from '../infrastructure/workspace-lock.js'
 import { boundedFileStorage, reserveUpload } from '../middleware/bounded-upload.js'
 import { importCertificate, sanitizeWorkspaceForClient } from '../service.js'
 import { readWorkspace, writeWorkspace } from '../store.js'
-import { legacyOfficeBytes, MAX_OFFICE_BYTES, officeFormat, parseOfficeBytes, storeOfficeFile } from './files.js'
+import { legacyOfficeBytes, MAX_OFFICE_BYTES, officeFormat, parseOfficeBytes, readDocxEditSource, storeOfficeFile } from './files.js'
+
+const officeVersionHeader = 'X-LawVerify-Office-Version'
+const docxMediaType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 function normalizedFileName(name: string) {
   // multipart 的浏览器文件名可能按 latin1 解码。
@@ -25,6 +29,9 @@ export function createDocumentFileRouter() {
       try { officeFormat(normalizedFileName(file.originalname)); callback(null, true) }
       catch (error) { callback(error as Error) }
     },
+  })
+  const editedUpload = multer({
+    storage: boundedFileStorage(), limits: { fileSize: MAX_OFFICE_BYTES, files: 1, fields: 1, fieldSize: 2 * MAX_OFFICE_BYTES },
   })
   router.post('/import', reserveUpload, upload.single('file'), async (request, response) => {
     const file = request.file
@@ -57,13 +64,36 @@ export function createDocumentFileRouter() {
       response.json({ ...imported, workspace: sanitizeWorkspaceForClient(imported.workspace) })
     } finally { await unlink(file.path).catch(() => undefined) }
   })
-  router.get('/:id/download', async (request, response) => {
+  router.get('/:id/edit-source', async (request, response) => {
     const { bytes, file } = await runExclusiveWorkspaceMutation(async () => {
       const workspace = await readWorkspace()
       const certificate = workspace.certificates.find(item => item.id === request.params.id)
       if (!certificate) throw new AppError('文书已被删除。', 404, 'DOCUMENT_NOT_FOUND')
+      return readDocxEditSource(certificate)
+    })
+    response.setHeader('Cache-Control', 'no-store')
+    response.setHeader(officeVersionHeader, file.sha256)
+    response.setHeader('Access-Control-Expose-Headers', officeVersionHeader)
+    response.type(docxMediaType).send(bytes)
+  })
+  router.put<{ id: string }>('/:id/edit-source', reserveUpload, editedUpload.single('file'), async (request, response) => {
+    const file = request.file
+    if (!file) throw new AppError('请选择已编辑的 Word 文书。', 400, 'DOCUMENT_REQUIRED')
+    try {
+      let content: unknown
+      try { content = JSON.parse(z.string().parse(request.body.content)) }
+      catch { throw new AppError('文书正文数据格式不正确，请重新保存。', 400, 'DOCUMENT_INVALID_CONTENT') }
+      const { workspace } = await saveDocumentContent(request.params.id, content, await readFile(file.path))
+      response.json({ workspace: sanitizeWorkspaceForClient(workspace) })
+    } finally { await unlink(file.path).catch(() => undefined) }
+  })
+  router.get('/:id/download', async (request, response) => {
+    const { bytes, fileName } = await runExclusiveWorkspaceMutation(async () => {
+      const workspace = await readWorkspace()
+      const certificate = workspace.certificates.find(item => item.id === request.params.id)
+      if (!certificate) throw new AppError('文书已被删除。', 404, 'DOCUMENT_NOT_FOUND')
       const result = await legacyOfficeBytes(certificate)
-      if (result.file.id !== certificate.officeFile?.id) {
+      if (result.file && result.file.id !== certificate.officeFile?.id) {
         certificate.officeFile = result.file
         await writeWorkspace(workspace)
       }
@@ -71,7 +101,7 @@ export function createDocumentFileRouter() {
     })
     response.setHeader('Cache-Control', 'no-store')
     response.setHeader('Access-Control-Expose-Headers', 'Content-Disposition')
-    response.attachment(file.fileName)
+    response.attachment(fileName)
     response.send(bytes)
   })
   return router

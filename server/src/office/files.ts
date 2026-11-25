@@ -13,6 +13,7 @@ import { markdownBlocks, patchMarkdown } from './markdown.js'
 export type OfficeFile = NonNullable<Certificate['officeFile']>
 export type OfficeFormat = OfficeFile['format']
 export const MAX_OFFICE_BYTES = 20 * 1024 * 1024
+export const NO_OFFICE_FILE_VERSION = 'none'
 
 export function officeFormat(fileName: string): OfficeFormat {
   if (!fileName || /[\\/\u0000-\u001f]/u.test(fileName))
@@ -90,34 +91,55 @@ export function officeDocxBytes(paragraphs: Array<{ text: string }>) {
   return Packer.toBuffer(new Document({ sections: [{ children }] }))
 }
 
-export async function legacyOfficeBytes(certificate: Certificate) {
+async function patchOfficeFile(certificate: Certificate, file: OfficeFile) {
+  let snapshot: { paragraphs: CertificateParagraph[] }
+  try { snapshot = JSON.parse(await readFile(officePath(file.id, 'json'), 'utf8')) }
+  catch { throw new AppError('原文书文件缺少正文基线，请重新导入原件。', 409, 'OFFICE_BASE_MISSING') }
+  const original = await readFile(officePath(file.id))
+  if (file.format === 'docx') return patchOfficeDocx(original, snapshot.paragraphs, certificate.paragraphs)
+  const text = original.toString('utf8')
+  const bom = text.startsWith('\uFEFF') ? '\uFEFF' : ''
+  return Buffer.from(bom + patchMarkdown(text.slice(bom.length), snapshot.paragraphs, certificate.paragraphs), 'utf8')
+}
+
+export async function readDocxEditSource(certificate: Certificate) {
+  const file = certificate.officeFile
+  if (file?.format !== 'docx') throw new AppError('此文书没有可读取的 DOCX 编辑副本。', 404, 'OFFICE_EDIT_SOURCE_UNAVAILABLE')
+  const bytes = file.contentHash === officeContentHash(certificate.paragraphs)
+    ? await readFile(officePath(file.id))
+    : await patchOfficeFile(certificate, file)
+  return { bytes, file }
+}
+
+export async function storeOfficeVersion(certificate: Certificate, bytes: Buffer, fileName: string) {
+  const file = await storeOfficeFile(certificate.caseId, bytes, fileName, (certificate.officeFile?.version ?? 0) + 1)
+  file.contentHash = officeContentHash(certificate.paragraphs)
+  await atomicOfficeJson(file.id, { paragraphs: certificate.paragraphs })
+  return file
+}
+
+export function officeVersionFileName(certificate: Certificate, format: 'docx' | 'txt') {
+  const name = (certificate.officeFile?.fileName ?? certificate.title)
+    .replace(/\.(docx?|txt)$/i, '').replace(/[\\/\u0000-\u001f]/gu, '_')
+  return `${name || '文书'}.${format}`
+}
+
+export async function legacyOfficeBytes(certificate: Certificate): Promise<{ bytes: Buffer; fileName: string; file?: OfficeFile }> {
   const file = certificate.officeFile
   if (file && file.contentHash === officeContentHash(certificate.paragraphs))
-    return { bytes: await readFile(officePath(file.id)), file }
+    return { bytes: await readFile(officePath(file.id)), fileName: file.fileName, file }
   if (file?.format === 'docx' || file?.format === 'md' || file?.format === 'markdown') {
-    let snapshot: { paragraphs: CertificateParagraph[] }
-    try { snapshot = JSON.parse(await readFile(officePath(file.id, 'json'), 'utf8')) }
-    catch { throw new AppError('原文书文件缺少正文基线，请重新导入原件。', 409, 'OFFICE_BASE_MISSING') }
-    const original = await readFile(officePath(file.id))
-    let bytes: Buffer
-    if (file.format === 'docx') bytes = await patchOfficeDocx(original, snapshot.paragraphs, certificate.paragraphs)
-    else {
-      const text = original.toString('utf8')
-      const bom = text.startsWith('\uFEFF') ? '\uFEFF' : ''
-      bytes = Buffer.from(bom + patchMarkdown(text.slice(bom.length), snapshot.paragraphs, certificate.paragraphs), 'utf8')
-    }
-    const stored = await storeOfficeFile(certificate.caseId, bytes, file.fileName, file.version + 1)
-    stored.contentHash = officeContentHash(certificate.paragraphs)
-    await atomicOfficeJson(stored.id, { paragraphs: certificate.paragraphs })
-    return { bytes, file: stored }
+    const bytes = await patchOfficeFile(certificate, file)
+    return { bytes, fileName: file.fileName, file: await storeOfficeVersion(certificate, bytes, file.fileName) }
   }
   const bytes = file?.format === 'txt'
     ? Buffer.from(certificate.paragraphs.map(paragraph => paragraph.text).join('\n\n'), 'utf8')
     : await officeDocxBytes(certificate.paragraphs)
   const format = file?.format === 'txt' ? 'txt' : 'docx'
-  const name = (file?.fileName ?? certificate.title).replace(/\.(docx?|txt)$/i, '').replace(/[\\/\u0000-\u001f]/gu, '_')
-  const stored = await storeOfficeFile(certificate.caseId, bytes, `${name || '文书'}.${format}`, (file?.version ?? 0) + 1)
-  stored.contentHash = officeContentHash(certificate.paragraphs)
-  await atomicOfficeJson(stored.id, { paragraphs: certificate.paragraphs })
-  return { bytes, file: stored }
+  const fileName = officeVersionFileName(certificate, format)
+  if (!file) {
+    if (bytes.length > MAX_OFFICE_BYTES) throw new AppError('文书超过 20 MB。', 413, 'OFFICE_TOO_LARGE')
+    return { bytes, fileName }
+  }
+  return { bytes, fileName, file: await storeOfficeVersion(certificate, bytes, fileName) }
 }

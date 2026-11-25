@@ -87,3 +87,64 @@ test('unknown content length still verifies downloaded bytes', async () => {
     assert.deepEqual(fs.readFileSync(target), bytes)
   })
 })
+
+const resumeOffset = 8
+const etag = `"${sha256}"`
+
+function interruptedResponse() {
+  let sent = false
+  const body = new ReadableStream({
+    pull(controller) {
+      if (sent) {
+        controller.error(new Error('net::ERR_CONNECTION_CLOSED'))
+      } else {
+        sent = true
+        controller.enqueue(bytes.subarray(0, resumeOffset))
+      }
+    },
+  })
+  return new Response(body, { headers: {
+    'content-length': String(bytes.length), 'accept-ranges': 'bytes', etag,
+  } })
+}
+
+test('resumes a closed connection from the received bytes and verifies the whole installer', async () => {
+  await withDownload(async (options, target, partial) => {
+    const progress = []
+    let requests = 0
+    const result = await downloadInstaller({ ...options, resume: true,
+      onProgress: event => progress.push(event.progress),
+      fetch: async (_url, { headers }) => {
+        if (++requests === 1) return interruptedResponse()
+        assert.equal(requests, 2)
+        const rangeHeaders = new Headers(headers)
+        assert.equal(rangeHeaders.get('range'), `bytes=${resumeOffset}-`)
+        assert.equal(rangeHeaders.get('if-range'), etag)
+        return new Response(bytes.subarray(resumeOffset), { status: 206, headers: {
+          'content-range': `bytes ${resumeOffset}-${bytes.length - 1}/${bytes.length}`, etag,
+        } })
+      },
+    })
+    assert.equal(result, target)
+    assert.deepEqual(fs.readFileSync(target), bytes)
+    assert.equal(fs.existsSync(partial), false)
+    assert.deepEqual(progress, [Math.round(resumeOffset / bytes.length * 100), 100])
+  })
+})
+
+test('a changed ETag during continuation preserves the existing installer', async () => {
+  await withDownload(async (options, target, partial) => {
+    fs.writeFileSync(target, 'previous verified installer')
+    let requests = 0
+    await assert.rejects(downloadInstaller({ ...options, resume: true,
+      fetch: async () => ++requests === 1 ? interruptedResponse()
+        : new Response(bytes.subarray(resumeOffset), { status: 206, headers: {
+          'content-range': `bytes ${resumeOffset}-${bytes.length - 1}/${bytes.length}`,
+          etag: '"different-installer"',
+        } }),
+    }), /续传/)
+    assert.equal(requests, 2)
+    assert.equal(fs.readFileSync(target, 'utf8'), 'previous verified installer')
+    assert.equal(fs.existsSync(partial), false)
+  })
+})

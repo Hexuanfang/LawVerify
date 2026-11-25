@@ -369,11 +369,14 @@ function resolveUpdateDownloadTarget(version, response) {
 
 async function downloadUpdateInstaller(downloadUrl, version, expectedSha256) {
   const updateSession = session.fromPartition('persist:lawverify-account')
+  const isMac = process.platform === 'darwin'
   return downloadInstaller({
     fetch: (url, init) => updateSession.fetch(url, init),
     url: downloadUrl, version, sha256: expectedSha256,
     resolveTarget: resolveUpdateDownloadTarget,
     onProgress: broadcastAppUpdateStatus,
+    resume: isMac,
+    totalTimeoutMs: isMac ? 60 * 60 * 1000 : undefined,
   })
 }
 

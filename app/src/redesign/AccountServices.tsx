@@ -42,6 +42,8 @@ function AccountServicesContent() {
   const profile = app.cloudProfile
   const user = app.workspace!.user
   const email = user.email?.trim() ?? ''
+  const phoneAccount = email.endsWith('@phone.lawverify.invalid')
+  const loginLabel = phoneAccount ? profile?.user.maskedPhone || '手机号账号' : email || '未绑定邮箱'
   const displayName = profile?.user.name ?? user.name ?? ''
   const organization = profile?.organization.name ?? user.organization ?? ''
   const [session] = useState(() => ({
@@ -66,7 +68,7 @@ function AccountServicesContent() {
   const [feedbackType, setFeedbackType] = useState<FeedbackType>('bug')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
-  const [contact, setContact] = useState(email)
+  const [contact, setContact] = useState(phoneAccount ? '' : email)
   const [feedbackError, setFeedbackError] = useState('')
   const [sending, setSending] = useState(false)
   const [billingBusy, setBillingBusy] = useState(false)
@@ -334,7 +336,7 @@ function AccountServicesContent() {
       <div className="account-settings">
         <div className="account-settings-hero">
           <span className="avatar" aria-hidden="true">{displayName[0] || '律'}</span>
-          <div className="account-settings-identity"><strong>{displayName || '律师'}</strong><span>{email || '未绑定邮箱'}</span></div>
+          <div className="account-settings-identity"><strong>{displayName || '律师'}</strong><span>{loginLabel}</span></div>
           <div className="account-settings-credits"><span>可用积分</span><strong>{balance === null ? '—' : number.format(balance)}</strong></div>
         </div>
         <section className="account-settings-section" aria-labelledby="account-profile-heading">
@@ -356,6 +358,13 @@ function AccountServicesContent() {
             </div>
           </form>
         </section>
+        {phoneAccount ? <section className="account-settings-section" aria-labelledby="account-phone-heading">
+          <h2 id="account-phone-heading">登录手机号</h2>
+          <label className="account-settings-field"><span>手机号</span>
+            <input readOnly value={profile?.user.maskedPhone ?? ''} />
+          </label>
+          <p>此账号使用短信验证码登录。</p>
+        </section> : <>
         <section className="account-settings-section" aria-labelledby="account-email-heading">
           <h2 id="account-email-heading">登录邮箱</h2>
           <label className="account-settings-field"><span>邮箱</span>
@@ -383,6 +392,7 @@ function AccountServicesContent() {
               disabled={settingsBusy || !session.token || !password.current || !password.next || !password.confirmation}>修改密码</Button></div>
           </form>
         </section>
+        </>}
         <details className="account-settings-services">
           <summary>积分与其他服务</summary>
           {services}

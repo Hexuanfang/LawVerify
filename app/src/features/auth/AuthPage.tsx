@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../../api'
+import { api, type PhoneCredentials, type SmsPurpose } from '../../api'
 import { handoffLoginWorkspace } from '../../auth-transition'
 import { loadRedesign, preloadRedesign } from '../../redesign-loader'
 import { SESSION_NOTICE } from '../../redesign/session'
@@ -47,20 +47,30 @@ export default function AuthPage() {
     localStorage.removeItem('lawverify-auth-token')
   }, [])
 
-  async function submit(task: () => Promise<void>) {
+  async function submit<T>(task: () => Promise<T>, prepareWorkspace = true) {
     if (submitting.current) return
     submitting.current = true
     setBusy(true)
     setError('')
-    preloadRedesign()
+    if (prepareWorkspace) preloadRedesign()
     try {
-      await task()
+      return await task()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '操作失败，请重试。')
     } finally {
       submitting.current = false
       setBusy(false)
     }
+  }
+
+  function sendCode(phone: string, purpose: SmsPurpose) {
+    return submit(() => api.sendCloudSms({ phone, purpose }), false)
+  }
+
+  function loginPhone(credentials: PhoneCredentials) {
+    return submit(async () => {
+      await startWorkspaceSession(await api.loginCloudPhone(credentials))
+    })
   }
 
   async function login(email: string, password: string) {
@@ -79,7 +89,6 @@ export default function AuthPage() {
   }
 
   async function register(form: DesktopRegisterForm) {
-    const email = form.email.trim().toLowerCase()
     const organizationName = form.organizationName.trim()
     const ownerName = form.ownerName.trim()
     if (!organizationName) {
@@ -90,18 +99,22 @@ export default function AuthPage() {
       setError('请输入姓名或昵称（至少 2 个字符）。')
       return
     }
-    if (!email) {
+    const email = 'email' in form ? form.email.trim().toLowerCase() : ''
+    if ('email' in form && !email) {
       setError('请输入注册邮箱。')
       return
     }
 
     await submit(async () => {
+      const details = { organizationName, ownerName, inviteCode: form.inviteCode?.trim() || undefined }
+      if ('phone' in form) {
+        const { phone, challengeId, code } = form
+        await startWorkspaceSession(await api.registerCloudPhone({ ...details, phone, challengeId, code }))
+        return
+      }
       let result: CloudSession
       try {
-        result = await api.registerCloudAccount({
-          organizationName, ownerName, email, password: form.password,
-          inviteCode: form.inviteCode?.trim() || undefined,
-        })
+        result = await api.registerCloudAccount({ ...details, email, password: form.password })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : '平台注册失败。'
         if (!['当前无法连接平台账户服务', '未配置平台账户服务地址', '本地联调账户服务'].some(hint => message.includes(hint))) {
@@ -123,6 +136,7 @@ export default function AuthPage() {
 
   return <AuthEntry busy={busy} error={error}
     onClearError={() => setError('')} onLogin={login} onRegister={register}
+    onLoginPhone={loginPhone} onSendCode={sendCode}
     onWebsite={() => void openExternalUrl(OFFICIAL_PLATFORM_BASE_URL)}
     onWebsiteRegister={() => void openExternalUrl(REGISTER_URL)}
     updateCard={window.lawVerifyDesktop?.channel === 'electron' ? <DesktopUpdateCard /> : null} />

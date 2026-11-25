@@ -6,12 +6,20 @@ import { CaseDeleteDialog, type CaseDeleteTarget } from './CaseDeleteDialog'
 import { groupReview } from './reviewOverview'
 
 export function Brand({
-  title = 'LawVerify',
+  title,
   size = 26,
 }: {
   title?: string
   size?: number
 }) {
+  if (title === undefined) {
+    return (
+      <span className="brand">
+        <img className="brand-wordmark" src="/lawverify-wordmark.svg" alt="LawVerify" width={Math.round(size * 478 / 137)} height={size} />
+      </span>
+    )
+  }
+
   return (
     <span className="brand">
       <span

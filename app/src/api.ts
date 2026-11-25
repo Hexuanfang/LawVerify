@@ -23,9 +23,19 @@ import type {
 } from './types'
 
 type CloudAccountProfile = {
-  user: { email: string; name: string }
+  user: { email: string; name: string; maskedPhone?: string }
   organization: { id: string; name: string; membershipId: string; role: string }
 }
+
+type CloudAuthSession = {
+  token: string
+  user: { id: string; email: string; name: string }
+  organization: { id: string; name: string; role: string }
+}
+
+export type SmsPurpose = 'login' | 'register'
+export type SmsChallenge = { challengeId: string; retryAfterSeconds: number; expiresInSeconds: number }
+export type PhoneCredentials = { phone: string; challengeId: string; code: string }
 
 // 流式响应的大小上限：
 // 完整事件块允许更大，避免大结果被误判为过大而中断；
@@ -792,19 +802,7 @@ export const api = {
     email: string
     password: string
   }) {
-    return requestCloudEnvelope<{
-      token: string
-      user: {
-        id: string
-        email: string
-        name: string
-      }
-      organization: {
-        id: string
-        name: string
-        role: string
-      }
-    }>('/api/account/login', {
+    return requestCloudEnvelope<CloudAuthSession>('/api/account/login', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -816,21 +814,24 @@ export const api = {
     password: string
     inviteCode?: string
   }) {
-    return requestCloudEnvelope<{
-      token: string
-      user: {
-        id: string
-        email: string
-        name: string
-      }
-      organization: {
-        id: string
-        name: string
-        role: string
-      }
-    }>('/api/account/register', {
+    return requestCloudEnvelope<CloudAuthSession>('/api/account/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+    })
+  },
+  sendCloudSms(payload: { phone: string; purpose: SmsPurpose }) {
+    return requestCloudEnvelope<SmsChallenge>('/api/account/sms/send', {
+      method: 'POST', body: JSON.stringify(payload),
+    })
+  },
+  loginCloudPhone(payload: PhoneCredentials) {
+    return requestCloudEnvelope<CloudAuthSession>('/api/account/phone/login', {
+      method: 'POST', body: JSON.stringify(payload),
+    })
+  },
+  registerCloudPhone(payload: PhoneCredentials & { organizationName: string; ownerName: string; inviteCode?: string }) {
+    return requestCloudEnvelope<CloudAuthSession>('/api/account/phone/register', {
+      method: 'POST', body: JSON.stringify(payload),
     })
   },
   getCloudProfile() {

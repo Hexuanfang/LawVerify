@@ -14,8 +14,7 @@
 .lv-page { width: min(1110px, calc(100% - 84px)); margin: auto; min-height: 100dvh; display: flex; flex-direction: column; }
 .lv-mast, .lv-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .lv-mast { padding: 25px 0 20px; border-bottom: 1px solid var(--lv-line); }
-.lv-brand { display: flex; align-items: center; gap: 10px; font: bold 21px Georgia, serif; letter-spacing: -.035em; }
-.lv-brand img { width: 34px; height: 34px; }
+.lv-brand { display: block; }
 .lv-entry button { cursor: pointer; }
 .lv-mast button, .lv-register button { border: 0; padding: 3px; color: var(--lv-green); background: transparent; }
 .lv-mast button { font-size: 13px; }

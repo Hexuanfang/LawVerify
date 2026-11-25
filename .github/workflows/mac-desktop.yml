@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - runner: macos-26
             arch: arm64
     runs-on: ${{ matrix.runner }}
     environment: ${{ inputs.signed && 'mac-signing' || 'mac-test' }}
@@ -97,6 +97,22 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Backport electron-builder 26.16.1 keychain password fix for macOS 26.
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'node_modules/app-builder-lib/out/codeSign/macCodeSign.js';
+          const replacements = [
+            ['importCerts(keychainFile, certPaths, cscPasswords)', 'importCerts(keychainFile, certPaths, cscPasswords, keychainPassword)'],
+            ['importCerts(keychainFile, paths, keyPasswords)', 'importCerts(keychainFile, paths, keyPasswords, keychainPassword)'],
+            ['"-k", password, keychainFile]);', '"-k", keychainPassword, keychainFile]);'],
+          ];
+          let source = fs.readFileSync(file, 'utf8');
+          for (const [before, after] of replacements) {
+            if (source.split(before).length !== 2) throw new Error(`Unexpected electron-builder source: ${before}`);
+            source = source.replace(before, after);
+          }
+          fs.writeFileSync(file, source);
+          NODE
           ulimit -n 8192
           npm run build:mac:signed -- --arch ${{ matrix.arch }}
       - name: Upload verified packages
